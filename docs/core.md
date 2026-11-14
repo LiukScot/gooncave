@@ -210,13 +210,12 @@ allowlist is enabled.
 | `POST /explore/favorite`, `/explore/unfavorite` | Change the remote favorite and save/remove its managed local copy; body contains `siteId` and `remoteId`. Media URLs are resolved from the original post. The request is recorded in `pending_favorites` before the site is asked and cleared once the file is in the library; the core finishes the leftover rows when it starts. Unsupported auto-voting returns `voteError` without undoing the favorite |
 | `GET /favorites/sync/status`, `POST /favorites/sync`, `/favorites/sync/cancel` | Background import, bounded pagination, progress, per-site errors and cancellation; optional `providers` selects site IDs or preset keys. `deleteMissing=true` removes only managed copies after a complete, error-free remote listing |
 | `GET /credentials`, `PUT /credentials` | Device-only SauceNAO API key; reads return only whether a key is saved |
-| `GET /settings/subscriptions`, `/settings/subscriptions/tags` | Saved searches; the full settings response also reads enabled FurAffinity watchlists, with per-site errors |
+| `GET /settings/subscriptions`, `/settings/subscriptions/tags` | Saved searches; the full settings response also returns `artists` and first syncs each enabled FurAffinity watchlist with them (two ways), listing failed accounts in `artistErrors` (`siteId`, `siteName`, `error`); a refresh running at that moment skips the sync |
 | `PUT/POST /settings/subscriptions/tags` | Replace searches (`tags`) or add one normalized tag (`tag`); up to 500 searches of 100 characters. PUT preserves spaces and search operators |
-| `POST/DELETE /settings/subscriptions/artists` | Follow/unfollow a FurAffinity artist (`siteId`, `artist`), confirmed by rereading the remote account |
+| `POST/DELETE /settings/subscriptions/artists` | Follow/unfollow an artist (`artist`) in GoonCave's list, then sync it to each enabled FurAffinity account (watch/unwatch, confirmed by rereading the artist page); returns the full settings response. Artists also run as searches on the other sites. The sync runs on `GET /settings/subscriptions`, on these calls and in every refresh: a change on FurAffinity since the last sync is copied into the list, a change in GoonCave is copied to FurAffinity, and the first sync only imports. A failed account keeps the change and retries on the next sync |
 | `GET/POST/DELETE /settings/subscriptions/pools` | Followed pools of existing sites: `siteId`, `siteName`, `poolId`, `name`, `postCount`, `coverUrl`. POST/DELETE take `siteId` and `poolId`; POST reads the name, page count and first-page preview from the site (e621 and Danbooru only); up to 500 pools. Synced between devices |
-| `GET /explore/subscriptions` | Cached posts in descending upload/discovery order, `sites`, opaque `cursor`, `limit` 1–100; `resume=1` starts at the saved reading bookmark |
+| `GET /explore/subscriptions` | Cached posts in descending upload/discovery order, `sites`, opaque `cursor`, `limit` 1–100; without a cursor it starts at the newest post |
 | `POST /explore/subscriptions/refresh` | Refresh and backfill enabled sites, `rounds` 1–4; returns per-site errors |
-| `PUT /explore/subscriptions/bookmark` | Save the visible feed post (`siteId`, `remoteId`) |
 | `POST /duplicates/scan/start`, `GET /duplicates/scan/status`, `POST /duplicates/scan/cancel` | Background scan for visual copies. Files of one media type whose shapes are within 3% are compared; copies at different resolutions use the site-preview tolerance, and the duplicate policy keeps the largest. Optional `mediaType`, `pixelThreshold` (0–1, default 0.0005; mean difference, and no single sample may differ by more than 10 of 255 levels), `sampleSize` (8–256), `videoFrames` (1–8), `maxComparisons` (1–100000). A running scan answers `busy` |
 | `GET /duplicates/favorites/recheck` | `{running, percent}`: whether the one-time repair of favorite links is running and how many of the files it must settle are settled (0 to 100, kept in `favorite_link_checks`, so it survives a restart). The core starts it at launch until it has run to the end (recorded in `meta` as `favorite_links.checked`). For each library image linked from more than one post it downloads every post's preview and removes the links whose picture is not the file's (same test as `/explore/gallery-matches`). Only posts of the file's exact width and height are judged; others stay, and a file where no linked post matches keeps all its links. Posts a site would not show are tried again after 30 minutes; after 4 rounds the repair is recorded as done anyway. A stop part way resumes on the next launch, skipping settled files. It starts a file only after the app has made no request for 3 seconds, so screens the person opens are not queued behind its downloads. After each round a full favorites sync starts, so posts that lost their link are downloaded again. Posts of sites read through the browser engine (FurAffinity, Gelbooru) and GIF or video posts are left alone. A picture counts as the same when its sample matches the file with no sharp difference. Migrations `0029` and `0030` clear earlier checks so the repair runs again. |
 | `GET/PUT /duplicates/settings` | Saved policy; PUT accepts only `{ "enabled": false }` |
@@ -562,8 +561,8 @@ refreshed, so new discoveries do not move the posts already displayed. Read
 marks and local favorite changes are applied to cached posts. Network errors
 retain saved posts and appear beside the affected site.
 
-The Subscriptions page saves the visible or opened feed post after a short pause
-and when the window closes. On the next visit, the feed starts at that bookmark.
+The Subscriptions page always opens at the newest posts. If the first page is
+empty, the page loads it again once the background refresh has finished.
 The existing Unread only filter still applies. List restoration within an open app retains
 the existing scroll position and cards.
 
@@ -573,6 +572,6 @@ cargo test --locked -p gooncave-core --lib subscription
 ```
 
 These checks use fake credentials and loopback sites. They cover saved searches,
-stable cursors, bookmarks after restart, late-response invalidation, search
+stable cursors, late-response invalidation, search
 batching, backfill, and confirmed FurAffinity follow/unfollow. Live account
 verification remains separate; the tests do not change real remote watchlists.

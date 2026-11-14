@@ -99,7 +99,7 @@ const apiFetch = (input: RequestInfo | URL, init?: RequestInit) => {
 };
 
 export type DeviceProfile = {
-  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean; autoFavorite?: boolean; tagRefresh?: boolean; sync?: boolean; browserSignIn?: boolean; openFolder?: boolean; photoLibrary?: boolean; shareSheet?: boolean };
+  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean; autoFavorite?: boolean; tagRefresh?: boolean; sync?: boolean; browserSignIn?: boolean; openFolder?: boolean; photoLibrary?: boolean; shareSheet?: boolean; haptics?: boolean };
   id: string;
   username: string;
   libraryRoot: string;
@@ -200,16 +200,20 @@ export const BLACKLIST_DEFAULTS: BlacklistSettings = {
   applyToGallery: false
 };
 
-export type ArtistSubscriptionSource = {
+/** The saved searches and followed artists, as stored. */
+export type SubscriptionTargets = { tags: string[]; artists: string[] };
+
+/** A FurAffinity account whose watchlist could not be synced with the artists. */
+export type ArtistSyncError = {
   siteId: string;
   siteName: string;
-  artists: string[];
-  error: string | null;
+  error: string;
 };
 
 export type SubscriptionSettings = {
   tags: string[];
-  artistSources: ArtistSubscriptionSource[];
+  artists: string[];
+  artistErrors: ArtistSyncError[];
   targets: Array<{ kind: 'tag' | 'artist'; value: string }>;
 };
 
@@ -1001,7 +1005,7 @@ export const api = {
     return z.object({ user: z.object({
       id: z.string().min(1), username: z.string(), libraryRoot: z.string(),
       createdAt: z.string(), updatedAt: z.string(), lastLoginAt: z.null(),
-      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional(), duplicates: z.boolean().optional(), autoFavorite: z.boolean().optional(), tagRefresh: z.boolean().optional(), sync: z.boolean().optional(), browserSignIn: z.boolean().optional(), openFolder: z.boolean().optional(), photoLibrary: z.boolean().optional(), shareSheet: z.boolean().optional() })
+      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional(), duplicates: z.boolean().optional(), autoFavorite: z.boolean().optional(), tagRefresh: z.boolean().optional(), sync: z.boolean().optional(), browserSignIn: z.boolean().optional(), openFolder: z.boolean().optional(), photoLibrary: z.boolean().optional(), shareSheet: z.boolean().optional(), haptics: z.boolean().optional() })
     }) }).parse(data).user;
   },
   getFileContentUrl: (fileId: string, options?: { download?: boolean }) => {
@@ -1050,6 +1054,11 @@ export const api = {
       body: JSON.stringify({ url })
     });
     return sharedSchema.parse(await handle<unknown>(res)).shared;
+  },
+  /** One medium, short tap on the iPhone (`haptics` capability). Rejects when the app cannot give it. */
+  hapticImpact: async () => {
+    const res = await apiFetch(`${API_BASE}/haptics/impact`, { method: 'POST' });
+    if (!res.ok) await handle<unknown>(res);
   },
   /** Opens the iPhone photo picker and adds what the person picks; the picker stays open until they finish. */
   addFromPhotos: async () => {
@@ -1320,7 +1329,6 @@ export const api = {
   exploreSubscriptions: async (params: {
     siteIds?: string[];
     cursor?: string;
-    resume?: boolean;
     limit?: number;
     signal?: AbortSignal;
   }) => {
@@ -1328,7 +1336,6 @@ export const api = {
     if (params.limit) query.set('limit', String(params.limit));
     if (params.siteIds) query.set('sites', params.siteIds.join(','));
     if (params.cursor) query.set('cursor', params.cursor);
-    if (params.resume) query.set('resume', '1');
     const res = await apiFetch(
       `${API_BASE}/explore/subscriptions?${query.toString()}`,
       params.signal ? { signal: params.signal } : undefined
@@ -1351,15 +1358,6 @@ export const api = {
       params.signal ? { signal: params.signal } : undefined
     );
     return handle<{ posts: ExplorePost[]; nextCursor: string | null }>(res);
-  },
-  saveSubscriptionBookmark: async (post: { siteId: string; remoteId: string }) => {
-    const res = await apiFetch(`${API_BASE}/explore/subscriptions/bookmark`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(post),
-      keepalive: true
-    });
-    return handle<{ ok: boolean }>(res);
   },
   exploreGalleryMatches: async (
     posts: ExplorePost[],
@@ -1639,7 +1637,7 @@ export const api = {
   },
   getSubscriptionTags: async () => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/tags`);
-    return handle<{ tags: string[] }>(res);
+    return handle<SubscriptionTargets>(res);
   },
   updateSubscriptionTags: async (tags: string[]) => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/tags`, {
@@ -1677,21 +1675,21 @@ export const api = {
     });
     return handle<{ pools: PoolSubscription[] }>(res);
   },
-  subscribeArtist: async (siteId: string, artist: string) => {
+  subscribeArtist: async (artist: string) => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/artists`, {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ siteId, artist })
+      body: JSON.stringify({ artist })
     });
-    return handle<{ ok: boolean }>(res);
+    return handle<SubscriptionSettings>(res);
   },
-  unsubscribeArtist: async (siteId: string, artist: string) => {
+  unsubscribeArtist: async (artist: string) => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/artists`, {
       method: 'DELETE',
       headers: jsonHeaders,
-      body: JSON.stringify({ siteId, artist })
+      body: JSON.stringify({ artist })
     });
-    return handle<{ ok: boolean }>(res);
+    return handle<SubscriptionSettings>(res);
   },
   updateBlacklist: async (patch: Partial<BlacklistSettings>) => {
     const res = await apiFetch(`${API_BASE}/settings/blacklist`, {

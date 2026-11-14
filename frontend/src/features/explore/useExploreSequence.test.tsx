@@ -263,6 +263,39 @@ describe('useExploreSequence', () => {
     expect(selected).toBe(next);
   });
 
+  it('waits for Next before loading when early loading is off', async () => {
+    const first = post('1');
+    const next = post('2');
+    const loadMore = vi.fn(async () => [next]);
+    let sequence: ExploreSequence | null = null;
+    let selected: ExplorePost | null = null;
+
+    function Harness() {
+      const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(first);
+      sequence = useExploreSequence({
+        posts: [first],
+        poolContext: null,
+        setPoolContext: vi.fn(),
+        selectedPost,
+        setSelectedPost,
+        hasMore: true,
+        loading: false,
+        loadMore,
+        loadEarly: false
+      });
+      selected = selectedPost;
+      return null;
+    }
+
+    root = createRoot(document.createElement('div'));
+    await act(async () => root?.render(<Harness />));
+    expect(loadMore).not.toHaveBeenCalled();
+
+    await act(async () => sequence?.goRelative(1));
+    expect(loadMore).toHaveBeenCalledTimes(1);
+    expect(selected).toBe(next);
+  });
+
   it('retries on Next when the early load found no posts', async () => {
     const first = post('1');
     const next = post('2');

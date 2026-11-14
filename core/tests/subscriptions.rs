@@ -77,7 +77,7 @@ async fn searches_preserve_operators_validate_inputs_and_survive_restart() {
         request(&s, "GET", "/settings/subscriptions", Value::Null)
             .await
             .1,
-        json!({"tags":[],"artistSources":[],"targets":[]})
+        json!({"tags":[],"artists":[],"artistErrors":[],"targets":[]})
     );
     let (status,result)=request(&s,"PUT","/settings/subscriptions/tags",json!({"tags":[" Fixture_Artist   score:>10 ","fixture_artist score:>10","~wolf ~fox -photo"]})).await;
     assert_eq!(status, 200, "{result}");
@@ -148,7 +148,7 @@ async fn searches_preserve_operators_validate_inputs_and_survive_restart() {
 }
 
 #[tokio::test]
-async fn feed_cursor_is_stable_across_new_posts_and_bookmark_survives_restart() {
+async fn feed_cursor_is_stable_across_new_posts() {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("data");
     let library = dir.path().join("library");
@@ -181,43 +181,12 @@ async fn feed_cursor_is_stable_across_new_posts_and_bookmark_survives_restart() 
     .1;
     assert_eq!(next["posts"][0]["remoteId"], "2");
     assert_eq!(
-        request(
-            &s,
-            "PUT",
-            "/explore/subscriptions/bookmark",
-            json!({"siteId":id,"remoteId":"2"})
-        )
-        .await
-        .0,
-        200
-    );
-    request(
-        &s,
-        "POST",
-        "/read-marks",
-        json!({"scope":"post","keys":[format!("{id}:2")]}),
-    )
-    .await;
-    drop(s);
-    drop(db);
-    let s = server(Database::open(&data, &library).unwrap()).await;
-    let resumed = request(
-        &s,
-        "GET",
-        "/explore/subscriptions?resume=1&limit=1",
-        Value::Null,
-    )
-    .await
-    .1;
-    assert_eq!(resumed["posts"][0]["remoteId"], "2");
-    assert_eq!(resumed["posts"][0]["read"], true);
-    assert_eq!(
         request(&s, "GET", "/explore/subscriptions?limit=1", Value::Null)
             .await
             .1["posts"][0]["remoteId"],
         "4"
     );
-    for query in ["cursor=garbage", "limit=0", "limit=101", "resume=invalid"] {
+    for query in ["cursor=garbage", "limit=0", "limit=101"] {
         assert_eq!(
             request(
                 &s,
@@ -230,17 +199,6 @@ async fn feed_cursor_is_stable_across_new_posts_and_bookmark_survives_restart() 
             400
         );
     }
-    assert_eq!(
-        request(
-            &s,
-            "PUT",
-            "/explore/subscriptions/bookmark",
-            json!({"siteId":id,"remoteId":"../../wrong"})
-        )
-        .await
-        .0,
-        400
-    );
 }
 
 #[tokio::test]
@@ -271,32 +229,24 @@ async fn search_edits_keep_furaffinity_feed_and_credentials_errors_are_visible()
     let settings = request(&s, "GET", "/settings/subscriptions", Value::Null)
         .await
         .1;
-    assert!(settings["artistSources"][0]["error"]
+    assert!(settings["artistErrors"][0]["error"]
         .as_str()
         .unwrap()
         .contains("Accounts"));
-    assert_eq!(
-        request(
-            &s,
-            "POST",
-            "/settings/subscriptions/artists",
-            json!({"siteId":search,"artist":"fixture-artist"})
-        )
-        .await
-        .0,
-        400
-    );
-    assert_eq!(
-        request(
-            &s,
-            "POST",
-            "/settings/subscriptions/artists",
-            json!({"siteId":fa,"artist":"fixture-artist"})
-        )
-        .await
-        .0,
-        400
-    );
+    // The artist is kept in GoonCave and passed to FurAffinity once the account works.
+    let (status, followed) = request(
+        &s,
+        "POST",
+        "/settings/subscriptions/artists",
+        json!({"artist":"fixture-artist"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{followed}");
+    assert_eq!(followed["artists"], json!(["fixture-artist"]));
+    assert!(followed["artistErrors"][0]["error"]
+        .as_str()
+        .unwrap()
+        .contains("Accounts"));
     for rounds in [0, 5] {
         assert_eq!(
             request(

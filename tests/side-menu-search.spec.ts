@@ -37,7 +37,6 @@ async function mockSites(page: Page) {
     json: { posts: [post('2')], hasMore: false, nextCursor: null, ready: true }
   }));
   await page.route('**/explore/subscriptions/refresh', (route) => route.fulfill({ json: { errors: [] } }));
-  await page.route('**/explore/subscriptions/bookmark', (route) => route.fulfill({ json: { ok: true } }));
 }
 
 test.describe('on a phone', () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   collectSubscriptionPosts,
+  groupFeedByDay,
   loadSubscriptionPosts,
   subscriptionActionState,
   subscriptionReasons
@@ -230,5 +231,45 @@ describe('subscriptionReasons', () => {
     } as ExplorePost;
 
     expect(subscriptionReasons(artistPost, ['wolf'])).toEqual(['Peyote']);
+  });
+});
+
+describe('groupFeedByDay', () => {
+  const at = (createdAt: string | null) => ({ createdAt });
+  const now = new Date(2026, 10, 14, 12);
+
+  it('starts a day at each new local date and a month at each new month', () => {
+    const days = groupFeedByDay(
+      [
+        at(new Date(2026, 10, 14, 9).toISOString()),
+        at(new Date(2026, 10, 14, 1).toISOString()),
+        at(new Date(2026, 10, 13, 22).toISOString()),
+        at(new Date(2026, 10, 2, 8).toISOString()),
+        at(new Date(2026, 9, 30, 8).toISOString())
+      ],
+      now
+    );
+    expect(days.map((day) => [day.key, day.posts.length])).toEqual([
+      ['2026-11-14', 2],
+      ['2026-11-13', 1],
+      ['2026-11-02', 1],
+      ['2026-10-30', 1]
+    ]);
+    expect(days.slice(0, 2).map((day) => day.dayLabel)).toEqual([
+      'Today',
+      'Yesterday'
+    ]);
+    expect(days.map((day) => day.monthLabel !== null)).toEqual([true, false, false, true]);
+  });
+
+  it('keeps an undated post in the day it arrived in', () => {
+    const days = groupFeedByDay(
+      [at(null), at(new Date(2026, 10, 14).toISOString()), at(null), at('not a date')],
+      now
+    );
+    expect(days.map((day) => [day.key, day.posts.length])).toEqual([
+      [null, 1],
+      ['2026-11-14', 3]
+    ]);
   });
 });

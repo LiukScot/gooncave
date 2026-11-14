@@ -62,8 +62,9 @@ it('shows a tag-save error as a toast and leaves the form alone', async () => {
     return new Response(
       JSON.stringify({
         tags: [],
-        artistSources: [
-          { siteId: 'fa', siteName: 'FurAffinity', artists: [], error: null }
+        artists: [],
+        artistErrors: [
+          { siteId: 'fa', siteName: 'FurAffinity', error: 'Session expired.' }
         ],
         targets: []
       }),
@@ -83,7 +84,7 @@ it('shows a tag-save error as a toast and leaves the form alone', async () => {
       </QueryClientProvider>
     );
   });
-  await waitFor(() => container.textContent?.includes('FurAffinity') ?? false);
+  await waitFor(() => container.textContent?.includes('could not be synced') ?? false);
 
   const textarea = container.querySelector('textarea');
   if (!textarea) throw new Error('Tag textarea was not rendered');
@@ -138,7 +139,12 @@ it('removes only the search whose X was clicked, and lists followed pools', asyn
       );
     }
     return new Response(
-      JSON.stringify({ tags: ['red fox', 'wolf'], artistSources: [], targets: [] }),
+      JSON.stringify({
+        tags: ['red fox', 'wolf'],
+        artists: ['rukis'],
+        artistErrors: [],
+        targets: []
+      }),
       { status: 200 }
     );
   });
@@ -146,6 +152,11 @@ it('removes only the search whose X was clicked, and lists followed pools', asyn
   const container = await render();
   await waitFor(() => container.textContent?.includes('Fox Comic') ?? false);
   expect(container.textContent).toContain('e621 · 12 pages');
+  const rowTitles = Array.from(container.querySelectorAll('.subscription-row-title')).map(
+    (node) => node.textContent
+  );
+  expect(rowTitles).toEqual(['red fox', 'wolf', 'rukis', 'Fox Comic']);
+  expect(container.querySelector('button[aria-label="Unfollow rukis"]')).not.toBeNull();
 
   const remove = container.querySelector<HTMLButtonElement>(
     'button[aria-label="Unsubscribe from red fox"]'

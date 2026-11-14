@@ -33,14 +33,14 @@ afterEach(() => {
 it('reopens subscriptions with fresh results after changing a search or artist', async () => {
   let resolveTags: ((result: { tags: string[] }) => void) | undefined;
   vi.spyOn(api, 'updateSubscriptionTags').mockImplementation(() => new Promise((resolve) => { resolveTags = resolve; }));
-  vi.spyOn(api, 'subscribeArtist').mockResolvedValue({ ok: true });
+  vi.spyOn(api, 'subscribeArtist').mockResolvedValue({ tags: [], artists: ['fixture-artist'], artistErrors: [], targets: [] });
   let changeSearch: (() => Promise<unknown>) | undefined;
   let followArtist: (() => Promise<unknown>) | undefined;
   function Probe() {
     const searches = useUpdateSubscriptionTags();
     const follow = useArtistSubscriptionMutation(true);
     changeSearch = () => searches.mutateAsync(['new_search']);
-    followArtist = () => follow.mutateAsync({ siteId: 'fixture', artist: 'fixture-artist' });
+    followArtist = () => follow.mutateAsync('fixture-artist');
     return null;
   }
   root = createRoot(document.createElement('div'));

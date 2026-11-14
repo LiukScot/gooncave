@@ -69,6 +69,7 @@ mod native {
     };
 
     use gooncave_core::eprintln;
+    use gooncave_core::native_haptics::{self, Haptics};
     use gooncave_core::native_share::{self, ShareItem, ShareSheet};
     use gooncave_core::photos::{self, Pending, PhotoLibrary, Picks};
     use libloading::Library;
@@ -81,6 +82,7 @@ mod native {
     type Pick = unsafe extern "C" fn(Done, *mut c_void);
     type Delete = unsafe extern "C" fn(*const c_char, Done, *mut c_void);
     type Share = unsafe extern "C" fn(*const c_char, Done, *mut c_void);
+    type Haptic = unsafe extern "C" fn();
 
     const LIBRARY: &str = "Frameworks/libGoonCavePhotos.dylib";
     const STOPPED: &str = "The photo library did not answer.";
@@ -91,6 +93,8 @@ mod native {
         pick: Pick,
         delete: Delete,
         share: Share,
+        // Missing in an older library: the taps are off, the rest works.
+        haptic: Option<Haptic>,
     }
 
     static SWIFT: OnceLock<Swift> = OnceLock::new();
@@ -105,11 +109,16 @@ mod native {
                 let pick = *library.get::<Pick>(b"gooncave_pick_photos\0")?;
                 let delete = *library.get::<Delete>(b"gooncave_delete_photos\0")?;
                 let share = *library.get::<Share>(b"gooncave_share\0")?;
+                let haptic = library
+                    .get::<Haptic>(b"gooncave_haptic\0")
+                    .ok()
+                    .map(|symbol| *symbol);
                 Ok(Swift {
                     _library: library,
                     pick,
                     delete,
                     share,
+                    haptic,
                 })
             })
         };
@@ -118,6 +127,11 @@ mod native {
                 if SWIFT.set(swift).is_ok() {
                     photos::register(Box::new(Native));
                     native_share::register(Box::new(Native));
+                    if SWIFT.get().is_some_and(|swift| swift.haptic.is_some()) {
+                        native_haptics::register(Box::new(Native));
+                    } else {
+                        eprintln!("[developer] The Swift library has no gooncave_haptic; haptic feedback is off");
+                    }
                     eprintln!("[developer] Adding from Photos and the system share sheet are on");
                 }
             }
@@ -165,6 +179,15 @@ mod native {
             let answer =
                 ask(|done, context| unsafe { (swift.delete)(ids.as_ptr(), done, context) });
             Box::pin(async move { parse_deleted(&answer.await?) })
+        }
+    }
+
+    impl Haptics for Native {
+        fn impact(&self) {
+            if let Some(haptic) = SWIFT.get().and_then(|swift| swift.haptic) {
+                // SAFETY: `haptic` is the Swift function loaded above; it takes nothing and answers nothing.
+                unsafe { haptic() };
+            }
         }
     }
 

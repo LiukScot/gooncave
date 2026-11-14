@@ -1,9 +1,13 @@
+import { useState } from 'react';
+
 import type { FavoriteSyncStatus } from '@/api';
 import { BooruSitesPanel } from '@/BooruSitesPanel';
 import { BooruEngineSupportTable } from '@/features/booru-sites/BooruEngineSupportTable';
 import { formatDateTime } from '@/lib/format';
 
 type FetchState = { loading: boolean; error: string | null };
+
+const FOLDED_ERRORS = 6;
 
 export interface FavoritesAccountsSettingsProps {
   favoritesAvailable?: boolean;
@@ -24,6 +28,7 @@ export function FavoritesAccountsSettings({
   runFavoritesSync,
   cancelFavoritesSync
 }: FavoritesAccountsSettingsProps) {
+  const [errorsExpanded, setErrorsExpanded] = useState(false);
   const results = favoritesSyncStatus?.results ?? [];
   const added = results.reduce((sum, entry) => sum + entry.added, 0);
   const removed = results.reduce((sum, entry) => sum + entry.removed, 0);
@@ -105,18 +110,18 @@ export function FavoritesAccountsSettings({
             ) : null}
             {favoritesErrors.length ? (
               <div className="text-destructive text-sm mt-2 mb-3">
-                {favoritesErrors.slice(0, 6).map((line, index) => (
+                {(errorsExpanded ? favoritesErrors : favoritesErrors.slice(0, FOLDED_ERRORS)).map((line, index) => (
                   <div key={index}>{line}</div>
                 ))}
-                {favoritesErrors.length > 6 ? (
-                  <details>
-                    <summary className="cursor-pointer">
-                      Show {favoritesErrors.length - 6} more errors
-                    </summary>
-                    {favoritesErrors.slice(6).map((line, index) => (
-                      <div key={index}>{line}</div>
-                    ))}
-                  </details>
+                {favoritesErrors.length > FOLDED_ERRORS ? (
+                  <button
+                    type="button"
+                    className="btn btn-link btn-sm mt-1"
+                    aria-expanded={errorsExpanded}
+                    onClick={() => setErrorsExpanded((current) => !current)}
+                  >
+                    {errorsExpanded ? 'Show less' : 'Show more'}
+                  </button>
                 ) : null}
               </div>
             ) : null}
