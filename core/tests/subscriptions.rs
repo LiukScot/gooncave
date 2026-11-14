@@ -148,7 +148,7 @@ async fn searches_preserve_operators_validate_inputs_and_survive_restart() {
 }
 
 #[tokio::test]
-async fn feed_cursor_is_stable_across_new_posts_and_bookmark_survives_restart() {
+async fn feed_cursor_is_stable_across_new_posts() {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("data");
     let library = dir.path().join("library");
@@ -181,43 +181,12 @@ async fn feed_cursor_is_stable_across_new_posts_and_bookmark_survives_restart() 
     .1;
     assert_eq!(next["posts"][0]["remoteId"], "2");
     assert_eq!(
-        request(
-            &s,
-            "PUT",
-            "/explore/subscriptions/bookmark",
-            json!({"siteId":id,"remoteId":"2"})
-        )
-        .await
-        .0,
-        200
-    );
-    request(
-        &s,
-        "POST",
-        "/read-marks",
-        json!({"scope":"post","keys":[format!("{id}:2")]}),
-    )
-    .await;
-    drop(s);
-    drop(db);
-    let s = server(Database::open(&data, &library).unwrap()).await;
-    let resumed = request(
-        &s,
-        "GET",
-        "/explore/subscriptions?resume=1&limit=1",
-        Value::Null,
-    )
-    .await
-    .1;
-    assert_eq!(resumed["posts"][0]["remoteId"], "2");
-    assert_eq!(resumed["posts"][0]["read"], true);
-    assert_eq!(
         request(&s, "GET", "/explore/subscriptions?limit=1", Value::Null)
             .await
             .1["posts"][0]["remoteId"],
         "4"
     );
-    for query in ["cursor=garbage", "limit=0", "limit=101", "resume=invalid"] {
+    for query in ["cursor=garbage", "limit=0", "limit=101"] {
         assert_eq!(
             request(
                 &s,
@@ -230,17 +199,6 @@ async fn feed_cursor_is_stable_across_new_posts_and_bookmark_survives_restart() 
             400
         );
     }
-    assert_eq!(
-        request(
-            &s,
-            "PUT",
-            "/explore/subscriptions/bookmark",
-            json!({"siteId":id,"remoteId":"../../wrong"})
-        )
-        .await
-        .0,
-        400
-    );
 }
 
 #[tokio::test]

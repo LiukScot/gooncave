@@ -9,7 +9,7 @@ use crate::{
 };
 use axum::{
     extract::{Query, State},
-    routing::{get, post, put},
+    routing::{get, post},
     Json, Router,
 };
 use rusqlite::{params, OptionalExtension};
@@ -43,7 +43,6 @@ pub(crate) fn routes() -> Router<Database> {
         )
         .route("/explore/subscriptions", get(feed))
         .route("/explore/subscriptions/refresh", post(refresh_route))
-        .route("/explore/subscriptions/bookmark", put(bookmark))
 }
 fn body(p: Payload) -> Result<Value> {
     let Json(v) = p.map_err(|_| Error::Invalid("Send a valid JSON object.".into()))?;
@@ -331,21 +330,6 @@ async fn unfollow_pool(State(db): State<Database>, p: Payload) -> Result<Json<Va
     })
     .await
 }
-async fn bookmark(State(db): State<Database>, p: Payload) -> Result<Json<Value>> {
-    let v = body(p)?;
-    let site = text(&v, "siteId", 100)?;
-    let id = text(&v, "remoteId", 50)?;
-    booru_engines::id(&json!(id)).map_err(|_| Error::Invalid("Supply a valid post ID.".into()))?;
-    let saved = db
-        .call(move |c| store::save_bookmark(c, &site, &id))
-        .await?;
-    if !saved {
-        return Err(Error::Invalid(
-            "The post is no longer in the feed. Refresh subscriptions.".into(),
-        ));
-    }
-    Ok(Json(json!({"ok":true})))
-}
 async fn feed(
     State(db): State<Database>,
     Query(q): Query<HashMap<String, String>>,
@@ -365,11 +349,6 @@ async fn feed(
         .filter(|s| !s.is_empty())
         .map(|s| Cursor::decode(s))
         .transpose()?;
-    let resume = match q.get("resume").map(String::as_str) {
-        None | Some("0") => false,
-        Some("1") => true,
-        _ => return Err(Error::Invalid("resume must be 0 or 1.".into())),
-    };
     let wanted = match q.get("sites") {
         Some(raw) if raw.len() <= 2000 => Some(
             raw.split(|c: char| c == ',' || c.is_whitespace())
@@ -387,15 +366,7 @@ async fn feed(
         .collect::<Vec<_>>();
     let ids = sites.iter().map(|s| s.id.clone()).collect::<Vec<_>>();
     let page = db
-        .call(move |c| {
-            let (cursor, inclusive) = if resume && cursor.is_none() {
-                let bookmark = store::bookmark(c)?.filter(|b| ids.contains(&b.site));
-                (bookmark, true)
-            } else {
-                (cursor, false)
-            };
-            store::list(c, &ids, cursor, inclusive, limit)
-        })
+        .call(move |c| store::list(c, &ids, cursor, limit))
         .await?;
     let key = explore::media_key(&db).await?;
     let mut grouped = HashMap::<String, Vec<Value>>::new();
@@ -835,7 +806,7 @@ mod tests {
             ]
         );
         let first = db
-            .call(|c| store::list(c, &["fixture".into()], None, false, 10))
+            .call(|c| store::list(c, &["fixture".into()], None, 10))
             .await
             .unwrap();
         assert_eq!(first.items.len(), 2);
@@ -844,7 +815,7 @@ mod tests {
         let state = db.call(|c| store::state(c, "fixture")).await.unwrap();
         assert!(state.exhausted);
         let second = db
-            .call(|c| store::list(c, &["fixture".into()], None, false, 10))
+            .call(|c| store::list(c, &["fixture".into()], None, 10))
             .await
             .unwrap();
         assert_eq!(cursor, second.next);
@@ -875,7 +846,7 @@ mod tests {
             .await
             .unwrap());
         let page = db
-            .call(|c| store::list(c, &["fixture".into()], None, false, 10))
+            .call(|c| store::list(c, &["fixture".into()], None, 10))
             .await
             .unwrap();
         assert_eq!(page.items[0].1["favorited"], false);
@@ -1006,14 +977,14 @@ mod tests {
                     &state,
                     Some("The site returned an unexpected response."),
                 )?;
-                let first = store::list(c, &["fixture".into()], None, false, 10)?;
+                let first = store::list(c, &["fixture".into()], None, 10)?;
                 let cursor = store::Cursor {
                     sort: "2026-10-01T00:00:00.000Z".into(),
                     discovered: "2026-10-01T00:00:00.000Z".into(),
                     site: "other".into(),
                     remote: "1".into(),
                 };
-                let older = store::list(c, &["fixture".into()], Some(cursor), true, 10)?;
+                let older = store::list(c, &["fixture".into()], Some(cursor), 10)?;
                 Ok((first.ready, older.ready))
             })
             .await

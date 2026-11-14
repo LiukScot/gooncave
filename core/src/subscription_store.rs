@@ -9,7 +9,6 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 pub(crate) const MAX_SEARCHES: usize = 500;
 const GENERATION: &str = "subscriptions.feedGeneration";
-const BOOKMARK: &str = "subscriptions.bookmark";
 
 pub(crate) fn searches(c: &Connection) -> Result<Vec<String>> {
     let value = read_setting(c, "subscriptions.tags", &json!([]))?;
@@ -164,14 +163,6 @@ pub(crate) fn reset(c: &Connection, site: Option<&str>, search_only: bool) -> Re
         c.execute(&format!("DELETE FROM {table} WHERE user_id=?1 AND (?2 IS NULL OR site_id=?2)
             AND (?3=0 OR site_id IN (SELECT id FROM user_booru_sites WHERE user_id=?1 AND engine<>'furaffinity'))"),
             params![OWNER_ID, site, search_only])?;
-    }
-    let missing_bookmark=match bookmark(c)? {
-        Some(cursor)=>!c.query_row("SELECT EXISTS(SELECT 1 FROM subscription_feed_items WHERE user_id=?1 AND site_id=?2 AND remote_id=?3)",
-            params![OWNER_ID,cursor.site,cursor.remote],|r| r.get::<_,bool>(0))?,
-        None=>false,
-    };
-    if missing_bookmark {
-        write_setting(c, BOOKMARK, &Value::Null)?;
     }
     Ok(())
 }
@@ -372,26 +363,6 @@ impl Cursor {
         )
     }
 }
-pub(crate) fn bookmark(c: &Connection) -> Result<Option<Cursor>> {
-    match read_setting(c, BOOKMARK, &Value::Null)? {
-        Value::Null => Ok(None),
-        Value::String(raw) => Cursor::decode(&raw)
-            .map(Some)
-            .map_err(|e| Error::Storage(e.to_string())),
-        _ => Err(Error::Storage(
-            "Invalid saved subscription bookmark.".into(),
-        )),
-    }
-}
-pub(crate) fn save_bookmark(c: &Connection, site: &str, id: &str) -> Result<bool> {
-    let cursor = c.query_row("SELECT sort_at,discovered_at FROM subscription_feed_items WHERE user_id=?1 AND site_id=?2 AND remote_id=?3",
-        params![OWNER_ID,site,id], |r| Ok(Cursor {sort:r.get(0)?,discovered:r.get(1)?,site:site.into(),remote:id.into()})).optional()?;
-    if let Some(cursor) = cursor {
-        write_setting(c, BOOKMARK, &json!(cursor.encode()))?;
-        return Ok(true);
-    }
-    Ok(false)
-}
 pub(crate) struct Page {
     pub items: Vec<(String, Value)>,
     pub next: Option<String>,
@@ -402,7 +373,6 @@ pub(crate) fn list(
     c: &Connection,
     sites: &[String],
     cursor: Option<Cursor>,
-    inclusive: bool,
     limit: usize,
 ) -> Result<Page> {
     if sites.is_empty() {
@@ -432,12 +402,10 @@ pub(crate) fn list(
             ]
             .map(Into::into),
         );
-        format!(
-            "AND (sort_at < ? OR (sort_at=? AND discovered_at < ?) OR
+        "AND (sort_at < ? OR (sort_at=? AND discovered_at < ?) OR
             (sort_at=? AND discovered_at=? AND site_id > ?) OR
-            (sort_at=? AND discovered_at=? AND site_id=? AND remote_id {} ?))",
-            if inclusive { ">=" } else { ">" }
-        )
+            (sort_at=? AND discovered_at=? AND site_id=? AND remote_id > ?))"
+            .to_string()
     } else {
         String::new()
     };

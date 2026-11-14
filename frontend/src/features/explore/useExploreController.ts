@@ -34,7 +34,6 @@ import { stackDuplicates } from './stackDuplicates';
 import { loadSubscriptionPosts } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
 import { useOpenPostLink } from './useOpenPostLink';
-import { useSubscriptionBookmark } from './useSubscriptionBookmark';
 import { useTagSubscriptionAction } from './useTagSubscriptionAction';
 import { withVisualMatches } from './visualMatch';
 import { voteDelta } from './voteDelta';
@@ -233,7 +232,6 @@ export function useExploreController({
   const [hasMore, setHasMore] = useState(false);
 
   const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(null);
-  useSubscriptionBookmark(sort === 'subscribed', posts, selectedPost);
   const poolContext = useExploreUiStore((state) => state.poolContext);
   const setPoolContext = useExploreUiStore((state) => state.setPoolContext);
   /**
@@ -598,7 +596,6 @@ export function useExploreController({
           api.exploreSubscriptions({
             siteIds: activeSiteIds,
             cursor: cursor ?? undefined,
-            resume: cursor === null,
             limit: PAGE_SIZE,
             signal: controller.signal
           }),
@@ -625,13 +622,24 @@ export function useExploreController({
       if (first.refreshed === null && first.refreshError === null) {
         void api
           .refreshExploreSubscriptions()
-          .then((result) => {
+          .then(async (result) => {
             if (controller.signal.aborted) return;
             setSiteErrors(result.errors);
             // The refresh may have saved newer posts. With nothing on screen, read again from the top.
             if (!first.hasMore && !first.posts.length) {
-              subscriptionCursorRef.current = null;
-              setHasMore(true);
+              const page = await api.exploreSubscriptions({
+                siteIds: activeSiteIds,
+                limit: PAGE_SIZE,
+                signal: controller.signal
+              });
+              const fresh = await preparePosts(
+                page.posts.filter(keepPost),
+                controller.signal
+              );
+              if (controller.signal.aborted) return;
+              setPosts(fresh);
+              subscriptionCursorRef.current = page.nextCursor;
+              setHasMore(page.hasMore);
             }
           })
           .catch((error: Error) => {

@@ -17,10 +17,10 @@ test('opens the gallery without login and keeps a setting after reload', async (
   await expect(setting).toBeChecked({ checked: !initial });
 });
 
-test('Subscribed resumes an opened post on mobile', async ({ page }) => {
+test('Subscribed shows posts the background refresh found when the feed was empty', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.request.put('/settings/subscriptions/tags', { data: { tags: ['fixture_artist'] } });
-  let bookmark: string | null = null;
+  let refreshed = false;
   const posts: ExplorePost[] = ['7', '8'].map((id) => ({
     remoteId: id, siteId: 'fixture', siteName: 'Fixture', engine: 'moebooru',
     previewUrl: '/favicon.png', sampleUrl: '/favicon.png', fileUrl: '/favicon.png',
@@ -36,14 +36,11 @@ test('Subscribed resumes an opened post on mobile', async ({ page }) => {
   }] } }));
   await page.route('**/explore/posts?*', (route) => route.fulfill({ json: { posts: [], siteErrors: [], sites: ['fixture'] } }));
   await page.route('**/explore/subscriptions?*', (route) => route.fulfill({ json: {
-    posts: bookmark && new URL(route.request().url()).searchParams.get('resume') === '1'
-      ? posts.filter((post) => post.remoteId === bookmark) : posts,
-    hasMore: false, nextCursor: null, ready: true
+    posts: refreshed ? posts : [], hasMore: false, nextCursor: null, ready: true
   } }));
-  await page.route('**/explore/subscriptions/refresh', (route) => route.fulfill({ json: { errors: [] } }));
-  await page.route('**/explore/subscriptions/bookmark', (route) => {
-    bookmark = route.request().postDataJSON().remoteId;
-    return route.fulfill({ json: { ok: true } });
+  await page.route('**/explore/subscriptions/refresh', (route) => {
+    refreshed = true;
+    return route.fulfill({ json: { errors: [] } });
   });
   await page.route(/\/explore\/post(?:-tags|-text|-relations|-pools)?\?/, (route) => route.fulfill({ json: {
     post: posts[1], tags: posts[1].tags, title: null, description: null, parent: null, children: [], pools: []
@@ -53,11 +50,7 @@ test('Subscribed resumes an opened post on mobile', async ({ page }) => {
     await page.getByRole('button', { name: 'Open menu' }).click();
     await page.getByRole('link', { name: 'Subscriptions', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Subscriptions', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Open post 8 from Fixture', exact: false }).click();
-    await expect.poll(() => bookmark).toBe('8');
-    await page.goto('/app/explore?feed=subscribed');
-    await expect(page.locator('[data-test-id="explore-card"]')).toHaveCount(1);
-    await expect(page.locator('[data-test-id="explore-card"]')).toHaveAttribute('data-read-key', 'fixture:8');
+    await expect(page.locator('[data-test-id="explore-card"]')).toHaveCount(2);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   } finally {
     await page.request.put('/settings/subscriptions/tags', { data: { tags: [] } });

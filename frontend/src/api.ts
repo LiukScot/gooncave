@@ -1329,7 +1329,6 @@ export const api = {
   exploreSubscriptions: async (params: {
     siteIds?: string[];
     cursor?: string;
-    resume?: boolean;
     limit?: number;
     signal?: AbortSignal;
   }) => {
@@ -1337,7 +1336,6 @@ export const api = {
     if (params.limit) query.set('limit', String(params.limit));
     if (params.siteIds) query.set('sites', params.siteIds.join(','));
     if (params.cursor) query.set('cursor', params.cursor);
-    if (params.resume) query.set('resume', '1');
     const res = await apiFetch(
       `${API_BASE}/explore/subscriptions?${query.toString()}`,
       params.signal ? { signal: params.signal } : undefined
@@ -1360,15 +1358,6 @@ export const api = {
       params.signal ? { signal: params.signal } : undefined
     );
     return handle<{ posts: ExplorePost[]; nextCursor: string | null }>(res);
-  },
-  saveSubscriptionBookmark: async (post: { siteId: string; remoteId: string }) => {
-    const res = await apiFetch(`${API_BASE}/explore/subscriptions/bookmark`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(post),
-      keepalive: true
-    });
-    return handle<{ ok: boolean }>(res);
   },
   exploreGalleryMatches: async (
     posts: ExplorePost[],
