@@ -407,6 +407,8 @@ That leaves two coherent shapes, and they are not interchangeable:
 - **Mirror.** The artist rows in settings *are* the FA watchlist. Adding a row calls `/watch/`, removing one calls `/unwatch/`, and the list is read back from `/watchlist/by/<user>/`. What the settings screen shows is what FA has.
 - **Local filter.** Gooncave keeps its own list and narrows the inbox to it. Following in gooncave then does not follow on FA, so the same artist can be "subscribed" here and unfollowed there — two sources of truth for one idea.
 
+**Superseded:** GoonCave now keeps its own artist list and syncs it both ways with each account's watchlist, so the artists also feed the other sites (see `docs/core.md`). The text below is the original decision.
+
 **Mirror is the right shape**, and finding 2 above is what makes it possible: watch and unwatch are reachable with the same token pattern as favourites, so gooncave can offer a follow button rather than sending the user to FA's site. The local-filter variant would need the inbox filtered per row anyway, which is the same request plus a divergence bug.
 
 The UX consequence to design for: editing artist rows performs **remote writes**, while editing tag rows does not. The settings screen should not present the two as the same kind of text field.

@@ -212,6 +212,7 @@ fn routes(database: Database) -> Router {
         .merge(crate::originals::routes())
         .merge(crate::photos::routes())
         .merge(crate::native_share::routes())
+        .merge(crate::native_haptics::routes())
         .merge(crate::backup::routes())
         .merge(crate::boorus::routes())
         .merge(crate::explore::routes())

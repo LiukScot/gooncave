@@ -7,13 +7,16 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
+import { api } from './api';
 import App from './App';
 import { ConfirmProvider } from './components/confirm-dialog';
 import { Toaster } from './components/ui/sonner';
 import { applyAppearance } from './lib/appearanceTheme';
 import { installExternalLinks } from './lib/externalLinks';
+import { listenForHaptics } from './lib/haptics';
 import { applyScreenCorner, isIos } from './lib/platform';
 import { createQueryClient } from './lib/query-client';
+import { queryKeys } from './lib/query-keys';
 import { installWindowErrorLog } from './lib/windowErrorLog';
 import { useAppearanceStore } from './stores/appearanceStore';
 
@@ -48,6 +51,14 @@ applyAppearance();
 useAppearanceStore.subscribe(applyAppearance);
 
 const queryClient = createQueryClient();
+
+// The same query useDeviceProfile reads, so the profile is fetched once.
+queryClient
+  .fetchQuery({ queryKey: queryKeys.device, queryFn: api.getDeviceProfile, staleTime: Infinity })
+  .then((profile) => {
+    if (profile.capabilities?.haptics === true) listenForHaptics();
+  })
+  .catch((error: unknown) => console.error('[developer] Could not read the device profile for haptics', error));
 
 const root = createRoot(container);
 root.render(

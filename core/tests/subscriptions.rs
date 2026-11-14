@@ -77,7 +77,7 @@ async fn searches_preserve_operators_validate_inputs_and_survive_restart() {
         request(&s, "GET", "/settings/subscriptions", Value::Null)
             .await
             .1,
-        json!({"tags":[],"artistSources":[],"targets":[]})
+        json!({"tags":[],"artists":[],"artistErrors":[],"targets":[]})
     );
     let (status,result)=request(&s,"PUT","/settings/subscriptions/tags",json!({"tags":[" Fixture_Artist   score:>10 ","fixture_artist score:>10","~wolf ~fox -photo"]})).await;
     assert_eq!(status, 200, "{result}");
@@ -271,32 +271,24 @@ async fn search_edits_keep_furaffinity_feed_and_credentials_errors_are_visible()
     let settings = request(&s, "GET", "/settings/subscriptions", Value::Null)
         .await
         .1;
-    assert!(settings["artistSources"][0]["error"]
+    assert!(settings["artistErrors"][0]["error"]
         .as_str()
         .unwrap()
         .contains("Accounts"));
-    assert_eq!(
-        request(
-            &s,
-            "POST",
-            "/settings/subscriptions/artists",
-            json!({"siteId":search,"artist":"fixture-artist"})
-        )
-        .await
-        .0,
-        400
-    );
-    assert_eq!(
-        request(
-            &s,
-            "POST",
-            "/settings/subscriptions/artists",
-            json!({"siteId":fa,"artist":"fixture-artist"})
-        )
-        .await
-        .0,
-        400
-    );
+    // The artist is kept in GoonCave and passed to FurAffinity once the account works.
+    let (status, followed) = request(
+        &s,
+        "POST",
+        "/settings/subscriptions/artists",
+        json!({"artist":"fixture-artist"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{followed}");
+    assert_eq!(followed["artists"], json!(["fixture-artist"]));
+    assert!(followed["artistErrors"][0]["error"]
+        .as_str()
+        .unwrap()
+        .contains("Accounts"));
     for rounds in [0, 5] {
         assert_eq!(
             request(

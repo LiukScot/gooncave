@@ -25,6 +25,7 @@ import { PopularPeriodNote } from './PopularPeriodNote';
 import { RemoteImage } from './RemoteImage';
 import {
   normalizeSubscriptionSearch,
+  groupFeedByDay,
   subscriptionReasons
 } from './subscriptionFeed';
 import { explorePostKey, useExploreController } from './useExploreController';
@@ -240,15 +241,65 @@ export function ExploreView({
     [stacks]
   );
 
-  const masonryColumns = useMemo(
-    () =>
-      distributeIntoColumns(stacks.map((stack) => stack[0]), columnCount, (post) =>
+  // Subscriptions read like a photo timeline: one grid per day, under its date.
+  const feedDays = useMemo(() => {
+    const heads = stacks.map((stack) => stack[0]);
+    const days = ctl.sort === 'subscribed'
+      ? groupFeedByDay(heads)
+      : [{ key: null, monthLabel: null, dayLabel: null, posts: heads }];
+    return days.map((day) => ({
+      ...day,
+      columns: distributeIntoColumns(day.posts, columnCount, (post) =>
         post.previewUrl && post.width && post.height
           ? post.width / post.height
           : null
-      ),
-    [stacks, columnCount]
-  );
+      )
+    }));
+  }, [stacks, columnCount, ctl.sort]);
+
+  const renderCard = (post: ExplorePost) => {
+    const key = explorePostKey(post);
+    return (
+      <ExploreCard
+        key={key}
+        posts={stackByFirstKey.get(key) ?? [post]}
+        hasRelations={(active) => Boolean(active.parentId) || active.hasChildren || parentIdsOnScreen.has(active.remoteId)}
+        supportsVote={(active) => ctl.siteById.get(active.siteId)?.canVote ?? false}
+        canFavorite={(active) => ctl.siteById.get(active.siteId)?.canFavorite ?? false}
+        favorited={ctl.isFavorited}
+        voted={ctl.voteOf}
+        voteBusy={(active) => ctl.pendingVoteKey === explorePostKey(active)}
+        favoriteBusy={(active) => ctl.pendingFavoriteKey === explorePostKey(active)}
+        sourceIcon={(active) => {
+          if (active.siteId === LIBRARY_SITE_ID) {
+            return { key: 'local', label: active.siteName, iconUrl: null };
+          }
+          const site = ctl.siteById.get(active.siteId);
+          return gallerySourceIconForSite(site ?? {
+            id: active.siteId,
+            name: active.siteName,
+            presetKey: active.engine,
+            baseUrl: active.sourceUrl
+          });
+        }}
+        subscriptionReasons={(active) => ctl.sort === 'subscribed' ? subscriptionReasons(active, ctl.subscribedTags, ctl.subscribedPools) : null}
+        onOpen={(active) =>
+          transitionView(
+            'detail-open',
+            () => ctl.openPost(active),
+            `[data-detail-anchor=${JSON.stringify(explorePostKey(active))}] img`
+          )
+        }
+        onVote={(active, score) => void ctl.votePost(active, score)}
+        onFavorite={(active) =>
+          void ctl.toggleFavorite(
+            active,
+            ctl.isFavorited(active)
+          )
+        }
+      />
+    );
+  };
 
   let detail: React.ReactNode = null;
   if (ctl.selectedPost) {
@@ -560,70 +611,34 @@ export function ExploreView({
                             )}
                     </p>
                   ) : (
-                    <>
-                      <div
-                        className="gallery-masonry"
-                        ref={(element) => {
-                          readGridRef.current = element;
-                          const detach = masonryRef(element);
-                          // React 19 calls the cleanup instead of re-invoking with
-                          // null, so the node has to be dropped here or the ref keeps
-                          // a detached grid alive.
-                          return () => {
-                            readGridRef.current = null;
-                            detach?.();
-                          };
-                        }}
-                      >
-                        {masonryColumns.map((column, index) => (
-                          <div key={index} className="gallery-masonry-column">
-                            {column.map((post) => {
-                              const key = explorePostKey(post);
-                              return (
-                                <ExploreCard
-                                  key={key}
-                                  posts={stackByFirstKey.get(key) ?? [post]}
-                                  hasRelations={(active) => Boolean(active.parentId) || active.hasChildren || parentIdsOnScreen.has(active.remoteId)}
-                                  supportsVote={(active) => ctl.siteById.get(active.siteId)?.canVote ?? false}
-                                  canFavorite={(active) => ctl.siteById.get(active.siteId)?.canFavorite ?? false}
-                                  favorited={ctl.isFavorited}
-                                  voted={ctl.voteOf}
-                                  voteBusy={(active) => ctl.pendingVoteKey === explorePostKey(active)}
-                                  favoriteBusy={(active) => ctl.pendingFavoriteKey === explorePostKey(active)}
-                                  sourceIcon={(active) => {
-                                    if (active.siteId === LIBRARY_SITE_ID) {
-                                      return { key: 'local', label: active.siteName, iconUrl: null };
-                                    }
-                                    const site = ctl.siteById.get(active.siteId);
-                                    return gallerySourceIconForSite(site ?? {
-                                      id: active.siteId,
-                                      name: active.siteName,
-                                      presetKey: active.engine,
-                                      baseUrl: active.sourceUrl
-                                    });
-                                  }}
-                                  subscriptionReasons={(active) => ctl.sort === 'subscribed' ? subscriptionReasons(active, ctl.subscribedTags, ctl.subscribedPools) : null}
-                                  onOpen={(active) =>
-                                    transitionView(
-                                      'detail-open',
-                                      () => ctl.openPost(active),
-                                      `[data-detail-anchor=${JSON.stringify(explorePostKey(active))}] img`
-                                    )
-                                  }
-                                  onVote={(active, score) => void ctl.votePost(active, score)}
-                                  onFavorite={(active) =>
-                                    void ctl.toggleFavorite(
-                                      active,
-                                      ctl.isFavorited(active)
-                                    )
-                                  }
-                                />
-                              );
-                            })}
+                    <div
+                      ref={(element) => {
+                        readGridRef.current = element;
+                        const detach = masonryRef(element);
+                        // React 19 calls the cleanup instead of re-invoking with
+                        // null, so the node has to be dropped here or the ref keeps
+                        // a detached grid alive.
+                        return () => {
+                          readGridRef.current = null;
+                          detach?.();
+                        };
+                      }}
+                    >
+                      {feedDays.map((day) => (
+                        // Its first post never changes as pages are appended, so the key holds.
+                        <section key={explorePostKey(day.posts[0])} className="explore-feed-day">
+                          {day.monthLabel ? <h2 className="explore-feed-month-title">{day.monthLabel}</h2> : null}
+                          {day.dayLabel ? <h3 className="explore-feed-day-title">{day.dayLabel}</h3> : null}
+                          <div className="gallery-masonry">
+                            {day.columns.map((column, columnIndex) => (
+                              <div key={columnIndex} className="gallery-masonry-column">
+                                {column.map(renderCard)}
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    </>
+                        </section>
+                      ))}
+                    </div>
                   )}
                   {ctl.sort === 'popular' &&
                   ctl.popularWindow !== 'all' &&
@@ -692,8 +707,10 @@ export function ExploreCard({
   const [activeIndex, setActiveIndex] = useState(0);
   const [playingVideoKey, setPlayingVideoKey] = useState<string | null>(null);
   const [animatedGifVisible, setAnimatedGifVisible] = useState(true);
-  // The height a card far from the viewport keeps once it has released its media.
-  const [awayHeight, setAwayHeight] = useState<number | null>(null);
+  // The height a card far from the viewport keeps once it has released its media,
+  // and keeps on its way back until the picture has loaded again.
+  const [heldHeight, setHeldHeight] = useState<{ height: number; away: boolean } | null>(null);
+  const awayHeight = heldHeight?.away ? heldHeight.height : null;
   const cardFaceRef = useRef<HTMLDivElement>(null);
   const inlineVideoRef = useRef<HTMLVideoElement>(null);
   const [needsFullPreviewKey, setNeedsFullPreviewKey] = useState<string | null>(null);
@@ -746,6 +763,10 @@ export function ExploreCard({
       ? firstPost.width / firstPost.height
       : null;
   const thumbRatio = tileRatio(rawRatio);
+  // A tile without a known ratio is square until its picture loads. Returning
+  // above the reader, that change would push the posts they are looking at,
+  // and WebKit does not keep the scroll position steady for them.
+  const returningHeight = heldHeight && !heldHeight.away && !thumbRatio ? heldHeight.height : undefined;
   const resolvedUrl = resolvedPreview?.postKey === postKey ? resolvedPreview.fileUrl : null;
   const remoteMotion = online ? post.motionThumbnailUrl ??
     (resolvedUrl?.startsWith('/explore/media/') && isGifUrl(resolvedUrl) ? `${resolvedUrl}&motion=1` : null) : null;
@@ -795,7 +816,10 @@ export function ExploreCard({
         if (entry.boundingClientRect.height === 0) return;
         if (useAppMenuStore.getState().open) return;
         if (!entry.isIntersecting) setPlayingVideoKey(null);
-        setAwayHeight(entry.isIntersecting ? null : entry.boundingClientRect.height);
+        const height = entry.boundingClientRect.height;
+        setHeldHeight((held) =>
+          !entry.isIntersecting ? { height, away: true } : held?.away ? { ...held, away: false } : held
+        );
       },
       { rootMargin: `${window.innerHeight}px 0px` }
     );
@@ -818,6 +842,11 @@ export function ExploreCard({
           <ChevronUp className="size-3 gallery-vote-arrow" aria-hidden="true" />
           <span>{post.score ?? '—'}</span>
         </button>
+      ) : post.score !== null ? (
+        <span className="gallery-chip" data-test-id="explore-score">
+          <span className="sr-only">Score </span>
+          {post.score}
+        </span>
       ) : null}
       <button
         type="button"
@@ -873,6 +902,7 @@ export function ExploreCard({
       <button
         type="button"
         className="block border-0 bg-transparent p-0 text-left w-full h-full"
+        style={returningHeight === undefined ? undefined : { height: returningHeight }}
         data-test-id="explore-card"
         data-detail-anchor={explorePostKey(post)}
         data-read-key={explorePostKey(post)}
@@ -905,6 +935,7 @@ export function ExploreCard({
             fallback={noPreview}
             onLoad={(event) => {
               event.currentTarget.classList.add('is-loaded');
+              setHeldHeight(null);
               if (post.engine !== 'furaffinity' || resolvedPreview?.postKey === postKey) return;
               const image = event.currentTarget;
               const scale = window.devicePixelRatio || 1;

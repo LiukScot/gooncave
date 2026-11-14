@@ -127,15 +127,13 @@ afterEach(() => {
 });
 
 describe('averageRowHeight', () => {
-  it('averages the whole grid rather than one tile', () => {
-    // 10 rows of 3 columns, grid 2500px tall → 250px a row.
-    expect(averageRowHeight(2500, 30, 3)).toBe(250);
+  it('averages every card rather than one tile', () => {
+    expect(averageRowHeight([100, 400, 250])).toBe(250);
   });
 
-  it('falls back when the grid has not laid out yet', () => {
-    expect(averageRowHeight(0, 30, 3)).toBe(220);
-    expect(averageRowHeight(2500, 0, 3)).toBe(220);
-    expect(averageRowHeight(2500, 30, 0)).toBe(220);
+  it('falls back when no card has laid out yet', () => {
+    expect(averageRowHeight([])).toBe(220);
+    expect(averageRowHeight([0, 0])).toBe(220);
   });
 });
 

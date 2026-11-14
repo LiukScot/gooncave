@@ -59,38 +59,125 @@ fn text(v: &Value, key: &str, max: usize) -> Result<String> {
         .map(|s| s.trim().to_owned())
         .ok_or_else(|| Error::Invalid(format!("Supply {key} with 1 through {max} characters.")))
 }
+/// The saved searches and artists as stored, without the FurAffinity sync `settings` runs.
 async fn tags(State(db): State<Database>) -> Result<Json<Value>> {
-    Ok(Json(json!({"tags":db.call(|c| store::searches(c)).await?})))
+    let (tags, artists) = db
+        .call(|c| Ok((store::searches(c)?, store::artists(c)?)))
+        .await?;
+    Ok(Json(json!({"tags":tags,"artists":artists})))
 }
 async fn settings(State(db): State<Database>) -> Result<Json<Value>> {
-    let tags = db.call(|c| store::searches(c)).await?;
-    let sites = boorus::sites(&db).await?;
-    let t = Transport::default();
-    let mut sources = Vec::new();
-    let mut targets: Vec<Value> = tags
+    // A running refresh syncs the watchlists itself; the page must not wait for it.
+    let guard = db.subscriptions.try_lock().ok();
+    overview(&db, guard.is_some()).await
+}
+/// The saved searches and artists. With `sync`, each enabled FurAffinity account's watchlist is
+/// first merged into the artists; the caller holds the `subscriptions` lock.
+async fn overview(db: &Database, sync: bool) -> Result<Json<Value>> {
+    let errors = if sync {
+        let sites = boorus::sites(db).await?;
+        sync_artists(db, &Transport::default(), &sites).await?
+    } else {
+        vec![]
+    };
+    let (tags, artists) = db
+        .call(|c| Ok((store::searches(c)?, store::artists(c)?)))
+        .await?;
+    let targets: Vec<Value> = tags
         .iter()
         .map(|tag| json!({"kind":"tag","value":tag}))
-        .collect();
-    for site in sites
-        .into_iter()
-        .filter(|s| s.enabled && s.engine == "furaffinity")
-    {
-        let result = remote::artists(&t, &site).await;
-        let (artists, error) = match result {
-            Ok(artists) => (artists, None),
-            Err(e) => (vec![], Some(e.to_string())),
-        };
-        targets.extend(
+        .chain(
             artists
                 .iter()
                 .map(|artist| json!({"kind":"artist","value":artist})),
-        );
-        sources
-            .push(json!({"siteId":site.id,"siteName":site.name,"artists":artists,"error":error}));
-    }
+        )
+        .collect();
     Ok(Json(
-        json!({"tags":tags,"artistSources":sources,"targets":targets}),
+        json!({"tags":tags,"artists":artists,"artistErrors":errors,"targets":targets}),
     ))
+}
+/// Follow changes refused in a row before one account's sync stops for this round.
+const MAX_FOLLOW_FAILURES: usize = 3;
+/// Two-way sync of the artists with each enabled FurAffinity watchlist (see `store::reconcile`).
+/// A failed account is returned as an error and retried on the next sync; its changes are kept.
+/// The caller holds the `subscriptions` lock.
+async fn sync_artists(db: &Database, t: &Transport, sites: &[Site]) -> Result<Vec<Value>> {
+    let mut errors = Vec::new();
+    for site in sites
+        .iter()
+        .filter(|s| s.enabled && s.engine == "furaffinity")
+    {
+        let failed =
+            |e: &Error| json!({"siteId":site.id,"siteName":site.name,"error":e.to_string()});
+        let watched = match remote::artists(t, site).await {
+            Ok(names) => names.iter().map(|n| n.to_lowercase()).collect::<Vec<_>>(),
+            Err(e) => {
+                errors.push(failed(&e));
+                continue;
+            }
+        };
+        let id = site.id.clone();
+        let (seen, local) = db
+            .call(move |c| Ok((store::seen_artists(c, &id)?, store::artists(c)?)))
+            .await?;
+        let plan = store::reconcile(&watched, seen.as_deref(), &local);
+        if plan.local.len() > store::MAX_ARTISTS {
+            // Saving it would leave a list GoonCave refuses to read back.
+            errors.push(failed(&Error::Invalid(format!(
+                "Importing this watchlist would pass {} followed artists. Unfollow some, then reload.",
+                store::MAX_ARTISTS
+            ))));
+            continue;
+        }
+        let mut now = watched;
+        let mut changed = false;
+        let mut failures_in_a_row = 0;
+        for (artist, watch) in plan
+            .watch
+            .iter()
+            .map(|a| (a, true))
+            .chain(plan.unwatch.iter().map(|a| (a, false)))
+        {
+            if let Err(e) = remote::set_artist(t, site, artist, watch).await {
+                // One artist FurAffinity does not know must not hold back the others; a run of
+                // refusals is an expired session, where every further request would fail too.
+                errors.push(failed(&Error::Invalid(format!("{artist}: {e}"))));
+                failures_in_a_row += 1;
+                if failures_in_a_row == MAX_FOLLOW_FAILURES {
+                    break;
+                }
+                continue;
+            }
+            failures_in_a_row = 0;
+            changed = true;
+            if watch {
+                now.push(artist.clone());
+            } else {
+                now.retain(|a| a != artist);
+            }
+        }
+        let id = site.id.clone();
+        db.call(move |c| {
+            let tx = c.transaction()?;
+            if changed {
+                store::reset(&tx, Some(&id), false)?;
+            }
+            // Device sync may have replaced the list during the requests above. Saving would
+            // drop that change, and saving the watchlist alone would read its new artists as
+            // removed here next time; both wait for the next sync, which starts from the new list.
+            if store::artists(&tx)? == local {
+                if plan.local != local {
+                    store::save_artists(&tx, &plan.local)?;
+                    store::reset(&tx, None, true)?;
+                }
+                store::save_seen_artists(&tx, &id, &now)?;
+            }
+            tx.commit()?;
+            Ok(())
+        })
+        .await?;
+    }
+    Ok(errors)
 }
 async fn save_tags(State(db): State<Database>, p: Payload) -> Result<Json<Value>> {
     let tags = store::normalize_searches(&body(p)?["tags"])?;
@@ -134,23 +221,37 @@ async fn follow(State(db): State<Database>, p: Payload) -> Result<Json<Value>> {
 async fn unfollow(State(db): State<Database>, p: Payload) -> Result<Json<Value>> {
     set_artist(&db, body(p)?, false).await
 }
+/// Adds or removes one artist in GoonCave's list; the sync then passes it on to FurAffinity.
 async fn set_artist(db: &Database, v: Value, desired: bool) -> Result<Json<Value>> {
-    let id = text(&v, "siteId", 100)?;
-    let artist = text(&v, "artist", 50)?;
-    let site = boorus::site(db, id.clone())
-        .await?
-        .ok_or_else(|| Error::Invalid("This site no longer exists. Reload Accounts.".into()))?;
-    // Serialize watch changes with refresh: a completed unfollow cannot be overwritten by an old page.
+    let artist = remote::artist(&text(&v, "artist", 50)?)?.to_lowercase();
+    // Serialize with refresh: a completed unfollow cannot be overwritten by an old page.
     let _guard = db.subscriptions.lock().await;
-    remote::set_artist(&Transport::default(), &site, &artist, desired).await?;
     db.call(move |c| {
         let tx = c.transaction()?;
-        store::reset(&tx, Some(&id), false)?;
+        let mut artists = store::artists(&tx)?;
+        let before = artists.len();
+        if desired {
+            if !artists.contains(&artist) {
+                if before >= store::MAX_ARTISTS {
+                    return Err(Error::Invalid(format!(
+                        "Follow at most {} artists.",
+                        store::MAX_ARTISTS
+                    )));
+                }
+                artists.push(artist);
+            }
+        } else {
+            artists.retain(|a| *a != artist);
+        }
+        if artists.len() != before {
+            store::save_artists(&tx, &artists)?;
+            store::reset(&tx, None, true)?;
+        }
         tx.commit()?;
         Ok(())
     })
     .await?;
-    Ok(Json(json!({"ok":true})))
+    overview(db, true).await
 }
 /// Followed pools of sites that still exist; a deleted site takes its pools out of view.
 async fn pools(State(db): State<Database>) -> Result<Json<Value>> {
@@ -372,7 +473,15 @@ async fn refresh(db: &Database, t: &Transport, rounds: u64, background: bool) ->
             return saved_errors(db).await;
         }
     };
-    let (tags, pools, generation) = db
+    let sites = boorus::sites(db)
+        .await?
+        .into_iter()
+        .filter(|s| s.enabled && !(background && crate::browser::site(&s.base).is_some()))
+        .collect::<Vec<_>>();
+    for error in sync_artists(db, t, &sites).await? {
+        eprintln!("[developer] FurAffinity watchlist sync failed: {error}");
+    }
+    let (tags, artists, pools, generation) = db
         .call(|c| {
             let cutoff = (time::OffsetDateTime::now_utc() - time::Duration::days(RETENTION_DAYS))
                 .format(&time::format_description::well_known::Rfc3339)
@@ -381,14 +490,14 @@ async fn refresh(db: &Database, t: &Transport, rounds: u64, background: bool) ->
                 "DELETE FROM subscription_feed_items WHERE user_id=?1 AND sort_at<?2",
                 params![OWNER_ID, store::timestamp(&cutoff)?],
             )?;
-            Ok((store::searches(c)?, store::pools(c)?, store::generation(c)?))
+            Ok((
+                store::searches(c)?,
+                store::artists(c)?,
+                store::pools(c)?,
+                store::generation(c)?,
+            ))
         })
         .await?;
-    let sites = boorus::sites(db)
-        .await?
-        .into_iter()
-        .filter(|s| s.enabled && !(background && crate::browser::site(&s.base).is_some()))
-        .collect::<Vec<_>>();
     for _ in 0..rounds {
         let mut queued = sites.iter();
         let mut pending = tokio::task::JoinSet::new();
@@ -399,7 +508,7 @@ async fn refresh(db: &Database, t: &Transport, rounds: u64, background: bool) ->
                 };
                 let db = db.clone();
                 let t = t.clone();
-                let tags = site_searches(&tags, &pools, &site);
+                let tags = site_searches(&tags, &artists, &pools, &site);
                 pending.spawn(async move {
                     let result = refresh_site(&db, &t, &site, &tags, generation).await;
                     (site, result)
@@ -462,10 +571,17 @@ async fn commit(
     })
     .await
 }
-/// The site's saved searches, then `pool:ID` for each pool followed on that site. `batch` sends
-/// a `pool:` search alone, since it contains `:`.
-fn site_searches(tags: &[String], pools: &[store::PoolSubscription], site: &Site) -> Vec<String> {
+/// The saved searches, then each followed artist, then `pool:ID` for each pool followed on the
+/// site. `batch` sends a `pool:` search alone, since it contains `:`.
+fn site_searches(
+    tags: &[String],
+    artists: &[String],
+    pools: &[store::PoolSubscription],
+    site: &Site,
+) -> Vec<String> {
     tags.iter()
+        // A leading `-` or `~` would turn the name into an exclusion or an OR on the boorus.
+        .chain(artists.iter().filter(|a| !a.starts_with(['-', '~'])))
         .cloned()
         .chain(
             pools
@@ -926,11 +1042,15 @@ mod tests {
             cover_url: None,
         }];
         let tags = vec!["fox".to_owned(), "cat".to_owned()];
-        let own = site_searches(&tags, &pools, &site("with-pool"));
-        assert_eq!(own, ["fox", "cat", "pool:7"]);
-        assert_eq!(site_searches(&tags, &pools, &site("other")), ["fox", "cat"]);
-        assert_eq!(batch(&own, 0, 40).0, ["fox", "cat"]);
-        assert_eq!(batch(&own, 2, 40).0, ["pool:7"]);
+        let artists = vec!["rukis".to_owned(), "-dash".to_owned(), "~tilde".to_owned()];
+        let own = site_searches(&tags, &artists, &pools, &site("with-pool"));
+        assert_eq!(own, ["fox", "cat", "rukis", "pool:7"]);
+        assert_eq!(
+            site_searches(&tags, &artists, &pools, &site("other")),
+            ["fox", "cat", "rukis"]
+        );
+        assert_eq!(batch(&own, 0, 40).0, ["fox", "cat", "rukis"]);
+        assert_eq!(batch(&own, 3, 40).0, ["pool:7"]);
     }
     #[tokio::test]
     async fn a_pool_summary_reads_name_page_count_and_first_page_cover() {
@@ -962,6 +1082,165 @@ mod tests {
                 Some("https://cdn.example.com/11-preview.jpg".into())
             )
         );
+        task.abort();
+    }
+
+    type Watched = Arc<Mutex<std::collections::BTreeSet<String>>>;
+    /// A FurAffinity account that watches `watched`. Only `known` artists have a page. With
+    /// `replace_on_watch`, every watch request first replaces the stored artist list.
+    async fn fake_fa(
+        watched: &[&str],
+        known: &[&str],
+        replace_on_watch: Option<Database>,
+    ) -> (Site, Watched, tokio::task::JoinHandle<()>) {
+        let state: Watched = Arc::new(Mutex::new(watched.iter().map(|s| s.to_string()).collect()));
+        let shared = state.clone();
+        let known: Vec<String> = known.iter().map(|s| s.to_string()).collect();
+        let app = Router::new().fallback(any(move |request: Request| {
+            let (state, known, db) = (shared.clone(), known.clone(), replace_on_watch.clone());
+            async move {
+                let path = request.uri().path().to_owned();
+                match path.trim_matches('/').split('/').collect::<Vec<_>>()[..] {
+                    ["watchlist", "by", _] => {
+                        let links: String = state.lock().unwrap().iter().map(|n| format!("<a href='/user/{n}/'>{n}</a>")).collect();
+                        axum::response::Html(format!("<title>Buddy list -- Fur Affinity [dot] net</title>{links}")).into_response()
+                    }
+                    ["user", name] if known.iter().any(|k| k == name) => {
+                        let prefix = if state.lock().unwrap().contains(name) { "un" } else { "" };
+                        axum::response::Html(format!("<div id='pageid-userpage'><a href='/{prefix}watch/{name}/?key=abc'>Watch</a></div>")).into_response()
+                    }
+                    ["user", _] => axum::response::Html("<div id='pageid-browse'></div>").into_response(),
+                    ["watch", name] => {
+                        state.lock().unwrap().insert(name.to_owned());
+                        if let Some(db) = db {
+                            db.call(|c| store::save_artists(c, &["replaced".to_owned()])).await.unwrap();
+                        }
+                        axum::response::Html("ok").into_response()
+                    }
+                    ["unwatch", name] => {
+                        state.lock().unwrap().remove(name);
+                        axum::response::Html("ok").into_response()
+                    }
+                    _ => axum::http::StatusCode::NOT_FOUND.into_response(),
+                }
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let site = Site {
+            id: "fixture".into(),
+            name: "Fixture".into(),
+            engine: "furaffinity".into(),
+            base,
+            username: Some("fixture-owner".into()),
+            key: None,
+            cookie: Some("a=fake;b=fake".into()),
+            enabled: true,
+            public: Value::Null,
+        };
+        (site, state, task)
+    }
+    fn watching(fa: &Watched) -> Vec<String> {
+        fa.lock().unwrap().iter().cloned().collect()
+    }
+    async fn save_local(db: &Database, artists: &[&str]) {
+        let artists: Vec<String> = artists.iter().map(|s| s.to_string()).collect();
+        db.call(move |c| store::save_artists(c, &artists))
+            .await
+            .unwrap();
+    }
+    async fn local_and_seen(db: &Database) -> (Vec<String>, Option<Vec<String>>) {
+        db.call(|c| Ok((store::artists(c)?, store::seen_artists(c, "fixture")?)))
+            .await
+            .unwrap()
+    }
+    #[tokio::test]
+    async fn the_first_artist_sync_imports_the_watchlist_and_watches_local_only_artists() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let (site, fa, task) = fake_fa(
+            &["artist-a", "artist-b"],
+            &["artist-a", "artist-b", "local-only"],
+            None,
+        )
+        .await;
+        let t = Transport {
+            allow_loopback: true,
+        };
+        save_local(&db, &["local-only"]).await;
+        let errors = sync_artists(&db, &t, &[site]).await.unwrap();
+        assert!(errors.is_empty());
+        assert_eq!(watching(&fa), ["artist-a", "artist-b", "local-only"]);
+        let (local, seen) = local_and_seen(&db).await;
+        assert_eq!(local, ["local-only", "artist-a", "artist-b"]);
+        assert_eq!(seen.unwrap(), ["artist-a", "artist-b", "local-only"]);
+        task.abort();
+    }
+    #[tokio::test]
+    async fn after_a_sync_removals_on_either_side_reach_the_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let (site, fa, task) = fake_fa(
+            &["artist-a", "artist-b", "artist-c"],
+            &["artist-a", "artist-b", "artist-c"],
+            None,
+        )
+        .await;
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let sites = [site];
+        assert!(sync_artists(&db, &t, &sites).await.unwrap().is_empty());
+        save_local(&db, &["artist-a", "artist-c"]).await;
+        fa.lock().unwrap().remove("artist-c");
+        let errors = sync_artists(&db, &t, &sites).await.unwrap();
+        assert!(errors.is_empty());
+        assert_eq!(watching(&fa), ["artist-a"]);
+        let (local, seen) = local_and_seen(&db).await;
+        assert_eq!(local, ["artist-a"]);
+        assert_eq!(seen.unwrap(), ["artist-a"]);
+        task.abort();
+    }
+    #[tokio::test]
+    async fn an_artist_furaffinity_does_not_know_is_reported_and_does_not_stop_the_others() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let (site, fa, task) = fake_fa(&["existing"], &["existing", "real"], None).await;
+        let t = Transport {
+            allow_loopback: true,
+        };
+        save_local(&db, &["ghost", "real"]).await;
+        let errors = sync_artists(&db, &t, &[site]).await.unwrap();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0]["siteId"], "fixture");
+        assert!(errors[0]["error"].as_str().unwrap().starts_with("ghost: "));
+        assert_eq!(watching(&fa), ["existing", "real"]);
+        let (local, seen) = local_and_seen(&db).await;
+        assert_eq!(local, ["ghost", "real", "existing"]);
+        assert_eq!(seen.unwrap(), ["existing", "real"]);
+        task.abort();
+    }
+    #[tokio::test]
+    async fn a_list_replaced_during_the_sync_is_kept_and_the_watchlist_snapshot_is_not_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let (site, fa, task) = fake_fa(&[], &["local"], Some(db.clone())).await;
+        let t = Transport {
+            allow_loopback: true,
+        };
+        save_local(&db, &["local"]).await;
+        db.call(|c| store::save_seen_artists(c, "fixture", &["kept".to_owned()]))
+            .await
+            .unwrap();
+        let errors = sync_artists(&db, &t, &[site]).await.unwrap();
+        assert!(errors.is_empty());
+        assert_eq!(watching(&fa), ["local"]);
+        let (local, seen) = local_and_seen(&db).await;
+        assert_eq!(local, ["replaced"]);
+        assert_eq!(seen.unwrap(), ["kept"]);
         task.abort();
     }
 }

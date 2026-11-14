@@ -32,6 +32,7 @@ pub mod http;
 pub mod library;
 mod library_move;
 pub mod media;
+pub mod native_haptics;
 pub mod native_share;
 mod originals;
 pub mod photos;

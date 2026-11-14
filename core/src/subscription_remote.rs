@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 fn selector(raw: &str) -> Selector {
     Selector::parse(raw).expect("static selector")
 }
-fn artist(raw: &str) -> Result<&str> {
+pub(crate) fn artist(raw: &str) -> Result<&str> {
     let name = raw.trim().trim_start_matches('_');
     if name.is_empty()
         || name.len() > 50

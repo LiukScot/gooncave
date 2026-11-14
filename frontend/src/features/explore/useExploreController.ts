@@ -322,9 +322,10 @@ export function useExploreController({
     []
   );
 
+  // Followed artists run as tag searches on the boorus, so here they count as searches.
   const subscribedTags = useMemo(
-    () => subscriptionTags.data?.tags ?? [],
-    [subscriptionTags.data?.tags]
+    () => [...(subscriptionTags.data?.tags ?? []), ...(subscriptionTags.data?.artists ?? [])],
+    [subscriptionTags.data?.tags, subscriptionTags.data?.artists]
   );
   const subscribedArtistSiteIds = useMemo(
     () =>
@@ -1327,7 +1328,9 @@ export function useExploreController({
       onStep: updateReturnAnchor,
       hasMore,
       loading,
-      loadMore
+      loadMore,
+      // Subscriptions are a backlog to read through: a page loads only when the reader asks.
+      loadEarly: sort !== 'subscribed'
     });
 
   const toggleUnreadOnly = useCallback(() => {

@@ -1709,6 +1709,23 @@ html.panel-over-keyboard #root {
   @apply gap-2;
 }
 
+/* Subscriptions as a timeline: a month heading where the month changes, a
+   day heading over each day's grid. Only the subscribed feed has dates;
+   every other feed is one undated section and shows neither. */
+.explore-feed-day + .explore-feed-day {
+  @apply mt-6;
+}
+
+.explore-feed-month-title {
+  @apply mb-3 text-xl font-semibold;
+  color: hsl(var(--foreground));
+}
+
+.explore-feed-day-title {
+  @apply mb-2 text-sm font-medium;
+  color: hsl(var(--muted-foreground));
+}
+
 .gallery-masonry.is-virtual {
   position: relative;
   display: block;
