@@ -264,7 +264,7 @@ export function SettingsSubscriptionsRouteView() {
     <SettingsSubpage
       title="Subscriptions"
       back={
-        <Link to="/app/explore" search={{ feed: 'subscribed' }} className="btn btn-link mb-3">
+        <Link to="/app/explore" search={{ feed: 'subscribed' }} className="btn btn-link">
           <ChevronLeft className="size-4" aria-hidden="true" />
           Back to Subscriptions
         </Link>

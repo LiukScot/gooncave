@@ -16,12 +16,14 @@ export function SettingsSubpage({
 }) {
   return (
     <div className="page-chrome">
-      {back ?? (
-        <Link to="/app/settings" className="btn btn-link mb-3">
-          <ChevronLeft className="size-4" aria-hidden="true" />
-          Back to Settings
-        </Link>
-      )}
+      <div className="settings-subpage-back mb-3">
+        {back ?? (
+          <Link to="/app/settings" className="btn btn-link">
+            <ChevronLeft className="size-4" aria-hidden="true" />
+            Back to Settings
+          </Link>
+        )}
+      </div>
       <div className="flex items-center gap-2 mb-4">
         <h1 className="uppercase font-semibold file-detail-section-title">
           {title}

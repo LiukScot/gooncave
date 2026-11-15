@@ -939,6 +939,17 @@ html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::befor
   app-region: no-drag;
 }
 
+/* A Settings page's way back sits in the band of the window buttons, level with them. */
+html.has-window-controls .page-shell:has(.settings-subpage-back) {
+  padding-top: 0;
+}
+
+.has-window-controls .settings-subpage-back {
+  display: flex;
+  align-items: center;
+  min-height: env(titlebar-area-height, 0px);
+}
+
 /* In the desktop window a link is a button of the app, not a web address to drag away. */
 .has-window-controls a {
   -webkit-user-drag: none;
