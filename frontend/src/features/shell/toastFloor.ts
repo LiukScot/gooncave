@@ -5,13 +5,24 @@ const FLOOR =
 /** A toast keeps at least this much of the screen above it, so a tall panel cannot push it off the top. */
 const MIN_ROOM_PX = 160;
 
-/** How much of the bottom of the screen the controls in FLOOR take, in pixels. */
+/** The toasts' column: sonner's list and the repair notice that sits where the toasts start. */
+const TOASTS = '[data-sonner-toaster], .library-repair-notice';
+
+/**
+ * How much of the bottom of the screen the controls in FLOOR take, in pixels. Only controls under
+ * the toasts' column count: a toast on the left of a wide window stays low beside the buttons on
+ * the right. With no toast on screen every control counts, as the column's place is unknown.
+ */
 export function measureToastFloor(): number {
   const height = window.innerHeight;
+  const columns = [...document.querySelectorAll(TOASTS)]
+    .map((element) => element.getBoundingClientRect())
+    .filter((box) => box.width > 0);
   let floor = 0;
   for (const element of document.querySelectorAll(FLOOR)) {
     const box = element.getBoundingClientRect();
     if (box.width === 0 || box.height === 0) continue;
+    if (columns.length && !columns.some((column) => box.left < column.right && box.right > column.left)) continue;
     floor = Math.max(floor, height - box.top);
   }
   return Math.min(floor, Math.max(0, height - MIN_ROOM_PX));

@@ -213,3 +213,25 @@ test('a site that stays offline is reported once, not again on every search', as
   await page.waitForTimeout(1_500);
   await expect(toast).toHaveCount(0);
 });
+
+test.describe('in a wide desktop window', () => {
+  test.use({ hasTouch: false, isMobile: false, viewport: { width: 1280, height: 800 } });
+
+  test('a toast on the left stays low beside the corner buttons on the right', async ({ page }) => {
+    await page.goto('/app/gallery');
+    // The first card is a video, whose middle is its play button.
+    await page.getByRole('button', { name: /landscape\.png/ }).click();
+    await expect(page.locator('.file-detail-panel-current .file-detail-tags')).toBeVisible();
+    const actions = page.locator('.phone-actions');
+    await expect(actions).toBeVisible();
+    const height = await actions.evaluate((element) => window.innerHeight - element.getBoundingClientRect().top);
+    // Sonner's column in the left corner, as a toast puts it there.
+    await page.evaluate(() => {
+      const column = document.createElement('ol');
+      column.setAttribute('data-sonner-toaster', '');
+      column.style.cssText = 'position:fixed;left:16px;bottom:16px;width:356px;height:48px';
+      document.body.append(column);
+    });
+    await expect.poll(() => toastGap(page)).toBeLessThan(height);
+  });
+});
