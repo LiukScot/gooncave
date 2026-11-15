@@ -1078,6 +1078,11 @@ html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::befor
   display: none;
 }
 
+/* The bar spaces its buttons apart; this one is a button itself, its arrow beside its text. */
+.has-window-controls .window-bar-back {
+  gap: 0.375rem;
+}
+
 /* Pinned up into the bar, the heading's title steps down a size so it sits in the bar's height
    instead of filling it. */
 .has-window-controls .page-header {
