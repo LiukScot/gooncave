@@ -213,8 +213,8 @@ export type ArtistSyncError = {
 export type SubscriptionSettings = {
   tags: string[];
   artists: string[];
-  /** The artists an enabled FurAffinity account's watchlist held at its last sync. */
-  furaffinityArtists: string[];
+  /** For each search and artist, the ids of the enabled sites where it has results. */
+  siteHits: Record<string, string[]>;
   artistErrors: ArtistSyncError[];
   targets: Array<{ kind: 'tag' | 'artist'; value: string }>;
 };
@@ -1661,7 +1661,7 @@ export const api = {
       headers: jsonHeaders,
       body: JSON.stringify(entry)
     });
-    return handle<SubscriptionTargets & { furaffinityArtists?: string[] }>(res);
+    return handle<SubscriptionTargets>(res);
   },
   getSubscriptionPools: async () => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/pools`);

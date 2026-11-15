@@ -134,7 +134,7 @@ export function useAddSubscriptionTag() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: api.addSubscriptionTag,
-    onSuccess: ({ tags, artists, furaffinityArtists }) => {
+    onSuccess: ({ tags, artists }) => {
       writeExploreSnapshot(null);
       queryClient.setQueryData<SubscriptionTargets>(
         queryKeys.settings.subscriptionTags(),
@@ -148,8 +148,6 @@ export function useAddSubscriptionTag() {
                 ...current,
                 tags,
                 artists,
-                furaffinityArtists:
-                  furaffinityArtists ?? current.furaffinityArtists,
                 targets: [
                   ...tags.map((value) => ({ kind: 'tag' as const, value })),
                   ...artists.map((value) => ({ kind: 'artist' as const, value }))

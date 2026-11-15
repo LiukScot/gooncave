@@ -190,22 +190,39 @@ const subscriptionsFetch = () =>
       return Response.json({
         tags: ['red fox', 'wolf'],
         artists: ['rukis', 'nawka'],
-        furaffinityArtists: ['rukis'],
+        siteHits: { 'red fox': ['e6'], wolf: ['e6', 'fa'], rukis: ['fa'] },
         artistErrors: [],
         targets: []
+      });
+    }
+    if (url.endsWith('/booru-sites')) {
+      return Response.json({
+        sites: [
+          { id: 'e6', name: 'e621', engine: 'e621', baseUrl: 'https://e621.net', enabled: true },
+          { id: 'fa', name: 'FurAffinity', engine: 'furaffinity', baseUrl: 'https://www.furaffinity.net', enabled: true }
+        ]
       });
     }
     return Response.json({ tags: [], suggestions: [] });
   });
 
-it('subscribes from one input and shows where each entry comes from', async () => {
+it('subscribes from one input and shows the sites where each entry has results', async () => {
   const fetchMock = subscriptionsFetch();
   vi.stubGlobal('fetch', fetchMock);
   const container = await render();
   await waitFor(() => container.textContent?.includes('Fox Comic') ?? false);
   expect(container.querySelector('input[placeholder="Artist username"]')).toBeNull();
-  expect(container.querySelectorAll('img[alt="GoonCave"]')).toHaveLength(3);
-  expect(container.querySelectorAll('[aria-label="FurAffinity"]')).toHaveLength(1);
+  await waitFor(() => container.querySelectorAll('.subscription-row [role="img"]').length > 0);
+  const logos = (title: string) =>
+    Array.from(
+      Array.from(container.querySelectorAll('.subscription-row'))
+        .find((row) => row.querySelector('.subscription-row-title')?.textContent === title)
+        ?.querySelectorAll('[role="img"]') ?? []
+    ).map((node) => node.getAttribute('aria-label'));
+  expect(logos('red fox')).toEqual(['e621']);
+  expect(logos('wolf')).toEqual(['e621', 'FurAffinity']);
+  expect(logos('rukis')).toEqual(['FurAffinity']);
+  expect(logos('nawka')).toEqual([]);
 
   const input = container.querySelector<HTMLInputElement>('#subscription-new-search');
   if (!input) throw new Error('Search input was not rendered');
@@ -219,7 +236,7 @@ it('subscribes from one input and shows where each entry comes from', async () =
   expect(JSON.parse(post?.[1]?.body as string)).toEqual({ search: 'newone' });
 });
 
-it('filters the list by name and by where each entry comes from', async () => {
+it('filters the list by name and by site', async () => {
   vi.stubGlobal('fetch', subscriptionsFetch());
   const container = await render();
   await waitFor(() => container.textContent?.includes('Fox Comic') ?? false);
@@ -233,17 +250,22 @@ it('filters the list by name and by where each entry comes from', async () => {
   await act(async () => setValue(filter, 'FOX'));
   expect(titles()).toEqual(['red fox', 'Fox Comic']);
 
-  const source = (label: string) =>
-    Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="From"] button')).find(
+  await waitFor(() => document.querySelectorAll('.panel-pills button').length === 2);
+  const site = (label: string) =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('.panel-pills button')).find(
       (button) => button.textContent === label
     );
-  await act(async () => source('Pools')?.click());
-  expect(titles()).toEqual(['red fox']);
-  await act(async () => source('GoonCave')?.click());
+  await act(async () => site('e621')?.click());
+  expect(titles()).toEqual([]);
+  await act(async () => site('e621')?.click());
+  await act(async () => site('FurAffinity')?.click());
+  expect(titles()).toEqual(['red fox', 'Fox Comic']);
+  await act(async () => site('e621')?.click());
   expect(titles()).toEqual([]);
   expect(container.textContent).toContain('Nothing followed matches these filters.');
 
-  await act(async () => source('GoonCave')?.click());
+  await act(async () => site('e621')?.click());
+  await act(async () => site('FurAffinity')?.click());
   await act(async () => setValue(filter, ''));
-  expect(titles()).toEqual(['red fox', 'wolf', 'rukis', 'nawka']);
+  expect(titles()).toEqual(['red fox', 'wolf', 'rukis', 'nawka', 'Fox Comic']);
 });

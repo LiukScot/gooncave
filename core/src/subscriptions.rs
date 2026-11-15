@@ -70,9 +70,68 @@ async fn settings(State(db): State<Database>) -> Result<Json<Value>> {
     let guard = db.subscriptions.try_lock().ok();
     overview(&db, guard.is_some()).await
 }
-/// The saved searches and artists; `furaffinityArtists` are the artists an enabled FurAffinity
-/// account's watchlist held at its last sync. With `sync`, each account's watchlist is first
-/// merged into the artists; the caller holds the `subscriptions` lock.
+/// Whether a feed post carrying `post_tags` (normalized) matches the saved search `entry`.
+/// Meta terms (`score:>5`) and exclusions (`-x`) are ignored; an entry with no positive term
+/// matches nothing (shortcut: the real query semantics live on each site).
+fn matches_search(entry: &str, post_tags: &HashSet<String>) -> bool {
+    let (mut all, mut any, mut optional, mut positive) = (true, false, false, false);
+    for term in entry.split_whitespace() {
+        if term.starts_with('-') || term.contains(':') {
+            continue;
+        }
+        positive = true;
+        match term.strip_prefix('~') {
+            Some(tag) => {
+                optional = true;
+                any |= post_tags.contains(&crate::tags::normalize(tag));
+            }
+            None => all &= post_tags.contains(&crate::tags::normalize(term)),
+        }
+    }
+    positive && all && (any || !optional)
+}
+/// The ids of the enabled sites where each saved search and artist has results, read from the
+/// saved feed without any request. FurAffinity sites count an artist from the watchlist snapshot.
+fn site_hits(
+    c: &rusqlite::Connection,
+    sites: &[Site],
+    entries: &[&String],
+) -> Result<HashMap<String, Vec<String>>> {
+    let mut hits: HashMap<String, Vec<String>> = HashMap::new();
+    for site in sites.iter().filter(|s| s.enabled) {
+        let mut found: HashSet<&String> = HashSet::new();
+        if site.engine == "furaffinity" {
+            let seen = store::seen_artists(c, &site.id)?.unwrap_or_default();
+            found.extend(entries.iter().filter(|e| seen.contains(**e)));
+        } else {
+            let mut statement = c.prepare(
+                "SELECT post_json FROM subscription_feed_items WHERE user_id=?1 AND site_id=?2",
+            )?;
+            let mut rows = statement.query(params![OWNER_ID, site.id])?;
+            while let Some(row) = rows.next()? {
+                let post: Value = serde_json::from_str(&row.get::<_, String>(0)?)
+                    .map_err(|e| Error::Storage(format!("Invalid saved subscription post: {e}")))?;
+                let post_tags: HashSet<String> = post["tags"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|t| t["tag"].as_str().map(crate::tags::normalize))
+                    .collect();
+                found.extend(entries.iter().filter(|e| matches_search(e, &post_tags)));
+                if found.len() == entries.len() {
+                    break;
+                }
+            }
+        }
+        for entry in found {
+            hits.entry(entry.clone()).or_default().push(site.id.clone());
+        }
+    }
+    Ok(hits)
+}
+/// The saved searches and artists, with `siteHits`: the enabled sites where each has results.
+/// With `sync`, each FurAffinity account's watchlist is first merged into the artists; the
+/// caller holds the `subscriptions` lock.
 async fn overview(db: &Database, sync: bool) -> Result<Json<Value>> {
     let sites = boorus::sites(db).await?;
     let errors = if sync {
@@ -80,21 +139,14 @@ async fn overview(db: &Database, sync: bool) -> Result<Json<Value>> {
     } else {
         vec![]
     };
-    let accounts: Vec<String> = sites
-        .iter()
-        .filter(|s| s.enabled && s.engine == "furaffinity")
-        .map(|s| s.id.clone())
-        .collect();
-    let (tags, artists, watched) = db
+    let (tags, artists, hits) = db
         .call(move |c| {
-            let mut watched = HashSet::new();
-            for id in &accounts {
-                watched.extend(store::seen_artists(c, id)?.unwrap_or_default());
-            }
-            Ok((store::searches(c)?, store::artists(c)?, watched))
+            let (tags, artists) = (store::searches(c)?, store::artists(c)?);
+            let entries: Vec<&String> = tags.iter().chain(&artists).collect();
+            let hits = site_hits(c, &sites, &entries)?;
+            Ok((tags, artists, hits))
         })
         .await?;
-    let furaffinity: Vec<&String> = artists.iter().filter(|a| watched.contains(*a)).collect();
     let targets: Vec<Value> = tags
         .iter()
         .map(|tag| json!({"kind":"tag","value":tag}))
@@ -105,7 +157,7 @@ async fn overview(db: &Database, sync: bool) -> Result<Json<Value>> {
         )
         .collect();
     Ok(Json(
-        json!({"tags":tags,"artists":artists,"furaffinityArtists":furaffinity,"artistErrors":errors,"targets":targets}),
+        json!({"tags":tags,"artists":artists,"siteHits":hits,"artistErrors":errors,"targets":targets}),
     ))
 }
 /// Follow changes refused in a row before one account's sync stops for this round.
@@ -1339,6 +1391,40 @@ mod tests {
         assert_eq!(artists.len(), 2);
         let (tags, _) = added(&db, json!({"search":"-nawka"})).await;
         assert_eq!(tags.last().unwrap(), "-nawka");
+    }
+    #[test]
+    fn a_search_matches_posts_by_its_positive_tags_only() {
+        let post: HashSet<String> = ["a", "b"].map(String::from).into();
+        assert!(matches_search("a", &post));
+        assert!(matches_search("a b", &post));
+        assert!(!matches_search("a c", &post));
+        assert!(matches_search("~a ~c", &post));
+        assert!(!matches_search("~c ~d", &post));
+        assert!(matches_search("a -x score:>5", &post));
+        assert!(!matches_search("-x score:>5", &post));
+    }
+    #[tokio::test]
+    async fn site_hits_lists_the_enabled_sites_with_results() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let sites = db
+            .call(|c| {
+                c.execute("INSERT INTO user_booru_sites(id,user_id,name,engine,base_url,is_preset,enabled,sort_order,created_at,updated_at)
+                    VALUES ('fixture',?1,'Fixture','e621','https://fixture.example',0,1,0,'2026-10-12','2026-10-12')",[OWNER_ID])?;
+                store::insert(c, "fixture", &[json!({"remoteId":"7","tags":[{"tag":"wolf","category":"general"}],
+                    "previewUrl":null,"sampleUrl":null,"fileUrl":null})])?;
+                Ok(())
+            })
+            .await
+            .and(boorus::sites(&db).await)
+            .unwrap();
+        let (wolf, fox) = ("wolf score:>5".to_owned(), "fox".to_owned());
+        let hits = db
+            .call(move |c| site_hits(c, &sites, &[&wolf, &fox]))
+            .await
+            .unwrap();
+        assert_eq!(hits["wolf score:>5"], ["fixture"]);
+        assert!(!hits.contains_key("fox"));
     }
     #[tokio::test]
     async fn watching_a_new_artist_keeps_the_saved_furaffinity_feed() {

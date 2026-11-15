@@ -3,17 +3,18 @@ import { BookImage, Search, UserRound, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
-import type { PoolSubscription } from '@/api';
+import type { BooruSite, PoolSubscription } from '@/api';
 import { RemoteImage } from '@/features/explore/RemoteImage';
 import { normalizeSubscriptionSearch } from '@/features/explore/subscriptionFeed';
 import { SiteLogo } from '@/features/file-detail/SourcesDialog';
 import { TagSearchInput } from '@/features/library/TagSearchInput';
 import {
-  PanelMultiChoice,
   PanelSection,
+  PanelToggle,
   SearchPanel,
   type FilterChip
 } from '@/features/shell/SearchPanel';
+import { useBooruSites } from '@/hooks/booru-sites';
 import {
   useAddSubscriptionTag,
   useArtistSubscriptionMutation,
@@ -25,40 +26,22 @@ import {
 import { useErrorToast } from '@/lib/useErrorToast';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
-const SOURCES = [
-  { id: 'gooncave', label: 'GoonCave' },
-  { id: 'furaffinity', label: 'FurAffinity' },
-  { id: 'pools', label: 'Pools' }
-] as const;
-type Source = (typeof SOURCES)[number]['id'];
-
 const rows = (value: string): string[] =>
   value
     .split(/\r?\n/)
     .map((entry) => entry.trim())
     .filter(Boolean);
 
-/** Where a followed entry comes from: GoonCave, or an artist of a FurAffinity watchlist. */
-function Origin({ furaffinity }: { furaffinity: boolean }) {
-  return furaffinity ? (
-    <span
-      className="subscription-row-origin"
-      role="img"
-      aria-label="FurAffinity"
-    >
-      <SiteLogo
-        url="https://www.furaffinity.net"
-        className="subscription-row-origin"
-      />
+/** The logo of each site where a followed entry has results. */
+function SiteLogos({ sites }: { sites: BooruSite[] }) {
+  return (
+    <span className="subscription-row-origin">
+      {sites.map((site) => (
+        <span key={site.id} role="img" aria-label={site.name}>
+          <SiteLogo url={site.baseUrl} className="subscription-row-logo" />
+        </span>
+      ))}
     </span>
-  ) : (
-    <img
-      className="subscription-row-origin"
-      src="/favicon.png"
-      alt="GoonCave"
-      width={16}
-      height={16}
-    />
   );
 }
 
@@ -101,7 +84,8 @@ function Subscriptions() {
   const navigate = useNavigate();
   const tags = subscriptions.data?.tags ?? [];
   const artists = subscriptions.data?.artists ?? [];
-  const furaffinityArtists = subscriptions.data?.furaffinityArtists ?? [];
+  const siteHits = subscriptions.data?.siteHits ?? {};
+  const sites = (useBooruSites().data ?? []).filter((site) => site.enabled);
   const artistErrors = subscriptions.data?.artistErrors ?? [];
   const poolQuery = useSubscriptionPools();
   const pools = poolQuery.data?.pools ?? [];
@@ -112,19 +96,22 @@ function Subscriptions() {
   const artistError =
     followArtist.error?.message ?? unfollowArtist.error?.message;
   const [filterText, setFilterText] = useState('');
-  const [hiddenSources, setHiddenSources] = useState<Source[]>([]);
+  const [hiddenSites, setHiddenSites] = useState<Set<string>>(new Set());
   const query = filterText.trim().toLowerCase();
   const matches = (name: string) => name.toLowerCase().includes(query);
-  const shows = (source: Source) => !hiddenSources.includes(source);
-  const shownTags = shows('gooncave') ? tags.filter(matches) : [];
-  const shownArtists = artists.filter(
-    (artist) =>
-      shows(furaffinityArtists.includes(artist) ? 'furaffinity' : 'gooncave') &&
-      matches(artist)
+  const sitesOf = (entry: string) =>
+    sites.filter((site) => siteHits[entry]?.includes(site.id));
+  // An entry without results anywhere stays visible only while no site is hidden.
+  const shows = (entry: string) =>
+    matches(entry) &&
+    (hiddenSites.size === 0 ||
+      sitesOf(entry).some((site) => !hiddenSites.has(site.id)));
+  const shownTags = tags.filter(shows);
+  const shownArtists = artists.filter(shows);
+  const shownPools = pools.filter(
+    (pool) => matches(pool.name) && !hiddenSites.has(pool.siteId)
   );
-  const shownPools = shows('pools')
-    ? pools.filter((pool) => matches(pool.name))
-    : [];
+  const enabledSites = sites.filter((site) => !hiddenSites.has(site.id)).length;
   const filters: FilterChip[] = [
     ...(query
       ? [
@@ -135,16 +122,12 @@ function Subscriptions() {
           }
         ]
       : []),
-    ...(hiddenSources.length > 0
+    ...(hiddenSites.size > 0
       ? [
           {
-            key: 'sources',
-            label: `From ${
-              SOURCES.filter(({ id }) => shows(id))
-                .map(({ label }) => label)
-                .join(', ') || 'no source'
-            }`,
-            clear: () => setHiddenSources([])
+            key: 'sites',
+            label: `${enabledSites} of ${sites.length} sites`,
+            clear: () => setHiddenSites(new Set())
           }
         ]
       : [])
@@ -286,20 +269,28 @@ function Subscriptions() {
           />
         }
       >
-        <PanelSection label="From">
-          <PanelMultiChoice
-            label="From"
-            options={SOURCES.map(({ id, label }) => ({
-              label,
-              pressed: shows(id),
-              onToggle: () =>
-                setHiddenSources((current) =>
-                  current.includes(id)
-                    ? current.filter((source) => source !== id)
-                    : [...current, id]
-                )
-            }))}
-          />
+        <PanelSection
+          label="Sites"
+          aside={sites.length > 0 ? `${enabledSites} of ${sites.length}` : undefined}
+        >
+          <div className="panel-pills">
+            {sites.map((site) => (
+              <PanelToggle
+                key={site.id}
+                pressed={!hiddenSites.has(site.id)}
+                onToggle={() =>
+                  setHiddenSites((current) => {
+                    const next = new Set(current);
+                    if (!next.delete(site.id)) next.add(site.id);
+                    return next;
+                  })
+                }
+                icon={<SiteLogo url={site.baseUrl} className="panel-pill-logo" />}
+              >
+                {site.name}
+              </PanelToggle>
+            ))}
+          </div>
         </PanelSection>
       </SearchPanel>
 
@@ -325,7 +316,7 @@ function Subscriptions() {
                     <span className="subscription-row-text">
                       <span className="subscription-row-title">{search}</span>
                       <span className="subscription-row-meta">
-                        <Origin furaffinity={false} />
+                        <SiteLogos sites={sitesOf(search)} />
                       </span>
                     </span>
                   </button>
@@ -347,9 +338,7 @@ function Subscriptions() {
                     <span className="subscription-row-text">
                       <span className="subscription-row-title">{artist}</span>
                       <span className="subscription-row-meta">
-                        <Origin
-                          furaffinity={furaffinityArtists.includes(artist)}
-                        />
+                        <SiteLogos sites={sitesOf(artist)} />
                       </span>
                     </span>
                   </span>
@@ -377,6 +366,9 @@ function Subscriptions() {
                         {pool.name}
                       </span>
                       <span className="subscription-row-meta">
+                        <SiteLogos
+                          sites={sites.filter((site) => site.id === pool.siteId)}
+                        />{' '}
                         {pool.siteName} · {pool.postCount}{' '}
                         {pool.postCount === 1 ? 'page' : 'pages'}
                       </span>
