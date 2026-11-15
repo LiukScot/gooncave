@@ -959,6 +959,18 @@ html.has-window-controls::-webkit-scrollbar {
   display: none;
 }
 
+/* Without a system frame, a black page runs into whatever lies behind the window. The window gets
+   the menu's divider all round; its radius follows the corner the system rounds (GNOME's 12px). */
+html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::after {
+  content: '';
+  position: fixed;
+  z-index: 2147483647;
+  inset: 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  pointer-events: none;
+}
+
 .page-header-count {
   white-space: nowrap;
 }
