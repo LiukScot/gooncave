@@ -79,8 +79,8 @@ const PINCH_WHEEL_RATE = 4;
 const WHEEL_NOTCH = 100;
 
 /**
- * The zoom step of a wheel event with Ctrl held, for `zoomAtPointer`. A pinch's small steps are
- * scaled up; a mouse notch with Ctrl keeps its own size instead of jumping a whole e-fold.
+ * The zoom step of a wheel event, for `zoomAtPointer`. A pinch's small steps are scaled up; a
+ * mouse notch keeps its own size instead of jumping a whole e-fold.
  */
 export const pinchWheelDelta = (deltaY: number): number =>
   clamp(deltaY * PINCH_WHEEL_RATE, -WHEEL_NOTCH, WHEEL_NOTCH);
