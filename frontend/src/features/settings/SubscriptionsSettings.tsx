@@ -28,8 +28,8 @@ import {
 import { useErrorToast } from '@/lib/useErrorToast';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
-// About three rows of pills: a longer block of searches or artists folds there.
-const PILLS_FOLD = '7rem';
+// Four rows of pills and half of the fifth, which fades (app.css: .subscription-pills-fold).
+const PILLS_FOLD = 'var(--subscription-pills-fold)';
 // About one row of pool covers.
 const COVERS_FOLD = '17rem';
 
@@ -107,7 +107,7 @@ function SubscriptionGroup({
       <h3 className="appearance-group-title">
         {title} · {count}
       </h3>
-      <FoldedBox maxHeight={fold}>
+      <FoldedBox maxHeight={fold} className="subscription-fold">
         <div className={className}>{children}</div>
       </FoldedBox>
     </section>
