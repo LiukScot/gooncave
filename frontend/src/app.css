@@ -5610,10 +5610,31 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   }
 }
 
-.appearance-sections {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
+/* One group of six in two rows of three (six labels in one row do not fit a phone), rounded at
+   the block's own corners only. */
+.appearance-sections > .panel-choice {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.appearance-sections > .panel-choice > .btn {
+  border-radius: 0.5rem;
+}
+
+.appearance-sections > .panel-choice > .btn:nth-child(1) {
+  border-top-left-radius: 1rem;
+}
+
+.appearance-sections > .panel-choice > .btn:nth-child(3) {
+  border-top-right-radius: 1rem;
+}
+
+.appearance-sections > .panel-choice > .btn:nth-last-child(3) {
+  border-bottom-left-radius: 1rem;
+}
+
+.appearance-sections > .panel-choice > .btn:last-child {
+  border-bottom-right-radius: 1rem;
 }
 
 .appearance-mode {

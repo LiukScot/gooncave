@@ -77,7 +77,7 @@ test('a section hidden in Appearance stays hidden on every file', async ({ page 
 
   const fileUrl = page.url();
   await page.goto('/app/settings/appearance');
-  const tagsToggle = page.getByRole('group', { name: 'More sections shown under the file' }).getByRole('button', { name: 'Tags', exact: true });
+  const tagsToggle = page.getByRole('group', { name: 'Sections shown under the file' }).getByRole('button', { name: 'Tags', exact: true });
   await expect(tagsToggle).toHaveAttribute('aria-pressed', 'true');
   await tagsToggle.click();
   await expect(tagsToggle).toHaveAttribute('aria-pressed', 'false');
