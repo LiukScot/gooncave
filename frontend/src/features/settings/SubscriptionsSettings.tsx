@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
 import type { BooruSite, PoolSubscription } from '@/api';
+import { FoldedBox } from '@/components/FoldedBox';
 import { HelpPopover } from '@/components/HelpPopover';
 import { RemoteImage } from '@/features/explore/RemoteImage';
 import { normalizeSubscriptionSearch } from '@/features/explore/subscriptionFeed';
@@ -26,6 +27,11 @@ import {
 } from '@/hooks/settings';
 import { useErrorToast } from '@/lib/useErrorToast';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
+
+// About three rows of pills: a longer block of searches or artists folds there.
+const PILLS_FOLD = '7rem';
+// About one row of pool covers.
+const COVERS_FOLD = '17rem';
 
 const HELP =
   "Searches, artists and pools are stored in GoonCave and run on every configured booru. Spaces and operators such as score:>10 are kept. A single name that is an artist is followed as one: it is also synced both ways with each FurAffinity account’s watchlist, so following or unfollowing on either side is copied to the other. Other tags are never followed on FurAffinity.";
@@ -80,15 +86,18 @@ function SubscriptionItem({
   );
 }
 
-/** Searches, artists or pools: a titled block with how many it shows. */
+/** Searches, artists or pools: a titled block with how many it shows, folded past `fold`. */
 function SubscriptionGroup({
   title,
   count,
+  fold,
   className,
   children
 }: {
   title: string;
   count: number;
+  /** Any CSS length. */
+  fold: string;
   className: string;
   children: ReactNode;
 }) {
@@ -98,7 +107,9 @@ function SubscriptionGroup({
       <h3 className="appearance-group-title">
         {title} · {count}
       </h3>
-      <div className={className}>{children}</div>
+      <FoldedBox maxHeight={fold}>
+        <div className={className}>{children}</div>
+      </FoldedBox>
     </section>
   );
 }
@@ -318,7 +329,7 @@ function Subscriptions() {
       {tags.length || artists.length || pools.length ? (
         shownTags.length || shownArtists.length || shownPools.length ? (
           <>
-            <SubscriptionGroup title="Searches" count={shownTags.length} className="subscription-pills">
+            <SubscriptionGroup title="Searches" count={shownTags.length} fold={PILLS_FOLD} className="subscription-pills">
               {shownTags.map((search) => (
                 <SubscriptionItem
                   key={search}
@@ -339,7 +350,7 @@ function Subscriptions() {
                 />
               ))}
             </SubscriptionGroup>
-            <SubscriptionGroup title="Artists" count={shownArtists.length} className="subscription-pills">
+            <SubscriptionGroup title="Artists" count={shownArtists.length} fold={PILLS_FOLD} className="subscription-pills">
               {shownArtists.map((artist) => (
                 <SubscriptionItem
                   key={`artist:${artist}`}
@@ -356,7 +367,7 @@ function Subscriptions() {
                 />
               ))}
             </SubscriptionGroup>
-            <SubscriptionGroup title="Pools" count={shownPools.length} className="subscription-covers">
+            <SubscriptionGroup title="Pools" count={shownPools.length} fold={COVERS_FOLD} className="subscription-covers">
               {shownPools.map((pool) => (
                 <SubscriptionItem
                   key={`${pool.siteId}:${pool.poolId}`}
