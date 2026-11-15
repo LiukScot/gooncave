@@ -288,7 +288,7 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
         if response.status().is_success() || (!desired && response.status() == 404) {
             return Ok(());
         }
-        return Err(crate::booru_http::rejected(response.status(), "The site refused the favorite change. Check your credentials and permissions in Accounts."));
+        return Err(crate::booru_http::rejected(response, "The site refused the favorite change. Check your credentials and permissions in Accounts.").await);
     }
     if matches!(site.engine.as_str(), "e621" | "danbooru") {
         let response = t
@@ -317,9 +317,10 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
             return Ok(());
         }
         return Err(crate::booru_http::rejected(
-            response.status(),
+            response,
             "The site refused the favorite change. Check your credentials in Accounts and retry.",
-        ));
+        )
+        .await);
     }
     if site.engine == "furaffinity" {
         let view = web(site, &format!("/view/{id}/"))?;
@@ -337,9 +338,10 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
             .await?;
         if response.status().as_u16() >= 400 {
             return Err(crate::booru_http::rejected(
-                response.status(),
+                response,
                 "The site refused the favorite change. Refresh the session in Accounts.",
-            ));
+            )
+            .await);
         }
         let html = t.text(view, engines::web_headers(site)?).await?;
         if fa_action(site, &id, &html)?.0 == desired {
@@ -392,9 +394,10 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
         // A 404 while removing means the favorite is already gone.
         if response.status().as_u16() >= 400 && (desired || response.status() != 404) {
             return Err(crate::booru_http::rejected(
-                response.status(),
+                response,
                 "The site refused the favorite change. Refresh the session in Accounts.",
-            ));
+            )
+            .await);
         }
         if desired {
             // The newest favorite comes first, so a post just added shows on

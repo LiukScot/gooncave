@@ -161,10 +161,15 @@ fn status_message(status: u16) -> &'static str {
     }
 }
 
-/// A write the site rejected: an outage or rate limit says so, any other status gets `refused`.
-pub(crate) fn rejected(status: reqwest::StatusCode, refused: &str) -> Error {
-    match status.as_u16() {
-        429 | 500..=599 => remote(status_message(status.as_u16())),
+/// A write the site rejected: an outage (by status or by its page) or a rate limit says so, any
+/// other status gets `refused`.
+pub(crate) async fn rejected(response: reqwest::Response, refused: &str) -> Error {
+    let status = response.status().as_u16();
+    if offline_page(&error_page(response).await) {
+        return remote(OFFLINE);
+    }
+    match status {
+        429 | 500..=599 => remote(status_message(status)),
         _ => remote(refused),
     }
 }
@@ -558,17 +563,36 @@ mod tests {
         assert_eq!(site_error("s", "Site", OFFLINE)["code"], "SITE_OFFLINE");
         assert!(site_error("s", "Site", status_message(403))["code"].is_null());
     }
-    #[test]
-    fn an_offline_site_is_named_as_offline_not_as_a_refusal() {
+    #[tokio::test]
+    async fn an_offline_site_is_named_as_offline_not_as_a_refusal() {
         for status in [502, 503, 504, 522] {
             assert!(status_message(status).contains("offline"), "{status}");
         }
         assert!(status_message(500).contains("problem of its own"));
-        let error = rejected(reqwest::StatusCode::SERVICE_UNAVAILABLE, "refused").to_string();
+        let answer = |status: u16, page: &'static str| {
+            reqwest::Response::from(
+                axum::http::Response::builder()
+                    .status(status)
+                    .body(page)
+                    .unwrap(),
+            )
+        };
+        let error = rejected(answer(503, ""), "refused").await.to_string();
         assert!(error.contains("offline"), "{error}");
         assert_eq!(
-            rejected(reqwest::StatusCode::FORBIDDEN, "refused").to_string(),
+            rejected(answer(403, "<title>Denied</title>"), "refused")
+                .await
+                .to_string(),
             "refused"
+        );
+        assert_eq!(
+            rejected(
+                answer(403, "<title>FA is temporarily offline!</title>"),
+                "refused"
+            )
+            .await
+            .to_string(),
+            OFFLINE
         );
     }
     #[test]
