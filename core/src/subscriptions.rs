@@ -143,7 +143,6 @@ async fn sync_artists(db: &Database, t: &Transport, sites: &[Site]) -> Result<Ve
             continue;
         }
         let mut now = watched;
-        let mut changed = false;
         let mut failures_in_a_row = 0;
         for (artist, watch) in plan
             .watch
@@ -162,7 +161,6 @@ async fn sync_artists(db: &Database, t: &Transport, sites: &[Site]) -> Result<Ve
                 continue;
             }
             failures_in_a_row = 0;
-            changed = true;
             if watch {
                 now.push(artist.clone());
             } else {
@@ -171,10 +169,8 @@ async fn sync_artists(db: &Database, t: &Transport, sites: &[Site]) -> Result<Ve
         }
         let id = site.id.clone();
         db.call(move |c| {
+            // The saved feed stays: watching an artist brings only their new posts into the inbox.
             let tx = c.transaction()?;
-            if changed {
-                store::reset(&tx, Some(&id), false)?;
-            }
             // Device sync may have replaced the list during the requests above. Saving would
             // drop that change, and saving the watchlist alone would read its new artists as
             // removed here next time; both wait for the next sync, which starts from the new list.
@@ -698,6 +694,22 @@ async fn refresh_fa(
     let had_posts = known(db, site, None).await?;
     let (posts, next) = remote::page(t, site, None).await?;
     let reached = known(db, site, Some(posts.clone())).await?;
+    eprintln!(
+        "[developer] FurAffinity feed: {} posts on the newest page, {}; older pages {}",
+        posts.len(),
+        if !had_posts {
+            "first read"
+        } else if reached {
+            "joins the saved feed"
+        } else {
+            "a gap to the saved feed"
+        },
+        if state.feed_exhausted {
+            "all read"
+        } else {
+            "still to read"
+        }
+    );
     if !commit(db, site, posts, None, generation).await? {
         return Ok(());
     }
@@ -1206,6 +1218,38 @@ mod tests {
         let (local, seen) = local_and_seen(&db).await;
         assert_eq!(local, ["ghost", "real", "existing"]);
         assert_eq!(seen.unwrap(), ["existing", "real"]);
+        task.abort();
+    }
+    #[tokio::test]
+    async fn watching_a_new_artist_keeps_the_saved_furaffinity_feed() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let (site, fa, task) = fake_fa(&["old"], &["old", "new"], None).await;
+        let t = Transport {
+            allow_loopback: true,
+        };
+        db.call(|c| {
+            c.execute("INSERT INTO user_booru_sites(id,user_id,name,engine,base_url,is_preset,enabled,sort_order,created_at,updated_at)
+                VALUES ('fixture',?1,'Fixture','furaffinity','https://fixture.example',0,1,0,'2026-10-12','2026-10-12')",[OWNER_ID])?;
+            store::insert(
+                c,
+                "fixture",
+                &[json!({"remoteId":"7","tags":[],
+                "previewUrl":null,"sampleUrl":null,"fileUrl":null})],
+            )?;
+            store::save_seen_artists(c, "fixture", &["old".to_owned()])
+        })
+        .await
+        .unwrap();
+        save_local(&db, &["old", "new"]).await;
+        let errors = sync_artists(&db, &t, &[site]).await.unwrap();
+        assert!(errors.is_empty());
+        assert_eq!(watching(&fa), ["new", "old"]);
+        let saved = db
+            .call(|c| store::has_posts(c, "fixture", None))
+            .await
+            .unwrap();
+        assert!(saved);
         task.abort();
     }
     #[tokio::test]
