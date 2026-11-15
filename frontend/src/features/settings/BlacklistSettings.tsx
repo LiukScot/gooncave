@@ -13,22 +13,18 @@ type BlacklistTarget = 'applyToExplore' | 'applyToSubscriptions' | 'applyToGalle
 const TARGETS: {
   key: BlacklistTarget;
   label: string;
-  description: string;
 }[] = [
   {
     key: 'applyToExplore',
-    label: 'Explore',
-    description: 'Hide booru results carrying a blacklisted tag.'
+    label: 'Explore'
   },
   {
     key: 'applyToSubscriptions',
-    label: 'Subscriptions',
-    description: 'Hide subscribed posts carrying a blacklisted tag.'
+    label: 'Subscriptions'
   },
   {
     key: 'applyToGallery',
-    label: 'Gallery',
-    description: 'Hide your own files carrying a blacklisted tag.'
+    label: 'Gallery'
   }
 ];
 
@@ -89,17 +85,15 @@ export function BlacklistSettings() {
         ) : null}
       </div>
 
-      <div className="list-group">
-        {TARGETS.map(({ key, label, description }) => (
+      <h2 className="font-medium mb-2" id="blacklist-targets-heading">
+        Activate blacklist on:
+      </h2>
+      <div className="list-group" role="group" aria-labelledby="blacklist-targets-heading">
+        {TARGETS.map(({ key, label }) => (
           <div key={key} className="list-group-item flex items-center gap-3">
-            <span className="flex-1 min-w-0">
-              <label className="block font-medium" htmlFor={`blacklist-${key}`}>
-                {label}
-              </label>
-              <span className="block text-muted-foreground text-xs">
-                {description}
-              </span>
-            </span>
+            <label className="flex-1 min-w-0 font-medium" htmlFor={`blacklist-${key}`}>
+              {label}
+            </label>
             <input
               className="form-check-input shrink-0"
               type="checkbox"
