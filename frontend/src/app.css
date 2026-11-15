@@ -922,7 +922,19 @@ html {
   padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
 }
 
-.has-window-controls :is(.page-header, .pool-head) :is(button, a, input, [role='button']) {
+/* The band of the window buttons moves the window on every page, margins and pages without a
+   heading included. It lies behind the page, so the controls drawn over it keep their clicks. */
+html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::before {
+  content: '';
+  position: fixed;
+  z-index: -1;
+  inset: 0 0 auto;
+  height: env(titlebar-area-height, 0px);
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.has-window-controls :is(button, a, input, select, textarea, [role='button']) {
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
