@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { parseBlacklistInput } from './blacklist';
 import { TagDatabaseStatus } from './TagDatabaseStatus';
 
+import { PanelMultiChoice } from '@/features/shell/SearchPanel';
 import {
   useBlacklistSettings,
   useUpdateBlacklistSettings
@@ -85,26 +86,20 @@ export function BlacklistSettings() {
         ) : null}
       </div>
 
-      <h2 className="font-medium mb-2" id="blacklist-targets-heading">
-        Activate blacklist on:
-      </h2>
-      <div className="list-group" role="group" aria-labelledby="blacklist-targets-heading">
-        {TARGETS.map(({ key, label }) => (
-          <div key={key} className="list-group-item flex items-center gap-3">
-            <label className="flex-1 min-w-0 font-medium" htmlFor={`blacklist-${key}`}>
-              {label}
-            </label>
-            <input
-              className="form-check-input shrink-0"
-              type="checkbox"
-              id={`blacklist-${key}`}
-              name={`blacklist-${key}`}
-              checked={settings[key]}
-              onChange={() => toggle(key)}
-            />
-          </div>
-        ))}
-      </div>
+      <section className="appearance-group" aria-labelledby="blacklist-targets-heading">
+        <h2 id="blacklist-targets-heading" className="appearance-group-title">
+          Activate blacklist on
+        </h2>
+        <PanelMultiChoice
+          label="Activate blacklist on"
+          options={TARGETS.map(({ key, label }) => ({
+            label,
+            pressed: settings[key],
+            disabled: update.isPending,
+            onToggle: () => toggle(key)
+          }))}
+        />
+      </section>
 
       <TagDatabaseStatus />
 
