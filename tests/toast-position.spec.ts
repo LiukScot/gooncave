@@ -59,7 +59,8 @@ test('in a window narrow enough to reach the corner buttons, the toast stays abo
   await page.goto('/app/gallery');
   await page.locator('.gallery-thumb').first().click();
   await expect(page.locator('.file-detail-panel-current .file-detail-tags')).toBeVisible();
-  await page.setViewportSize({ width: 800, height: 600 });
+  // Up to 600px wide sonner's toasts span the whole width, over the corner buttons too.
+  await page.setViewportSize({ width: 500, height: 600 });
   await expect(page.locator('.phone-actions')).toBeVisible();
   const actions = await page.locator('.phone-actions').evaluate((element) => window.innerHeight - element.getBoundingClientRect().top);
   expect(await toastGap(page)).toBeGreaterThanOrEqual(actions);
@@ -225,13 +226,7 @@ test.describe('in a wide desktop window', () => {
     const actions = page.locator('.phone-actions');
     await expect(actions).toBeVisible();
     const height = await actions.evaluate((element) => window.innerHeight - element.getBoundingClientRect().top);
-    // Sonner's column in the left corner, as a toast puts it there.
-    await page.evaluate(() => {
-      const column = document.createElement('ol');
-      column.setAttribute('data-sonner-toaster', '');
-      column.style.cssText = 'position:fixed;left:16px;bottom:16px;width:356px;height:48px';
-      document.body.append(column);
-    });
+    // Before any toast exists too, so the first one does not land high and then drop.
     await expect.poll(() => toastGap(page)).toBeLessThan(height);
   });
 });

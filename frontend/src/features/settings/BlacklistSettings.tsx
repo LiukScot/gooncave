@@ -86,8 +86,8 @@ export function BlacklistSettings() {
         ) : null}
       </div>
 
-      <section className="appearance-group" aria-labelledby="blacklist-targets-heading">
-        <h2 id="blacklist-targets-heading" className="appearance-group-title">
+      <section className="appearance-group">
+        <h2 className="appearance-group-title">
           Activate blacklist on
         </h2>
         <PanelMultiChoice
@@ -95,7 +95,6 @@ export function BlacklistSettings() {
           options={TARGETS.map(({ key, label }) => ({
             label,
             pressed: settings[key],
-            disabled: update.isPending,
             onToggle: () => toggle(key)
           }))}
         />
