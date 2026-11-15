@@ -912,7 +912,7 @@ html {
 /* The desktop window has no system title bar (desktop/electron/main.js): the
    strip along the top, the headings and the menu's name move the window, and
    a double click maximizes it. */
-.has-window-controls :is(.page-header, .pool-head, .settings-subpage-head, .app-menu-brand) {
+.has-window-controls :is(.page-header, .pool-head, .app-menu-brand) {
   -webkit-app-region: drag;
   app-region: drag;
 }
@@ -941,6 +941,9 @@ html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::befor
   app-region: drag;
 }
 
+/* Chromium stacks drag regions in document order, not by z-index: a drag region later in the page
+   takes the clicks of a button before it. So the bar's buttons sit inside their drag region or
+   after it, never before one that overlaps them (as the Settings title row would). */
 .has-window-controls :is(button, a, input, select, textarea, [role='button']) {
   -webkit-app-region: no-drag;
   app-region: no-drag;
