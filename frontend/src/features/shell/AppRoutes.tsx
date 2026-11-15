@@ -1,5 +1,5 @@
-import { Link, Outlet, useRouter, useSearch } from '@tanstack/react-router';
-import { ChevronLeft, Images } from 'lucide-react';
+import { Outlet, useRouter, useSearch } from '@tanstack/react-router';
+import { Images } from 'lucide-react';
 import { useEffect } from 'react';
 
 import { useAppShellContext } from './AppShell';
@@ -263,12 +263,6 @@ export function SettingsSubscriptionsRouteView() {
   return (
     <SettingsSubpage
       title="Subscriptions"
-      back={
-        <Link to="/app/explore" search={{ feed: 'subscribed' }} className="btn btn-link">
-          <ChevronLeft className="size-4" aria-hidden="true" />
-          Back to Subscriptions
-        </Link>
-      }
     >
       <div className="row g-0 settings-sections">
         <SubscriptionsSettings />

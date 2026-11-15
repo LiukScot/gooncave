@@ -667,7 +667,8 @@ test.describe('on a phone', () => {
     await page.getByRole('button', { name: 'Open menu' }).click();
     await page.getByRole('navigation', { name: 'Main menu' }).getByRole('link', { name: 'Subscriptions' }).click();
     await expect(page.getByRole('heading', { name: 'Subscriptions', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Manage subscriptions' })).toBeVisible();
+    // Outside the desktop window's top bar, subscriptions are managed from Settings.
+    await expect(page.getByRole('link', { name: 'Manage subscriptions' })).toBeHidden();
     await expect(page.locator('[data-read-key="one:2"]')).toBeVisible();
 
     await page.getByRole('button', { name: /^Filter this feed/ }).click();
@@ -682,7 +683,7 @@ test.describe('on a phone', () => {
     await expect(page).toHaveURL(/post=/);
     await page.goBack();
     await expect(page).toHaveURL(/feed=subscribed$/);
-    await expect(page.getByRole('heading', { name: 'Subscriptions', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Subscriptions', exact: true })).toBeVisible();
 
     // Back returns to Explore, with its order where it was left
     await page.goBack();
@@ -902,4 +903,12 @@ test.describe('with a mouse', () => {
     await expect(page.locator('.app-menu')).toBeHidden();
     await expect(page.locator('.search-lens')).toBeHidden();
   });
+});
+
+test('subscriptions are managed from Settings', async ({ page }) => {
+  await page.goto('/app/settings');
+  await page.locator('.page-shell').getByRole('link', { name: /^Subscriptions/ }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Subscriptions', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Back to Settings' }).click();
+  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
 });

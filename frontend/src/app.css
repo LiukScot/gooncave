@@ -910,10 +910,9 @@ html {
 }
 
 /* The desktop window has no system title bar (desktop/electron/main.js): the
-   heading and the menu's name move the window, a double click maximizes it,
-   and the heading stays in place to hold the window buttons the system draws
-   over its right end. */
-.has-window-controls :is(.page-header, .pool-head, .app-menu-brand) {
+   strip along the top, the headings and the menu's name move the window, and
+   a double click maximizes it. */
+.has-window-controls :is(.page-header, .pool-head, .settings-subpage-head, .app-menu-brand) {
   -webkit-app-region: drag;
   app-region: drag;
 }
@@ -947,9 +946,10 @@ html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::befor
   app-region: no-drag;
 }
 
-.has-window-controls :is(.page-header-count, .settings-subpage-back, .pool-head-bar, .window-bar-back) {
+.has-window-controls :is(.page-header-bar, .settings-subpage-back, .pool-head-bar, .window-bar-back) {
   position: fixed;
-  z-index: 350;
+  /* Above the pinned title rows, under the open menu. */
+  z-index: 450;
   top: 0;
   right: var(--window-bar-end);
   display: flex;
@@ -959,9 +959,31 @@ html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::befor
   margin: 0;
 }
 
-/* With their buttons in the bar, the title keeps the place of every page's heading. */
-.has-window-controls :is(.settings-subpage-back + div, .pool-head-title) {
+/* Outside the desktop window a heading's count sits in its row, and its bar action is reached from
+   Settings instead. */
+.page-header-bar {
+  display: contents;
+}
+
+.page-header-bar-action {
+  display: none;
+}
+
+.has-window-controls .page-header-bar-action {
+  display: inline-flex;
+}
+
+/* With their buttons in the bar, the title keeps the place of every page's heading, pinned over
+   the bar like .page-header so the bar never hides it. */
+.has-window-controls :is(.settings-subpage-head, .pool-head-title) {
   min-height: 2.75rem;
+}
+
+.has-window-controls :is(.settings-subpage-head, .pool-head) {
+  position: sticky;
+  z-index: 400;
+  top: 0;
+  background: hsl(var(--page-background));
 }
 
 .has-window-controls .pool-head-title {

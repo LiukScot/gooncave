@@ -341,6 +341,14 @@ export function ExploreView({
           <PageTitle
             icon={<TitleIcon className="page-title-icon" aria-hidden="true" />}
             count={ctl.posts.length > 0 ? count : undefined}
+            barAction={
+              ctl.sort === 'subscribed' ? (
+                <Link to="/app/settings/subscriptions" className="btn btn-link page-header-bar-action">
+                  <Settings2 className="size-4" aria-hidden="true" />
+                  Manage subscriptions
+                </Link>
+              ) : undefined
+            }
           >
             {title}
           </PageTitle>
@@ -509,17 +517,6 @@ export function ExploreView({
                       )}
                     </SearchPanel>
                   )}
-                  {ctl.sort === 'subscribed' ? (
-                    <div className="mb-4">
-                      <Link
-                        to="/app/settings/subscriptions"
-                        className="btn btn-outline-light btn-sm"
-                      >
-                        <Settings2 className="size-4" aria-hidden="true" />
-                        Manage subscriptions
-                      </Link>
-                    </div>
-                  ) : null}
 
                   {ctl.slowSites.map((site) => (
                     <div

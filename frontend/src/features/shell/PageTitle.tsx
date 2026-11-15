@@ -53,11 +53,14 @@ function useHiddenWhileScrollingDown(): boolean {
 export function PageTitle({
   icon,
   count,
+  barAction,
   children
 }: {
   icon: ReactNode;
   /** What the view is showing, such as "120 items". */
   count?: string;
+  /** A link shown only in the desktop window's top bar, after the count. */
+  barAction?: ReactNode;
   children: ReactNode;
 }) {
   const setOpen = useAppMenuStore((state) => state.setOpen);
@@ -77,11 +80,14 @@ export function PageTitle({
         {children}
       </h1>
       <OfflineChip />
-      {count ? (
-        <span className="page-header-count text-muted-foreground text-sm">
-          {count}
-        </span>
-      ) : null}
+      <span className="page-header-bar">
+        {count ? (
+          <span className="page-header-count text-muted-foreground text-sm">
+            {count}
+          </span>
+        ) : null}
+        {barAction}
+      </span>
     </div>
   );
 }

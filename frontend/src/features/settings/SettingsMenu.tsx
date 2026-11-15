@@ -7,6 +7,7 @@ import {
   FolderSync,
   Keyboard,
   Palette,
+  Rss,
   ScanSearch,
   Settings,
   Sparkles,
@@ -23,6 +24,7 @@ const SETTINGS_ITEMS: {
     | '/app/settings/file-sources'
     | '/app/settings/duplicates'
     | '/app/settings/accounts'
+    | '/app/settings/subscriptions'
     | '/app/settings/shortcuts'
     | '/app/settings/blacklist'
     | '/app/settings/appearance'
@@ -51,6 +53,12 @@ const SETTINGS_ITEMS: {
     label: 'Accounts',
     description: 'Set up your accounts and sync favorites.',
     icon: UsersRound
+  },
+  {
+    to: '/app/settings/subscriptions',
+    label: 'Subscriptions',
+    description: 'Follow searches, artists and pools across your sites.',
+    icon: Rss
   },
   {
     to: '/app/settings/file-sources',
