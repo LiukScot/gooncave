@@ -8,7 +8,7 @@ import {
   useUpdateBlacklistSettings
 } from '@/hooks/settings';
 
-type BlacklistTarget = 'applyToExplore' | 'applyToGallery';
+type BlacklistTarget = 'applyToExplore' | 'applyToSubscriptions' | 'applyToGallery';
 
 const TARGETS: {
   key: BlacklistTarget;
@@ -19,6 +19,11 @@ const TARGETS: {
     key: 'applyToExplore',
     label: 'Explore',
     description: 'Hide booru results carrying a blacklisted tag.'
+  },
+  {
+    key: 'applyToSubscriptions',
+    label: 'Subscriptions',
+    description: 'Hide subscribed posts carrying a blacklisted tag.'
   },
   {
     key: 'applyToGallery',

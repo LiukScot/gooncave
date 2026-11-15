@@ -267,7 +267,7 @@ async fn shortcut_and_blacklist_contracts_match_the_reference() {
         .unwrap();
     assert_eq!(
         saved,
-        json!({"tags": ["sample_tag", "mixed_case"], "applyToGallery": true, "applyToExplore": true})
+        json!({"tags": ["sample_tag", "mixed_case"], "applyToGallery": true, "applyToExplore": true, "applyToSubscriptions": true})
     );
     assert_eq!(
         client

@@ -191,13 +191,15 @@ export type BlacklistSettings = {
   tags: string[];
   applyToExplore: boolean;
   applyToGallery: boolean;
+  applyToSubscriptions: boolean;
 };
 
 /** Mirrors the backend defaults, used while the real settings load. */
 export const BLACKLIST_DEFAULTS: BlacklistSettings = {
   tags: [],
   applyToExplore: true,
-  applyToGallery: false
+  applyToGallery: false,
+  applyToSubscriptions: true
 };
 
 /** The saved searches and followed artists, as stored. */

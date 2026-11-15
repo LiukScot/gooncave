@@ -39,15 +39,30 @@ pub fn read(connection: &Connection, section: &str) -> Result<Value> {
             settings
         }
         "shortcuts" => json!({"bindings": read_setting(connection, "shortcuts.bindings", &json!({}))?}),
-        "blacklist" => read_setting(connection, "blacklist.settings", &json!({"tags": [], "applyToExplore": true, "applyToGallery": false}))?,
+        "blacklist" => {
+            let mut value = read_setting(connection, "blacklist.settings", &json!({"tags": [], "applyToExplore": true, "applyToGallery": false, "applyToSubscriptions": true}))?;
+            // Saved before Subscriptions had their own switch, when Explore's covered them.
+            if let Some(settings) = value.as_object_mut() {
+                if !settings.contains_key("applyToSubscriptions") {
+                    let explore = settings.get("applyToExplore").cloned().unwrap_or(json!(true));
+                    settings.insert("applyToSubscriptions".into(), explore);
+                }
+            }
+            value
+        }
         _ => return Err(Error::Unavailable("These settings are not available in this development build. Use Extra, Shortcuts or Blacklist settings.")),
     };
     validate(section, &value)
         .map_err(|error| Error::Storage(format!("invalid saved {section} settings: {error}")))?;
     if section == "blacklist"
-        && ["tags", "applyToExplore", "applyToGallery"]
-            .iter()
-            .any(|key| value.get(key).is_none())
+        && [
+            "tags",
+            "applyToExplore",
+            "applyToGallery",
+            "applyToSubscriptions",
+        ]
+        .iter()
+        .any(|key| value.get(key).is_none())
     {
         return Err(Error::Storage(
             "Saved blacklist settings are incomplete.".into(),
@@ -130,7 +145,9 @@ fn validate(section: &str, value: &Value) -> Result<()> {
             ("extra", key) if EXTRA_KEYS.iter().any(|(name, _, _)| key == *name) => {
                 value.is_boolean()
             }
-            ("blacklist", "applyToExplore" | "applyToGallery") => value.is_boolean(),
+            ("blacklist", "applyToExplore" | "applyToGallery" | "applyToSubscriptions") => {
+                value.is_boolean()
+            }
             ("blacklist", "tags") => value.as_array().is_some_and(|tags| {
                 tags.len() <= 500
                     && tags.iter().all(|tag| {
@@ -176,6 +193,27 @@ mod tests {
             );
             assert_eq!(read(c, "extra")?["doubleTap"], "exit");
             assert!(update(c, "extra", json!({"doubleTap": "off"})).is_err());
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_blacklist_saved_before_the_subscriptions_switch_keeps_hiding_what_explore_hid() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        db.call(|c| {
+            assert_eq!(read(c, "blacklist")?["applyToSubscriptions"], true);
+            write_setting(
+                c,
+                "blacklist.settings",
+                &json!({"tags": ["x"], "applyToExplore": false, "applyToGallery": false}),
+            )?;
+            assert_eq!(read(c, "blacklist")?["applyToSubscriptions"], false);
+            let saved = update(c, "blacklist", json!({"applyToSubscriptions": true}))?;
+            assert_eq!(saved["applyToSubscriptions"], true);
+            assert_eq!(saved["applyToExplore"], false);
             Ok(())
         })
         .await

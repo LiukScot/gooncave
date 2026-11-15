@@ -399,11 +399,13 @@ export function useExploreController({
   const hiddenTags = useMemo(
     () =>
       new Set(
-        blacklist.applyToExplore
+        (sort === 'subscribed'
+          ? blacklist.applyToSubscriptions
+          : blacklist.applyToExplore)
           ? effectiveBlacklist(blacklist.tags, tagQuery)
           : []
       ),
-    [blacklist.applyToExplore, blacklist.tags, tagQuery]
+    [blacklist.applyToExplore, blacklist.applyToSubscriptions, blacklist.tags, sort, tagQuery]
   );
 
   const siteById = useMemo(
