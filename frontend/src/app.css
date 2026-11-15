@@ -821,9 +821,6 @@
   height: 100%;
   padding: calc(1rem + env(safe-area-inset-top)) 0.75rem calc(1rem + env(safe-area-inset-bottom));
   overflow-y: auto;
-  /* Controls, not text to copy: a press that drifts would select the entries. */
-  -webkit-user-select: none;
-  user-select: none;
 }
 
 .app-menu-brand {
@@ -919,9 +916,6 @@ html {
 .has-window-controls :is(.page-header, .pool-head, .app-menu-brand) {
   -webkit-app-region: drag;
   app-region: drag;
-  /* A press that starts a window move must not select the heading instead. */
-  -webkit-user-select: none;
-  user-select: none;
 }
 
 .has-window-controls :is(.page-header, .pool-head) {
@@ -936,11 +930,6 @@ html {
 /* In the desktop window a link is a button of the app, not a web address to drag away. */
 .has-window-controls a {
   -webkit-user-drag: none;
-}
-
-.has-window-controls .page-header input {
-  -webkit-user-select: text;
-  user-select: text;
 }
 
 .has-window-controls .page-header.is-scrolled-away:not(:has(:focus-visible)) {
@@ -1029,9 +1018,6 @@ html.has-window-controls::-webkit-scrollbar {
 
 /* What narrows the view, under the title. */
 .active-filters {
-  /* Buttons, not text: a press that drifts would select their labels. */
-  -webkit-user-select: none;
-  user-select: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2432,9 +2418,6 @@ html.panel-over-keyboard #root {
 
 .file-detail-media-wrap {
   position: relative;
-  /* A double click opens fullscreen; Chromium would also select the picture
-     and paint it with the selection colour. */
-  user-select: none;
   /* Full width even when the picture is narrower: the band behind it, and
      the buttons and gestures on it, run edge to edge. */
   width: 100%;
@@ -3942,7 +3925,6 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   color: hsl(var(--primary-foreground));
   background: hsl(var(--primary));
   cursor: help;
-  user-select: none;
   flex-shrink: 0;
   margin-left: 0.35rem;
   vertical-align: middle;

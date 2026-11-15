@@ -29,6 +29,7 @@
     "@tanstack/react-query-devtools": "^5.104.5",
     "@tanstack/react-router": "^1.170.46",
     "@tanstack/react-virtual": "^3.14.25",
+    "@tauri-apps/api": "^2.12.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.61.0",

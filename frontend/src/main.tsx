@@ -4,10 +4,10 @@ import './index.css';
 import './app.css';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { isTauri } from '@tauri-apps/api/core';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { api } from './api';
 import App from './App';
 import { ConfirmProvider } from './components/confirm-dialog';
 import { Toaster } from './components/ui/sonner';
@@ -16,7 +16,6 @@ import { installExternalLinks } from './lib/externalLinks';
 import { listenForHaptics } from './lib/haptics';
 import { applyScreenCorner, isIos } from './lib/platform';
 import { createQueryClient } from './lib/query-client';
-import { queryKeys } from './lib/query-keys';
 import { installWindowErrorLog } from './lib/windowErrorLog';
 import { useAppearanceStore } from './stores/appearanceStore';
 
@@ -52,13 +51,8 @@ useAppearanceStore.subscribe(applyAppearance);
 
 const queryClient = createQueryClient();
 
-// The same query useDeviceProfile reads, so the profile is fetched once.
-queryClient
-  .fetchQuery({ queryKey: queryKeys.device, queryFn: api.getDeviceProfile, staleTime: Infinity })
-  .then((profile) => {
-    if (profile.capabilities?.haptics === true) listenForHaptics();
-  })
-  .catch((error: unknown) => console.error('[developer] Could not read the device profile for haptics', error));
+// Only the iPhone shell is Tauri; desktop is Electron and the web is a browser.
+if (isTauri()) listenForHaptics();
 
 const root = createRoot(container);
 root.render(

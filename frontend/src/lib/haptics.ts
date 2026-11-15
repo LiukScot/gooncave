@@ -1,4 +1,4 @@
-import { api } from '@/api';
+import { invoke } from '@tauri-apps/api/core';
 
 const TOUCHABLE =
   'button, a[href], [role=button], [role=switch], [role=checkbox], [role=menuitem], [role=option], [role=tab], [role=slider], input, select, label, summary';
@@ -7,7 +7,7 @@ const TOUCHABLE =
 export const PRESS_CHANGE_MS = 600;
 
 /** Gives a haptic on touch controls and value changes. Returns the cleanup. */
-export function listenForHaptics(impact: () => Promise<void> = api.hapticImpact): () => void {
+export function listenForHaptics(impact: () => Promise<void> = () => invoke('haptic')): () => void {
   let lastPress = -Infinity;
   let stopped = false;
 

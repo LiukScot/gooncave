@@ -69,7 +69,6 @@ mod native {
     };
 
     use gooncave_core::eprintln;
-    use gooncave_core::native_haptics::{self, Haptics};
     use gooncave_core::native_share::{self, ShareItem, ShareSheet};
     use gooncave_core::photos::{self, Pending, PhotoLibrary, Picks};
     use libloading::Library;
@@ -127,9 +126,7 @@ mod native {
                 if SWIFT.set(swift).is_ok() {
                     photos::register(Box::new(Native));
                     native_share::register(Box::new(Native));
-                    if SWIFT.get().is_some_and(|swift| swift.haptic.is_some()) {
-                        native_haptics::register(Box::new(Native));
-                    } else {
+                    if SWIFT.get().is_some_and(|swift| swift.haptic.is_none()) {
                         eprintln!("[developer] The Swift library has no gooncave_haptic; haptic feedback is off");
                     }
                     eprintln!("[developer] Adding from Photos and the system share sheet are on");
@@ -182,13 +179,15 @@ mod native {
         }
     }
 
-    impl Haptics for Native {
-        fn impact(&self) {
-            if let Some(haptic) = SWIFT.get().and_then(|swift| swift.haptic) {
-                // SAFETY: `haptic` is the Swift function loaded above; it takes nothing and answers nothing.
-                unsafe { haptic() };
-            }
-        }
+    /// Gives one medium, short tap. Does not wait for it.
+    pub fn haptic() -> Result<(), String> {
+        let haptic = SWIFT
+            .get()
+            .and_then(|swift| swift.haptic)
+            .ok_or("Haptic feedback needs the iPhone app.")?;
+        // SAFETY: `haptic` is the Swift function loaded above; it takes nothing and answers nothing.
+        unsafe { haptic() };
+        Ok(())
     }
 
     impl ShareSheet for Native {
@@ -224,7 +223,7 @@ mod native {
 }
 
 #[cfg(target_os = "ios")]
-pub use native::start;
+pub use native::{haptic, start};
 
 #[cfg(test)]
 mod tests {
