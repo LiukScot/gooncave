@@ -172,25 +172,51 @@ pub(crate) fn rejected(status: reqwest::StatusCode, refused: &str) -> Error {
 /// `Error::Refused` code for a FurAffinity user page that answers "This user cannot be found."
 pub(crate) const USER_NOT_FOUND: &str = "FA_USER_NOT_FOUND";
 const USER_NOT_FOUND_PAGE: &str = "This user cannot be found.";
-const USER_NOT_FOUND_READ: usize = 64 * 1024;
+const ERROR_PAGE_READ: usize = 64 * 1024;
 
-/// A 400 answer whose page says the user does not exist; any other body is read no further.
-async fn missing_user(mut response: reqwest::Response) -> bool {
+/// The start of an error page, enough to read what it says.
+async fn error_page(mut response: reqwest::Response) -> String {
     let mut body = Vec::new();
-    while body.len() < USER_NOT_FOUND_READ {
+    while body.len() < ERROR_PAGE_READ {
         match response.chunk().await {
             Ok(Some(chunk)) => body.extend_from_slice(&chunk),
             _ => break,
         }
     }
-    String::from_utf8_lossy(&body).contains(USER_NOT_FOUND_PAGE)
+    String::from_utf8_lossy(&body).into_owned()
 }
 
-fn checked(response: reqwest::Response) -> Result<reqwest::Response> {
-    if !response.status().is_success() {
-        return Err(remote(status_message(response.status().as_u16())));
+/// Whether a page's title says the site is down: FurAffinity answers its outages with 403 and
+/// "FA is temporarily offline!", which by status alone reads as a refused account.
+fn offline_page(page: &str) -> bool {
+    let lower = page.to_ascii_lowercase();
+    let title = lower
+        .split_once("<title")
+        .and_then(|(_, rest)| rest.split_once("</title>"))
+        .map_or("", |(title, _)| title);
+    title.contains("offline") || title.contains("maintenance")
+}
+
+/// The response when it succeeded; otherwise what its status, and for a refusal its page, means.
+async fn checked(response: reqwest::Response) -> Result<reqwest::Response> {
+    let status = response.status().as_u16();
+    if response.status().is_success() {
+        return Ok(response);
     }
-    Ok(response)
+    if !matches!(status, 400 | 401 | 403) {
+        return Err(remote(status_message(status)));
+    }
+    let page = error_page(response).await;
+    Err(if status == 400 && page.contains(USER_NOT_FOUND_PAGE) {
+        Error::Refused {
+            code: USER_NOT_FOUND,
+            message: "FurAffinity does not know this user.".into(),
+        }
+    } else if offline_page(&page) {
+        remote(OFFLINE)
+    } else {
+        remote(status_message(status))
+    })
 }
 
 /// Fetches `target` through the registered browser engine when it serves that host.
@@ -373,7 +399,7 @@ impl Transport {
         limited: bool,
     ) -> Result<(reqwest::Response, Option<SemaphorePermit<'static>>)> {
         if let Some(response) = browse(&target, &headers).await? {
-            return Ok((checked(response)?, None));
+            return Ok((checked(response).await?, None));
         }
         // The engine fetches one file at a time from a hidden page, so a grid of thumbnails
         // queues for seconds; it is needed only while the host shows Cloudflare's check.
@@ -391,7 +417,7 @@ impl Transport {
             }
         }
         if let Some(response) = browse_file(&target).await? {
-            return Ok((checked(response)?, None));
+            return Ok((checked(response).await?, None));
         }
         let original = target.clone();
         for redirect in 0..=4 {
@@ -465,17 +491,7 @@ impl Transport {
                 if let Some(error) = paused(&response) {
                     return Err(error);
                 }
-                if response.status().as_u16() == 400 {
-                    return Err(if missing_user(response).await {
-                        Error::Refused {
-                            code: USER_NOT_FOUND,
-                            message: "FurAffinity does not know this user.".into(),
-                        }
-                    } else {
-                        remote(status_message(400))
-                    });
-                }
-                return Ok((checked(response)?, slot));
+                return Ok((checked(response).await?, slot));
             }
         }
         Err(remote("The site could not complete the request."))
@@ -608,6 +624,43 @@ mod tests {
         let peers = peers.lock().unwrap();
         assert_eq!(peers.len(), 2);
         assert_eq!(peers[0], peers[1]);
+        task.abort();
+    }
+    #[tokio::test]
+    async fn an_offline_page_behind_a_refusal_names_the_outage_not_the_account() {
+        use axum::{http::StatusCode, routing::get, Router};
+        let app = Router::new()
+            .route(
+                "/offline",
+                get(|| async {
+                    (
+                        StatusCode::FORBIDDEN,
+                        "<!doctype html><html><title>FA is temporarily offline!</title><p>Back soon</p>",
+                    )
+                }),
+            )
+            .route(
+                "/denied",
+                get(|| async { (StatusCode::FORBIDDEN, "<title>Access denied</title>") }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let message = |path: &str| {
+            let t = t.clone();
+            let url = Url::parse(&format!("{base}{path}")).unwrap();
+            async move {
+                match t.get(url, HeaderMap::new()).await {
+                    Err(Error::Remote(m)) => m,
+                    _ => panic!("expected a remote error"),
+                }
+            }
+        };
+        assert_eq!(message("/offline").await, OFFLINE);
+        assert_eq!(message("/denied").await, status_message(403));
         task.abort();
     }
     #[tokio::test]
