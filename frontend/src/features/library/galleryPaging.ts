@@ -8,18 +8,21 @@ export const GALLERY_PAGE_SIZE = 200;
  */
 export const GALLERY_MAX_LIMIT = 1000;
 
-/** Keep already visible files in place and append newly discovered ones. */
+/**
+ * Keeps the loaded files in place, updated, without the deleted ones. A new file goes after them
+ * only when the server puts it after every one of them; one that belongs among them is held back,
+ * because appending it would show it far from its place. The next refresh from the top shows it.
+ */
 export function mergeGalleryRefresh<T extends { id: string }>(existing: T[], fresh: T[]): T[] {
   const byId = new Map(fresh.map((file) => [file.id, file]));
+  const loaded = new Set(existing.map((file) => file.id));
+  const lastLoaded = fresh.findLastIndex((file) => loaded.has(file.id));
   const result: T[] = [];
   for (const file of existing) {
     const updated = byId.get(file.id);
-    if (updated) {
-      result.push(updated);
-      byId.delete(file.id);
-    }
+    if (updated) result.push(updated);
   }
-  return [...result, ...byId.values()];
+  return [...result, ...fresh.slice(lastLoaded + 1)];
 }
 
 /**
