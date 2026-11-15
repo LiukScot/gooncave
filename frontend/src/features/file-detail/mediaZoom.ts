@@ -85,6 +85,17 @@ const WHEEL_NOTCH = 100;
 export const pinchWheelDelta = (deltaY: number): number =>
   clamp(deltaY * PINCH_WHEEL_RATE, -WHEEL_NOTCH, WHEEL_NOTCH);
 
+/**
+ * Whether a wheel event comes from a mouse wheel rather than two fingers on a touchpad. Chromium
+ * reports a touchpad's precise scroll with `wheelDeltaY` three times its `deltaY`; a mouse notch
+ * is 120 per notch against a `deltaY` of about 100, and Firefox counts mouse notches in lines.
+ */
+export const isMouseWheel = (event: Pick<WheelEvent, 'deltaX' | 'deltaY' | 'deltaMode'> & { wheelDeltaY?: number }): boolean => {
+  if (event.deltaMode !== 0) return true;
+  if (event.deltaX !== 0 || !event.wheelDeltaY) return false;
+  return Math.abs(Math.abs(event.wheelDeltaY) - 3 * Math.abs(event.deltaY)) >= 1;
+};
+
 /** How far a double tap zooms in. */
 export const DOUBLE_TAP_ZOOM = 2.5;
 
