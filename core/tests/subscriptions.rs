@@ -77,7 +77,7 @@ async fn searches_preserve_operators_validate_inputs_and_survive_restart() {
         request(&s, "GET", "/settings/subscriptions", Value::Null)
             .await
             .1,
-        json!({"tags":[],"artists":[],"artistErrors":[],"targets":[]})
+        json!({"tags":[],"artists":[],"furaffinityArtists":[],"artistErrors":[],"targets":[]})
     );
     let (status,result)=request(&s,"PUT","/settings/subscriptions/tags",json!({"tags":[" Fixture_Artist   score:>10 ","fixture_artist score:>10","~wolf ~fox -photo"]})).await;
     assert_eq!(status, 200, "{result}");

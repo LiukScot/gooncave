@@ -129,17 +129,16 @@ export function useSubscriptionTags(options: { enabled?: boolean } = {}) {
   });
 }
 
-export const useAddSubscriptionTag = () => useAddSubscription(api.addSubscriptionTag);
-
-function useAddSubscription(add: (value: string) => Promise<{ tags: string[] }>) {
+/** Adds a search or tag; the server decides whether it is followed as an artist. */
+export function useAddSubscriptionTag() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: add,
-    onSuccess: ({ tags }) => {
+    mutationFn: api.addSubscriptionTag,
+    onSuccess: ({ tags, artists, furaffinityArtists }) => {
       writeExploreSnapshot(null);
       queryClient.setQueryData<SubscriptionTargets>(
         queryKeys.settings.subscriptionTags(),
-        (current) => ({ artists: current?.artists ?? [], tags })
+        { tags, artists }
       );
       queryClient.setQueryData<SubscriptionSettings>(
         queryKeys.settings.subscriptions(),
@@ -148,9 +147,12 @@ function useAddSubscription(add: (value: string) => Promise<{ tags: string[] }>)
             ? {
                 ...current,
                 tags,
+                artists,
+                furaffinityArtists:
+                  furaffinityArtists ?? current.furaffinityArtists,
                 targets: [
                   ...tags.map((value) => ({ kind: 'tag' as const, value })),
-                  ...current.targets.filter((target) => target.kind === 'artist')
+                  ...artists.map((value) => ({ kind: 'artist' as const, value }))
                 ]
               }
             : undefined

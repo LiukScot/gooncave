@@ -164,7 +164,7 @@ export function ExploreDetailPanel({
   onClose: () => void;
   onVote: (score: 1 | -1) => void;
   onFavorite: () => void;
-  onSelectTag: (tag: string) => void;
+  onSelectTag: (tag: string, category: string) => void;
   /** Swaps the open post for one of its relatives, without leaving explore. */
   onOpenRelated: (post: ExplorePost) => void;
 }): React.ReactElement {

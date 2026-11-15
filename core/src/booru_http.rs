@@ -169,6 +169,23 @@ pub(crate) fn rejected(status: reqwest::StatusCode, refused: &str) -> Error {
     }
 }
 
+/// `Error::Refused` code for a FurAffinity user page that answers "This user cannot be found."
+pub(crate) const USER_NOT_FOUND: &str = "FA_USER_NOT_FOUND";
+const USER_NOT_FOUND_PAGE: &str = "This user cannot be found.";
+const USER_NOT_FOUND_READ: usize = 64 * 1024;
+
+/// A 400 answer whose page says the user does not exist; any other body is read no further.
+async fn missing_user(mut response: reqwest::Response) -> bool {
+    let mut body = Vec::new();
+    while body.len() < USER_NOT_FOUND_READ {
+        match response.chunk().await {
+            Ok(Some(chunk)) => body.extend_from_slice(&chunk),
+            _ => break,
+        }
+    }
+    String::from_utf8_lossy(&body).contains(USER_NOT_FOUND_PAGE)
+}
+
 fn checked(response: reqwest::Response) -> Result<reqwest::Response> {
     if !response.status().is_success() {
         return Err(remote(status_message(response.status().as_u16())));
@@ -447,6 +464,16 @@ impl Transport {
                 }
                 if let Some(error) = paused(&response) {
                     return Err(error);
+                }
+                if response.status().as_u16() == 400 {
+                    return Err(if missing_user(response).await {
+                        Error::Refused {
+                            code: USER_NOT_FOUND,
+                            message: "FurAffinity does not know this user.".into(),
+                        }
+                    } else {
+                        remote(status_message(400))
+                    });
                 }
                 return Ok((checked(response)?, slot));
             }

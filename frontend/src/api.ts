@@ -213,6 +213,8 @@ export type ArtistSyncError = {
 export type SubscriptionSettings = {
   tags: string[];
   artists: string[];
+  /** The artists an enabled FurAffinity account's watchlist held at its last sync. */
+  furaffinityArtists: string[];
   artistErrors: ArtistSyncError[];
   targets: Array<{ kind: 'tag' | 'artist'; value: string }>;
 };
@@ -1647,13 +1649,19 @@ export const api = {
     });
     return handle<{ tags: string[] }>(res);
   },
-  addSubscriptionTag: async (tag: string) => {
+  /**
+   * Adds one entry: `tag` (a booru's name for it) or `search` (kept as typed). The core follows
+   * a single artist name as an artist; `artist` says the caller knows it is one.
+   */
+  addSubscriptionTag: async (
+    entry: { tag: string; artist?: boolean } | { search: string }
+  ) => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/tags`, {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ tag })
+      body: JSON.stringify(entry)
     });
-    return handle<{ tags: string[] }>(res);
+    return handle<SubscriptionTargets & { furaffinityArtists?: string[] }>(res);
   },
   getSubscriptionPools: async () => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/pools`);

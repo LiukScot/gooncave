@@ -169,7 +169,7 @@ export function TagPills({
   /** Pen mode: every pill grows a remove control. */
   editing?: boolean;
   onRemoveTag?: (entry: TagEntry) => void;
-  onSelectTag?: (tag: string) => void;
+  onSelectTag?: (tag: string, category: string) => void;
 }): React.ReactElement {
   // Sorted here, where every tag list passes: the callers build their
   // groups in different ways, and implied tags can add a group at the end.
@@ -177,7 +177,10 @@ export function TagPills({
     implied ? withImpliedTags(groups, implied) : groups
   );
   const subscriptionTags = useSubscriptionTags();
-  const subscribedTags = subscriptionTags.data?.tags ?? [];
+  const subscribedTags = [
+    ...(subscriptionTags.data?.tags ?? []),
+    ...(subscriptionTags.data?.artists ?? [])
+  ];
   const blacklist = useBlacklistSettings();
   const renderGroup = (group: TagGroup) => (
     <div key={group.category} className="mb-2">
@@ -219,7 +222,7 @@ export function TagPills({
                 <button
                   className="file-tag-select"
                   type="button"
-                  onClick={() => onSelectTag(tag.tag)}
+                  onClick={() => onSelectTag(tag.tag, group.category)}
                 >
                   {tag.tag}
                   {subscriptionActionState(tag.tag, subscribedTags).subscribed ? (

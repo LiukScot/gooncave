@@ -555,6 +555,18 @@
   font-size: 0.75rem;
 }
 
+.subscription-row-origin {
+  display: inline-block;
+  line-height: 0;
+}
+
+.subscription-row-origin img {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+}
+
 /* Half a pool tile: enough to recognise the first page at a glance. */
 .subscription-row-cover {
   display: block;

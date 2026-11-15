@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   collectSubscriptionPosts,
-  furAffinityArtist,
   groupFeedByDay,
   loadSubscriptionPosts,
   subscriptionActionState,
@@ -304,25 +303,5 @@ describe('groupFeedByDay', () => {
       [null, 1],
       ['2026-11-14', 3]
     ]);
-  });
-});
-
-describe('furAffinityArtist', () => {
-  const faPost = {
-    engine: 'furaffinity',
-    uploader: 'Some_Artist',
-    tags: [
-      { tag: 'some_artist', category: 'artist' },
-      { tag: 'wolf', category: 'species' }
-    ]
-  } as unknown as ExplorePost;
-
-  it('names who posted a FurAffinity post for its artist tag only', () => {
-    expect(furAffinityArtist(faPost, 'some_artist')).toBe('some_artist');
-    expect(furAffinityArtist(faPost, 'wolf')).toBeUndefined();
-  });
-
-  it('leaves artist tags of other sites as plain searches', () => {
-    expect(furAffinityArtist({ ...faPost, engine: 'e621' }, 'some_artist')).toBeUndefined();
   });
 });

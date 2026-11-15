@@ -33,7 +33,7 @@ afterEach(() => {
 it('reopens subscriptions with fresh results after changing a search or artist', async () => {
   let resolveTags: ((result: { tags: string[] }) => void) | undefined;
   vi.spyOn(api, 'updateSubscriptionTags').mockImplementation(() => new Promise((resolve) => { resolveTags = resolve; }));
-  vi.spyOn(api, 'subscribeArtist').mockResolvedValue({ tags: [], artists: ['fixture-artist'], artistErrors: [], targets: [] });
+  vi.spyOn(api, 'subscribeArtist').mockResolvedValue({ tags: [], artists: ['fixture-artist'], furaffinityArtists: [], artistErrors: [], targets: [] });
   let changeSearch: (() => Promise<unknown>) | undefined;
   let followArtist: (() => Promise<unknown>) | undefined;
   function Probe() {

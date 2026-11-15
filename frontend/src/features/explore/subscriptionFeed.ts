@@ -25,19 +25,6 @@ export const subscriptionActionState = (
     : { subscribed: false, label: 'Subscribe' };
 };
 
-/** The username behind an artist tag of a FurAffinity post: there it can only be who posted it. */
-export const furAffinityArtist = (
-  post: Pick<ExplorePost, 'engine' | 'tags' | 'uploader'>,
-  tag: string
-): string | undefined => {
-  if (post.engine !== 'furaffinity') return undefined;
-  const isArtist = post.tags.some(
-    (entry) => entry.category === 'artist' && normalizeTag(entry.tag) === normalizeTag(tag)
-  );
-  const uploader = post.uploader?.replace(/^~/, '').trim().toLowerCase();
-  return isArtist && uploader ? uploader : undefined;
-};
-
 export const subscriptionReasons = (
   post: ExplorePost,
   subscribedTags: string[],

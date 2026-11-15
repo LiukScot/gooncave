@@ -1,6 +1,6 @@
 use crate::{
     booru_engines::{self, Search},
-    booru_http::Transport,
+    booru_http::{Transport, USER_NOT_FOUND},
     boorus::{self, Site},
     db::{write_setting, Database, OWNER_ID},
     explore, subscription_remote as remote,
@@ -70,18 +70,31 @@ async fn settings(State(db): State<Database>) -> Result<Json<Value>> {
     let guard = db.subscriptions.try_lock().ok();
     overview(&db, guard.is_some()).await
 }
-/// The saved searches and artists. With `sync`, each enabled FurAffinity account's watchlist is
-/// first merged into the artists; the caller holds the `subscriptions` lock.
+/// The saved searches and artists; `furaffinityArtists` are the artists an enabled FurAffinity
+/// account's watchlist held at its last sync. With `sync`, each account's watchlist is first
+/// merged into the artists; the caller holds the `subscriptions` lock.
 async fn overview(db: &Database, sync: bool) -> Result<Json<Value>> {
+    let sites = boorus::sites(db).await?;
     let errors = if sync {
-        let sites = boorus::sites(db).await?;
         sync_artists(db, &Transport::default(), &sites).await?
     } else {
         vec![]
     };
-    let (tags, artists) = db
-        .call(|c| Ok((store::searches(c)?, store::artists(c)?)))
+    let accounts: Vec<String> = sites
+        .iter()
+        .filter(|s| s.enabled && s.engine == "furaffinity")
+        .map(|s| s.id.clone())
+        .collect();
+    let (tags, artists, watched) = db
+        .call(move |c| {
+            let mut watched = HashSet::new();
+            for id in &accounts {
+                watched.extend(store::seen_artists(c, id)?.unwrap_or_default());
+            }
+            Ok((store::searches(c)?, store::artists(c)?, watched))
+        })
         .await?;
+    let furaffinity: Vec<&String> = artists.iter().filter(|a| watched.contains(*a)).collect();
     let targets: Vec<Value> = tags
         .iter()
         .map(|tag| json!({"kind":"tag","value":tag}))
@@ -92,7 +105,7 @@ async fn overview(db: &Database, sync: bool) -> Result<Json<Value>> {
         )
         .collect();
     Ok(Json(
-        json!({"tags":tags,"artists":artists,"artistErrors":errors,"targets":targets}),
+        json!({"tags":tags,"artists":artists,"furaffinityArtists":furaffinity,"artistErrors":errors,"targets":targets}),
     ))
 }
 /// Follow changes refused in a row before one account's sync stops for this round.
@@ -143,6 +156,7 @@ async fn sync_artists(db: &Database, t: &Transport, sites: &[Site]) -> Result<Ve
             continue;
         }
         let mut now = watched;
+        let mut missing = Vec::new();
         let mut failures_in_a_row = 0;
         for (artist, watch) in plan
             .watch
@@ -151,6 +165,13 @@ async fn sync_artists(db: &Database, t: &Transport, sites: &[Site]) -> Result<Ve
             .chain(plan.unwatch.iter().map(|a| (a, false)))
         {
             if let Err(e) = remote::set_artist(t, site, artist, watch).await {
+                // Not on FurAffinity: the name stays a search on the boorus and is no failure.
+                if matches!(e, Error::Refused { code, .. } if code == USER_NOT_FOUND) {
+                    if watch {
+                        missing.push(artist.clone());
+                    }
+                    continue;
+                }
                 // One artist FurAffinity does not know must not hold back the others; a run of
                 // refusals is an expired session, where every further request would fail too.
                 errors.push(failed(&Error::Invalid(format!("{artist}: {e}"))));
@@ -175,8 +196,22 @@ async fn sync_artists(db: &Database, t: &Transport, sites: &[Site]) -> Result<Ve
             // drop that change, and saving the watchlist alone would read its new artists as
             // removed here next time; both wait for the next sync, which starts from the new list.
             if store::artists(&tx)? == local {
+                plan.local.retain(|a| !missing.contains(a));
                 if plan.local != local {
                     store::save_artists(&tx, &plan.local)?;
+                    if !missing.is_empty() {
+                        eprintln!(
+                            "[developer] {} followed artists are not on FurAffinity and are now searches",
+                            missing.len()
+                        );
+                        let searches = store::searches(&tx)?;
+                        let searches = searches.iter().chain(&missing).collect::<Vec<_>>();
+                        write_setting(
+                            &tx,
+                            "subscriptions.tags",
+                            &json!(store::normalize_searches(&json!(searches))?),
+                        )?;
+                    }
                     store::reset(&tx, None, true)?;
                 }
                 store::save_seen_artists(&tx, &id, &now)?;
@@ -193,7 +228,9 @@ async fn save_tags(State(db): State<Database>, p: Payload) -> Result<Json<Value>
     update_tags(&db, tags, false).await
 }
 /// Adds one tag (`tag`, written the way a booru names it) or one whole search (`search`, whose
-/// spaces and operators such as `~`, `-` and `score:>5` are kept).
+/// spaces and operators such as `~`, `-` and `score:>5` are kept). A single name that is an artist
+/// is followed as an artist instead (see `follows_as_artist`); `artist: true` says the caller
+/// already knows it is one.
 async fn add_tag(State(db): State<Database>, p: Payload) -> Result<Json<Value>> {
     let body = body(p)?;
     let entry = if body.get("search").is_some() {
@@ -202,7 +239,31 @@ async fn add_tag(State(db): State<Database>, p: Payload) -> Result<Json<Value>> 
         crate::tags::normalize(&text(&body, "tag", 100)?)
     };
     let tags = store::normalize_searches(&json!([entry]))?;
+    if follows_as_artist(&db, &tags[0], body["artist"] == true).await? {
+        return set_artist(&db, json!({"artist":tags[0]}), true).await;
+    }
     update_tags(&db, tags, true).await
+}
+/// Whether `entry` is one plain name (no spaces, `~`, `-` or `:` operators) that FurAffinity can
+/// follow and that `hinted` or the tag vocabulary or the library's own tags call an artist.
+async fn follows_as_artist(db: &Database, entry: &str, hinted: bool) -> Result<bool> {
+    if entry.contains([' ', ':']) || entry.starts_with(['-', '~']) || remote::artist(entry).is_err()
+    {
+        return Ok(false);
+    }
+    if hinted {
+        return Ok(true);
+    }
+    let tag = entry.to_owned();
+    db.call(move |c| {
+        Ok(c.query_row(
+            "SELECT EXISTS(SELECT 1 FROM tag_categories WHERE tag=?1 AND category='artist')
+                OR EXISTS(SELECT 1 FROM file_tags WHERE canonical_tag=?1 AND category='artist')",
+            [&tag],
+            |r| r.get(0),
+        )?)
+    })
+    .await
 }
 async fn update_tags(db: &Database, mut tags: Vec<String>, append: bool) -> Result<Json<Value>> {
     db.call(move |c| {
@@ -219,8 +280,9 @@ async fn update_tags(db: &Database, mut tags: Vec<String>, append: bool) -> Resu
             write_setting(&tx, "subscriptions.tags", &json!(tags))?;
             store::reset(&tx, None, true)?;
         }
+        let artists = store::artists(&tx)?;
         tx.commit()?;
-        Ok(Json(json!({"tags":tags})))
+        Ok(Json(json!({"tags":tags,"artists":artists})))
     })
     .await
 }
@@ -1106,6 +1168,11 @@ mod tests {
                         let prefix = if state.lock().unwrap().contains(name) { "un" } else { "" };
                         axum::response::Html(format!("<div id='pageid-userpage'><a href='/{prefix}watch/{name}/?key=abc'>Watch</a></div>")).into_response()
                     }
+                    ["user", name] if name.starts_with("gone") => (
+                        axum::http::StatusCode::BAD_REQUEST,
+                        "<title>System Error</title>This user cannot be found.",
+                    )
+                        .into_response(),
                     ["user", _] => axum::response::Html("<div id='pageid-browse'></div>").into_response(),
                     ["watch", name] => {
                         state.lock().unwrap().insert(name.to_owned());
@@ -1219,6 +1286,59 @@ mod tests {
         assert_eq!(local, ["ghost", "real", "existing"]);
         assert_eq!(seen.unwrap(), ["existing", "real"]);
         task.abort();
+    }
+    #[tokio::test]
+    async fn an_artist_not_on_furaffinity_becomes_a_search_without_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let (site, fa, task) = fake_fa(&[], &["real"], None).await;
+        let t = Transport {
+            allow_loopback: true,
+        };
+        save_local(&db, &["gone-artist", "real"]).await;
+        let errors = sync_artists(&db, &t, &[site]).await.unwrap();
+        assert!(errors.is_empty());
+        assert_eq!(watching(&fa), ["real"]);
+        let (local, seen) = local_and_seen(&db).await;
+        assert_eq!(local, ["real"]);
+        assert_eq!(seen.unwrap(), ["real"]);
+        assert_eq!(
+            db.call(|c| store::searches(c)).await.unwrap(),
+            ["gone-artist"]
+        );
+        task.abort();
+    }
+    async fn added(db: &Database, body: Value) -> (Vec<String>, Vec<String>) {
+        let Json(v) = add_tag(State(db.clone()), Ok(Json(body))).await.unwrap();
+        let list = |k: &str| serde_json::from_value(v[k].clone()).unwrap();
+        (list("tags"), list("artists"))
+    }
+    #[tokio::test]
+    async fn adding_a_single_name_follows_it_only_when_it_is_an_artist() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        db.call(|c| {
+            c.execute("INSERT INTO tag_categories (tag,category) VALUES ('nawka','artist'),('wolf','species')", [])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            added(&db, json!({"tag":"Nawka"})).await,
+            (vec![], vec!["nawka".to_owned()])
+        );
+        assert_eq!(
+            added(&db, json!({"tag":"wolf"})).await,
+            (vec!["wolf".to_owned()], vec!["nawka".to_owned()])
+        );
+        let (tags, artists) = added(&db, json!({"tag":"unknown_name","artist":true})).await;
+        assert_eq!(tags, ["wolf"]);
+        assert_eq!(artists, ["nawka", "unknown_name"]);
+        let (tags, artists) = added(&db, json!({"search":"nawka2 ~wolf"})).await;
+        assert_eq!(tags, ["wolf", "nawka2 ~wolf"]);
+        assert_eq!(artists.len(), 2);
+        let (tags, _) = added(&db, json!({"search":"-nawka"})).await;
+        assert_eq!(tags.last().unwrap(), "-nawka");
     }
     #[tokio::test]
     async fn watching_a_new_artist_keeps_the_saved_furaffinity_feed() {

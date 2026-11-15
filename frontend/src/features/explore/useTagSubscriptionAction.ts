@@ -32,7 +32,6 @@ export function useTagSubscriptionAction() {
   const subscriptionTags = useSubscriptionTags();
   const { mutateAsync: addTag } = useAddSubscriptionTag();
   const { mutateAsync: saveTags } = useUpdateSubscriptionTags();
-  const { mutateAsync: followArtist } = useArtistSubscriptionMutation(true);
   const { mutateAsync: unfollowArtist } = useArtistSubscriptionMutation(false);
   const blacklist = useBlacklistSettings();
   const { mutateAsync: saveBlacklist } = useUpdateBlacklistSettings();
@@ -45,41 +44,22 @@ export function useTagSubscriptionAction() {
     [subscriptionTags.data?.artists]
   );
 
-  /**
-   * `artist` is the FurAffinity username when the tag names who posted a
-   * FurAffinity post: subscribing then follows them there, as Settings does.
-   */
   const actionFor = useCallback(
-    (tag: string, artist?: string): ChoiceAction<TagSubscriptionMode> => {
-      const state = artist
-        ? subscriptionActionState(artist, followedArtists)
-        : subscriptionActionState(tag, subscribedTags);
+    (tag: string): ChoiceAction<TagSubscriptionMode> => {
+      const state = subscriptionActionState(tag, [...subscribedTags, ...followedArtists]);
       return {
         value: state.subscribed ? 'unsubscribe' : 'subscribe',
-        label: !subscriptionsAvailable
-          ? 'Subscriptions unavailable'
-          : artist
-            ? state.subscribed ? 'Unfollow artist' : 'Follow artist'
-            : state.label,
+        label: !subscriptionsAvailable ? 'Subscriptions unavailable' : state.label,
         variant: state.subscribed ? 'destructive' : 'default'
       };
     },
     [followedArtists, subscribedTags, subscriptionsAvailable]
   );
 
+  /** `category` is the pill's: subscribing to an `artist` pill follows it as an artist, on any site. */
   const runAction = useCallback(
-    async (mode: TagSubscriptionMode, tag: string, artist?: string) => {
+    async (mode: TagSubscriptionMode, tag: string, category?: string) => {
       try {
-        if (artist && (mode === 'subscribe' || mode === 'unsubscribe')) {
-          if (mode === 'subscribe') {
-            await followArtist(artist);
-            toast.success(`Following ${artist}`);
-          } else {
-            await unfollowArtist(artist);
-            toast.success(`Unfollowed ${artist}`);
-          }
-          return;
-        }
         if (mode === 'blacklist' || mode === 'unblacklist') {
           const normalizedTag = normalizeTag(tag);
           const current = await api.getBlacklist();
@@ -101,11 +81,19 @@ export function useTagSubscriptionAction() {
           return;
         }
         if (mode === 'subscribe') {
-          await addTag(tag);
+          await addTag({ tag, artist: category === 'artist' || undefined });
           toast.success(`Subscribed to ${tag}`);
           return;
         }
         const normalizedTag = normalizeTag(tag);
+        const followed = followedArtists.find(
+          (artist) => normalizeTag(artist) === normalizedTag
+        );
+        if (followed) {
+          await unfollowArtist(followed);
+          toast.success(`Removed subscription to ${tag}`);
+          return;
+        }
         await saveTags(
           subscribedTags.filter(
             (subscribedTag) => normalizeTag(subscribedTag) !== normalizedTag
@@ -116,7 +104,7 @@ export function useTagSubscriptionAction() {
         toast.error((error as Error).message);
       }
     },
-    [addTag, followArtist, saveBlacklist, saveTags, subscribedTags, subscriptionsAvailable, unfollowArtist]
+    [addTag, followedArtists, saveBlacklist, saveTags, subscribedTags, subscriptionsAvailable, unfollowArtist]
   );
 
   const blacklistActionFor = useCallback(

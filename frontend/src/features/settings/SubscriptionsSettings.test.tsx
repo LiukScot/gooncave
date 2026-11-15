@@ -167,3 +167,83 @@ it('removes only the search whose X was clicked, and lists followed pools', asyn
   const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
   expect(JSON.parse(put?.[1]?.body as string)).toEqual({ tags: ['wolf'] });
 });
+
+const setValue = (input: HTMLInputElement, value: string) => {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+};
+
+const subscriptionsFetch = () =>
+  vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (init?.method === 'POST') {
+      return Response.json({ tags: ['red fox', 'wolf'], artists: ['rukis', 'nawka'] });
+    }
+    if (url.endsWith('/settings/subscriptions/pools')) {
+      return Response.json({
+        pools: [
+          { siteId: 'e6', siteName: 'e621', poolId: '7', name: 'Fox Comic', postCount: 12, coverUrl: null }
+        ]
+      });
+    }
+    if (url.endsWith('/settings/subscriptions')) {
+      return Response.json({
+        tags: ['red fox', 'wolf'],
+        artists: ['rukis', 'nawka'],
+        furaffinityArtists: ['rukis'],
+        artistErrors: [],
+        targets: []
+      });
+    }
+    return Response.json({ tags: [], suggestions: [] });
+  });
+
+it('subscribes from one input and shows where each entry comes from', async () => {
+  const fetchMock = subscriptionsFetch();
+  vi.stubGlobal('fetch', fetchMock);
+  const container = await render();
+  await waitFor(() => container.textContent?.includes('Fox Comic') ?? false);
+  expect(container.querySelector('input[placeholder="Artist username"]')).toBeNull();
+  expect(container.querySelectorAll('img[alt="GoonCave"]')).toHaveLength(3);
+  expect(container.querySelectorAll('[aria-label="FurAffinity"]')).toHaveLength(1);
+
+  const input = container.querySelector<HTMLInputElement>('#subscription-new-search');
+  if (!input) throw new Error('Search input was not rendered');
+  await act(async () => setValue(input, '  Newone  '));
+  const subscribe = Array.from(container.querySelectorAll('button')).find(
+    (button) => button.textContent === 'Subscribe'
+  );
+  expect(subscribe?.disabled).toBe(false);
+  await act(async () => input.form?.requestSubmit());
+  const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
+  expect(JSON.parse(post?.[1]?.body as string)).toEqual({ search: 'newone' });
+});
+
+it('filters the list by name and by where each entry comes from', async () => {
+  vi.stubGlobal('fetch', subscriptionsFetch());
+  const container = await render();
+  await waitFor(() => container.textContent?.includes('Fox Comic') ?? false);
+  const titles = () =>
+    Array.from(container.querySelectorAll('.subscription-row-title')).map((n) => n.textContent);
+  expect(titles()).toEqual(['red fox', 'wolf', 'rukis', 'nawka', 'Fox Comic']);
+
+  await act(async () => document.querySelector<HTMLButtonElement>('.search-lens')?.click());
+  const filter = document.querySelector<HTMLInputElement>('input[name="subscription-filter"]');
+  if (!filter) throw new Error('Filter field was not rendered');
+  await act(async () => setValue(filter, 'FOX'));
+  expect(titles()).toEqual(['red fox', 'Fox Comic']);
+
+  const source = (label: string) =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="From"] button')).find(
+      (button) => button.textContent === label
+    );
+  await act(async () => source('Pools')?.click());
+  expect(titles()).toEqual(['red fox']);
+  await act(async () => source('GoonCave')?.click());
+  expect(titles()).toEqual([]);
+  expect(container.textContent).toContain('Nothing followed matches these filters.');
+
+  await act(async () => source('GoonCave')?.click());
+  await act(async () => setValue(filter, ''));
+  expect(titles()).toEqual(['red fox', 'wolf', 'rukis', 'nawka']);
+});

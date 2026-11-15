@@ -4,11 +4,18 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
 import type { PoolSubscription } from '@/api';
-import { FoldedBox } from '@/components/FoldedBox';
 import { RemoteImage } from '@/features/explore/RemoteImage';
 import { normalizeSubscriptionSearch } from '@/features/explore/subscriptionFeed';
+import { SiteLogo } from '@/features/file-detail/SourcesDialog';
 import { TagSearchInput } from '@/features/library/TagSearchInput';
 import {
+  PanelMultiChoice,
+  PanelSection,
+  SearchPanel,
+  type FilterChip
+} from '@/features/shell/SearchPanel';
+import {
+  useAddSubscriptionTag,
   useArtistSubscriptionMutation,
   usePoolSubscriptionMutation,
   useSubscriptionPools,
@@ -18,11 +25,42 @@ import {
 import { useErrorToast } from '@/lib/useErrorToast';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
+const SOURCES = [
+  { id: 'gooncave', label: 'GoonCave' },
+  { id: 'furaffinity', label: 'FurAffinity' },
+  { id: 'pools', label: 'Pools' }
+] as const;
+type Source = (typeof SOURCES)[number]['id'];
+
 const rows = (value: string): string[] =>
   value
     .split(/\r?\n/)
     .map((entry) => entry.trim())
     .filter(Boolean);
+
+/** Where a followed entry comes from: GoonCave, or an artist of a FurAffinity watchlist. */
+function Origin({ furaffinity }: { furaffinity: boolean }) {
+  return furaffinity ? (
+    <span
+      className="subscription-row-origin"
+      role="img"
+      aria-label="FurAffinity"
+    >
+      <SiteLogo
+        url="https://www.furaffinity.net"
+        className="subscription-row-origin"
+      />
+    </span>
+  ) : (
+    <img
+      className="subscription-row-origin"
+      src="/favicon.png"
+      alt="GoonCave"
+      width={16}
+      height={16}
+    />
+  );
+}
 
 /** One followed thing: the part that opens it, then its remove button. */
 function SubscriptionRow({
@@ -57,10 +95,13 @@ function Subscriptions() {
   const subscriptions = useSubscriptions();
   const updateTags = useUpdateSubscriptionTags();
   useErrorToast(updateTags.error);
+  const addTag = useAddSubscriptionTag();
+  useErrorToast(addTag.error);
   const setPendingSearch = useExploreUiStore((state) => state.setPendingSearch);
   const navigate = useNavigate();
   const tags = subscriptions.data?.tags ?? [];
   const artists = subscriptions.data?.artists ?? [];
+  const furaffinityArtists = subscriptions.data?.furaffinityArtists ?? [];
   const artistErrors = subscriptions.data?.artistErrors ?? [];
   const poolQuery = useSubscriptionPools();
   const pools = poolQuery.data?.pools ?? [];
@@ -68,9 +109,46 @@ function Subscriptions() {
   const unfollowPool = usePoolSubscriptionMutation(false);
   const followArtist = useArtistSubscriptionMutation(true);
   const unfollowArtist = useArtistSubscriptionMutation(false);
-  const [newArtist, setNewArtist] = useState('');
   const artistError =
     followArtist.error?.message ?? unfollowArtist.error?.message;
+  const [filterText, setFilterText] = useState('');
+  const [hiddenSources, setHiddenSources] = useState<Source[]>([]);
+  const query = filterText.trim().toLowerCase();
+  const matches = (name: string) => name.toLowerCase().includes(query);
+  const shows = (source: Source) => !hiddenSources.includes(source);
+  const shownTags = shows('gooncave') ? tags.filter(matches) : [];
+  const shownArtists = artists.filter(
+    (artist) =>
+      shows(furaffinityArtists.includes(artist) ? 'furaffinity' : 'gooncave') &&
+      matches(artist)
+  );
+  const shownPools = shows('pools')
+    ? pools.filter((pool) => matches(pool.name))
+    : [];
+  const filters: FilterChip[] = [
+    ...(query
+      ? [
+          {
+            key: 'text',
+            label: `“${filterText.trim()}”`,
+            clear: () => setFilterText('')
+          }
+        ]
+      : []),
+    ...(hiddenSources.length > 0
+      ? [
+          {
+            key: 'sources',
+            label: `From ${
+              SOURCES.filter(({ id }) => shows(id))
+                .map(({ label }) => label)
+                .join(', ') || 'no source'
+            }`,
+            clear: () => setHiddenSources([])
+          }
+        ]
+      : [])
+  ];
   const savedTags = tags.join('\n');
   const [newSearch, setNewSearch] = useState('');
   const [draft, setDraft] = useState<string | null>(null);
@@ -80,7 +158,8 @@ function Subscriptions() {
   const value = draft ?? savedTags;
   const dirty = rows(value).join('\n') !== savedTags;
   const normalizedNew = normalizeSubscriptionSearch(newSearch);
-  const alreadyFollowed = tags.includes(normalizedNew);
+  const alreadyFollowed =
+    tags.includes(normalizedNew) || artists.includes(normalizedNew);
 
   const save = async (next: string[]) => {
     try {
@@ -94,7 +173,12 @@ function Subscriptions() {
 
   const add = async () => {
     if (!normalizedNew || alreadyFollowed) return;
-    if (await save([...tags, normalizedNew])) setNewSearch('');
+    try {
+      await addTag.mutateAsync({ search: normalizedNew });
+      setNewSearch('');
+    } catch {
+      // The mutation error is shown as a toast, and the typed text stays.
+    }
   };
 
   const remove = async (search: string) => {
@@ -152,10 +236,11 @@ function Subscriptions() {
       <h2 className="h5 mb-1">Subscriptions</h2>
       <p className="text-muted-foreground text-xs mb-3">
         Searches, artists and pools are stored in GoonCave and run on every
-        configured booru. Spaces and operators such as score:&gt;10 are kept.
-        Artists are also synced both ways with each FurAffinity account’s
-        watchlist: following or unfollowing on either side is copied to the
-        other.
+        configured booru. Spaces and operators such as score:&gt;10 are kept. A
+        single name that is an artist is followed as one: it is also synced both
+        ways with each FurAffinity account’s watchlist, so following or
+        unfollowing on either side is copied to the other. Other tags are never
+        followed on FurAffinity.
       </p>
       <form
         className="flex gap-2 mb-3"
@@ -179,51 +264,49 @@ function Subscriptions() {
         <button
           className="btn btn-primary btn-sm shrink-0"
           type="submit"
-          disabled={!normalizedNew || alreadyFollowed || updateTags.isPending}
+          disabled={!normalizedNew || alreadyFollowed || addTag.isPending}
         >
           {alreadyFollowed ? 'Subscribed' : 'Subscribe'}
         </button>
       </form>
 
-      <form
-        className="flex gap-2 mb-3"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          try {
-            await followArtist.mutateAsync(newArtist.trim());
-            setNewArtist('');
-          } catch {
-            // The mutation error is shown under the list, and the typed
-            // username stays available for correction.
-          }
-        }}
+      <SearchPanel
+        title="Filter subscriptions"
+        filters={filters}
+        search={
+          <input
+            className="form-control"
+            type="search"
+            name="subscription-filter"
+            autoComplete="off"
+            aria-label="Filter subscriptions by name"
+            placeholder="Name"
+            value={filterText}
+            onChange={(event) => setFilterText(event.target.value)}
+          />
+        }
       >
-        <label className="visually-hidden" htmlFor="subscription-new-artist">
-          Artist username
-        </label>
-        <input
-          className="form-control form-control-sm"
-          id="subscription-new-artist"
-          name="subscription-new-artist"
-          type="text"
-          autoComplete="off"
-          placeholder="Artist username"
-          value={newArtist}
-          onChange={(event) => setNewArtist(event.target.value)}
-        />
-        <button
-          className="btn btn-primary btn-sm shrink-0"
-          type="submit"
-          disabled={!newArtist.trim() || followArtist.isPending}
-        >
-          Follow
-        </button>
-      </form>
+        <PanelSection label="From">
+          <PanelMultiChoice
+            label="From"
+            options={SOURCES.map(({ id, label }) => ({
+              label,
+              pressed: shows(id),
+              onToggle: () =>
+                setHiddenSources((current) =>
+                  current.includes(id)
+                    ? current.filter((source) => source !== id)
+                    : [...current, id]
+                )
+            }))}
+          />
+        </PanelSection>
+      </SearchPanel>
 
       {tags.length || artists.length || pools.length ? (
-        <FoldedBox maxHeight="64rem" className="mb-3">
-          <div className="list-group list-group-segmented">
-            {tags.map((search) => (
+        shownTags.length || shownArtists.length || shownPools.length ? (
+          <div className="list-group list-group-segmented mb-3">
+            {shownTags.map((search) => (
               <SubscriptionRow
                 key={search}
                 removeLabel={`Unsubscribe from ${search}`}
@@ -241,13 +324,15 @@ function Subscriptions() {
                     />
                     <span className="subscription-row-text">
                       <span className="subscription-row-title">{search}</span>
-                      <span className="subscription-row-meta">All sites</span>
+                      <span className="subscription-row-meta">
+                        <Origin furaffinity={false} />
+                      </span>
                     </span>
                   </button>
                 }
               />
             ))}
-            {artists.map((artist) => (
+            {shownArtists.map((artist) => (
               <SubscriptionRow
                 key={`artist:${artist}`}
                 removeLabel={`Unfollow ${artist}`}
@@ -261,13 +346,17 @@ function Subscriptions() {
                     />
                     <span className="subscription-row-text">
                       <span className="subscription-row-title">{artist}</span>
-                      <span className="subscription-row-meta">Artist</span>
+                      <span className="subscription-row-meta">
+                        <Origin
+                          furaffinity={furaffinityArtists.includes(artist)}
+                        />
+                      </span>
                     </span>
                   </span>
                 }
               />
             ))}
-            {pools.map((pool) => (
+            {shownPools.map((pool) => (
               <SubscriptionRow
                 key={`${pool.siteId}:${pool.poolId}`}
                 removeLabel={`Unsubscribe from ${pool.name}`}
@@ -314,12 +403,16 @@ function Subscriptions() {
               />
             ))}
           </div>
-        </FoldedBox>
+        ) : (
+          <p className="text-muted-foreground text-sm mb-3">
+            Nothing followed matches these filters.
+          </p>
+        )
       ) : subscriptions.isLoading ? null : (
         <p className="text-muted-foreground text-sm mb-3">
-          Nothing followed yet. Type a search or an artist above, hit Subscribe
-          next to a search in Explore, or open a comic or a pool and hit
-          Subscribe at the top.
+          Nothing followed yet. Type a search or an artist name above, hit
+          Subscribe next to a search in Explore, or open a comic or a pool and
+          hit Subscribe at the top.
         </p>
       )}
       {artistErrors.map((failure) => (

@@ -147,7 +147,7 @@ export type Props = {
   onAddManualTag: () => void;
   onToggleTagsEditing: () => void;
   onRemoveTag: (entry: TagEntry) => void;
-  onSelectTag: (tag: string) => void;
+  onSelectTag: (tag: string, category: string) => void;
   onRefreshTags: () => void;
 
   // Provider / source
