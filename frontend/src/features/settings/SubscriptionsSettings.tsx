@@ -1,9 +1,10 @@
 import { Link, useNavigate } from '@tanstack/react-router';
-import { BookImage, Search, UserRound, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
 import type { BooruSite, PoolSubscription } from '@/api';
+import { HelpPopover } from '@/components/HelpPopover';
 import { RemoteImage } from '@/features/explore/RemoteImage';
 import { normalizeSubscriptionSearch } from '@/features/explore/subscriptionFeed';
 import { SiteLogo } from '@/features/file-detail/SourcesDialog';
@@ -26,6 +27,9 @@ import {
 import { useErrorToast } from '@/lib/useErrorToast';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
+const HELP =
+  "Searches, artists and pools are stored in GoonCave and run on every configured booru. Spaces and operators such as score:>10 are kept. A single name that is an artist is followed as one: it is also synced both ways with each FurAffinity account’s watchlist, so following or unfollowing on either side is copied to the other. Other tags are never followed on FurAffinity.";
+
 const rows = (value: string): string[] =>
   value
     .split(/\r?\n/)
@@ -35,10 +39,10 @@ const rows = (value: string): string[] =>
 /** The logo of each site where a followed entry has results. */
 function SiteLogos({ sites }: { sites: BooruSite[] }) {
   return (
-    <span className="subscription-row-origin">
+    <span className="subscription-item-origin">
       {sites.map((site) => (
         <span key={site.id} role="img" aria-label={site.name}>
-          <SiteLogo url={site.baseUrl} className="subscription-row-logo" />
+          <SiteLogo url={site.baseUrl} className="subscription-item-logo" />
         </span>
       ))}
     </span>
@@ -46,23 +50,25 @@ function SiteLogos({ sites }: { sites: BooruSite[] }) {
 }
 
 /** One followed thing: the part that opens it, then its remove button. */
-function SubscriptionRow({
+function SubscriptionItem({
+  className,
   open,
   removeLabel,
   removeDisabled,
   onRemove
 }: {
+  className: string;
   open: ReactNode;
   removeLabel: string;
   removeDisabled: boolean;
   onRemove: () => void;
 }) {
   return (
-    <div className="list-group-item subscription-row">
+    <div className={`subscription-item ${className}`}>
       {open}
       <button
         type="button"
-        className="btn btn-outline-light btn-sm subscription-row-remove"
+        className="subscription-item-remove"
         aria-label={removeLabel}
         title={removeLabel}
         disabled={removeDisabled}
@@ -71,6 +77,29 @@ function SubscriptionRow({
         <X className="size-4" aria-hidden="true" />
       </button>
     </div>
+  );
+}
+
+/** Searches, artists or pools: a titled block with how many it shows. */
+function SubscriptionGroup({
+  title,
+  count,
+  className,
+  children
+}: {
+  title: string;
+  count: number;
+  className: string;
+  children: ReactNode;
+}) {
+  if (count === 0) return null;
+  return (
+    <section className="appearance-group" aria-label={title}>
+      <h3 className="appearance-group-title">
+        {title} · {count}
+      </h3>
+      <div className={className}>{children}</div>
+    </section>
   );
 }
 
@@ -216,17 +245,8 @@ function Subscriptions() {
 
   return (
     <section className="settings-section">
-      <h2 className="h5 mb-1">Subscriptions</h2>
-      <p className="text-muted-foreground text-xs mb-3">
-        Searches, artists and pools are stored in GoonCave and run on every
-        configured booru. Spaces and operators such as score:&gt;10 are kept. A
-        single name that is an artist is followed as one: it is also synced both
-        ways with each FurAffinity account’s watchlist, so following or
-        unfollowing on either side is copied to the other. Other tags are never
-        followed on FurAffinity.
-      </p>
       <form
-        className="flex gap-2 mb-3"
+        className="flex items-center gap-2 mb-3"
         onSubmit={(event) => {
           event.preventDefault();
           void add();
@@ -251,6 +271,7 @@ function Subscriptions() {
         >
           {alreadyFollowed ? 'Subscribed' : 'Subscribe'}
         </button>
+        <HelpPopover text={HELP} />
       </form>
 
       <SearchPanel
@@ -296,105 +317,86 @@ function Subscriptions() {
 
       {tags.length || artists.length || pools.length ? (
         shownTags.length || shownArtists.length || shownPools.length ? (
-          <div className="list-group list-group-segmented mb-3">
-            {shownTags.map((search) => (
-              <SubscriptionRow
-                key={search}
-                removeLabel={`Unsubscribe from ${search}`}
-                removeDisabled={updateTags.isPending}
-                onRemove={() => void remove(search)}
-                open={
-                  <button
-                    type="button"
-                    className="subscription-row-open"
-                    onClick={() => openSearch(search)}
-                  >
-                    <Search
-                      className="subscription-row-icon"
-                      aria-hidden="true"
-                    />
-                    <span className="subscription-row-text">
-                      <span className="subscription-row-title">{search}</span>
-                      <span className="subscription-row-meta">
-                        <SiteLogos sites={sitesOf(search)} />
-                      </span>
+          <>
+            <SubscriptionGroup title="Searches" count={shownTags.length} className="subscription-pills">
+              {shownTags.map((search) => (
+                <SubscriptionItem
+                  key={search}
+                  className="subscription-pill"
+                  removeLabel={`Unsubscribe from ${search}`}
+                  removeDisabled={updateTags.isPending}
+                  onRemove={() => void remove(search)}
+                  open={
+                    <button
+                      type="button"
+                      className="subscription-item-open"
+                      onClick={() => openSearch(search)}
+                    >
+                      <SiteLogos sites={sitesOf(search)} />
+                      <span className="subscription-item-title">{search}</span>
+                    </button>
+                  }
+                />
+              ))}
+            </SubscriptionGroup>
+            <SubscriptionGroup title="Artists" count={shownArtists.length} className="subscription-pills">
+              {shownArtists.map((artist) => (
+                <SubscriptionItem
+                  key={`artist:${artist}`}
+                  className="subscription-pill"
+                  removeLabel={`Unfollow ${artist}`}
+                  removeDisabled={unfollowArtist.isPending}
+                  onRemove={() => void removeArtist(artist)}
+                  open={
+                    <span className="subscription-item-open">
+                      <SiteLogos sites={sitesOf(artist)} />
+                      <span className="subscription-item-title">{artist}</span>
                     </span>
-                  </button>
-                }
-              />
-            ))}
-            {shownArtists.map((artist) => (
-              <SubscriptionRow
-                key={`artist:${artist}`}
-                removeLabel={`Unfollow ${artist}`}
-                removeDisabled={unfollowArtist.isPending}
-                onRemove={() => void removeArtist(artist)}
-                open={
-                  <span className="subscription-row-open">
-                    <UserRound
-                      className="subscription-row-icon"
-                      aria-hidden="true"
-                    />
-                    <span className="subscription-row-text">
-                      <span className="subscription-row-title">{artist}</span>
-                      <span className="subscription-row-meta">
-                        <SiteLogos sites={sitesOf(artist)} />
-                      </span>
-                    </span>
-                  </span>
-                }
-              />
-            ))}
-            {shownPools.map((pool) => (
-              <SubscriptionRow
-                key={`${pool.siteId}:${pool.poolId}`}
-                removeLabel={`Unsubscribe from ${pool.name}`}
-                removeDisabled={unfollowPool.isPending}
-                onRemove={() => void removePool(pool)}
-                open={
-                  <Link
-                    className="subscription-row-open"
-                    to="/app/pool"
-                    search={{ site: pool.siteId, pool: pool.poolId }}
-                  >
-                    <BookImage
-                      className="subscription-row-icon"
-                      aria-hidden="true"
-                    />
-                    <span className="subscription-row-text">
-                      <span className="subscription-row-title">
-                        {pool.name}
-                      </span>
-                      <span className="subscription-row-meta">
-                        <SiteLogos
-                          sites={sites.filter((site) => site.id === pool.siteId)}
-                        />{' '}
+                  }
+                />
+              ))}
+            </SubscriptionGroup>
+            <SubscriptionGroup title="Pools" count={shownPools.length} className="subscription-covers">
+              {shownPools.map((pool) => (
+                <SubscriptionItem
+                  key={`${pool.siteId}:${pool.poolId}`}
+                  className="subscription-cover-card"
+                  removeLabel={`Unsubscribe from ${pool.name}`}
+                  removeDisabled={unfollowPool.isPending}
+                  onRemove={() => void removePool(pool)}
+                  open={
+                    <Link
+                      className="subscription-item-open"
+                      to="/app/pool"
+                      search={{ site: pool.siteId, pool: pool.poolId }}
+                    >
+                      {pool.coverUrl ? (
+                        <RemoteImage
+                          src={pool.coverUrl}
+                          alt=""
+                          className="subscription-cover"
+                          loading="lazy"
+                          decoding="async"
+                          // danbooru's CDN answers 403 without a Referer; `origin`
+                          // sends the host and never the path.
+                          referrerPolicy="origin"
+                          fallback={<span className="subscription-cover" />}
+                        />
+                      ) : (
+                        <span className="subscription-cover" />
+                      )}
+                      <span className="subscription-item-title">{pool.name}</span>
+                      <span className="subscription-item-meta">
+                        <SiteLogos sites={sites.filter((site) => site.id === pool.siteId)} />{' '}
                         {pool.siteName} · {pool.postCount}{' '}
                         {pool.postCount === 1 ? 'page' : 'pages'}
                       </span>
-                    </span>
-                    {pool.coverUrl ? (
-                      <RemoteImage
-                        src={pool.coverUrl}
-                        alt=""
-                        className="subscription-row-cover rounded"
-                        loading="lazy"
-                        decoding="async"
-                        // danbooru's CDN answers 403 without a Referer; `origin`
-                        // sends the host and never the path.
-                        referrerPolicy="origin"
-                        fallback={
-                          <span className="subscription-row-cover rounded" />
-                        }
-                      />
-                    ) : (
-                      <span className="subscription-row-cover rounded" />
-                    )}
-                  </Link>
-                }
-              />
-            ))}
-          </div>
+                    </Link>
+                  }
+                />
+              ))}
+            </SubscriptionGroup>
+          </>
         ) : (
           <p className="text-muted-foreground text-sm mb-3">
             Nothing followed matches these filters.

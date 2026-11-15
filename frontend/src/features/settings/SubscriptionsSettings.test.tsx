@@ -152,7 +152,7 @@ it('removes only the search whose X was clicked, and lists followed pools', asyn
   const container = await render();
   await waitFor(() => container.textContent?.includes('Fox Comic') ?? false);
   expect(container.textContent).toContain('e621 · 12 pages');
-  const rowTitles = Array.from(container.querySelectorAll('.subscription-row-title')).map(
+  const rowTitles = Array.from(container.querySelectorAll('.subscription-item-title')).map(
     (node) => node.textContent
   );
   expect(rowTitles).toEqual(['red fox', 'wolf', 'rukis', 'Fox Comic']);
@@ -212,11 +212,11 @@ it('subscribes from one input and shows the sites where each entry has results',
   const container = await render();
   await waitFor(() => container.textContent?.includes('Fox Comic') ?? false);
   expect(container.querySelector('input[placeholder="Artist username"]')).toBeNull();
-  await waitFor(() => container.querySelectorAll('.subscription-row [role="img"]').length > 0);
+  await waitFor(() => container.querySelectorAll('.subscription-item [role="img"]').length > 0);
   const logos = (title: string) =>
     Array.from(
-      Array.from(container.querySelectorAll('.subscription-row'))
-        .find((row) => row.querySelector('.subscription-row-title')?.textContent === title)
+      Array.from(container.querySelectorAll('.subscription-item'))
+        .find((row) => row.querySelector('.subscription-item-title')?.textContent === title)
         ?.querySelectorAll('[role="img"]') ?? []
     ).map((node) => node.getAttribute('aria-label'));
   expect(logos('red fox')).toEqual(['e621']);
@@ -241,7 +241,7 @@ it('filters the list by name and by site', async () => {
   const container = await render();
   await waitFor(() => container.textContent?.includes('Fox Comic') ?? false);
   const titles = () =>
-    Array.from(container.querySelectorAll('.subscription-row-title')).map((n) => n.textContent);
+    Array.from(container.querySelectorAll('.subscription-item-title')).map((n) => n.textContent);
   expect(titles()).toEqual(['red fox', 'wolf', 'rukis', 'nawka', 'Fox Comic']);
 
   await act(async () => document.querySelector<HTMLButtonElement>('.search-lens')?.click());
