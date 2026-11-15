@@ -104,12 +104,17 @@ for (const mode of ['dark', 'light']) {
 
 test('opening a picture does not repaint the page', async ({ page }) => {
   await choose(page, 'tint-4');
-  const before = await page.evaluate(() => document.documentElement.getAttribute('style'));
+  // The appearance only: `--toast-floor` follows the controls at the bottom, which the detail adds.
+  const appearance = () =>
+    page.evaluate(() =>
+      (document.documentElement.getAttribute('style') ?? '').replace(/--toast-floor:[^;]*;?\s*/, '').trim()
+    );
+  const before = await appearance();
   // The first card is a video, whose middle is its play button.
   await page.getByRole('button', { name: /landscape\.png/ }).click();
   await expect(page.locator('.file-detail-panel-current .file-detail-tags')).toBeVisible();
   await page.waitForTimeout(800);
-  expect(await page.evaluate(() => document.documentElement.getAttribute('style'))).toBe(before);
+  expect(await appearance()).toBe(before);
 });
 
 test('a style saved by an older version still opens the app', async ({ page }) => {
