@@ -1217,11 +1217,9 @@ mod tests {
         let t = Transport {
             allow_loopback: true,
         };
-        db.call(move |c| {
-            store::save_seen_artists(c, "fixture", &watched.map(str::to_owned))
-        })
-        .await
-        .unwrap();
+        db.call(move |c| store::save_seen_artists(c, "fixture", &watched.map(str::to_owned)))
+            .await
+            .unwrap();
         let errors = sync_artists(&db, &t, &[site]).await.unwrap();
         assert_eq!(errors.len(), 1);
         assert_eq!(watching(&fa), watched);
