@@ -940,7 +940,7 @@ html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::befor
 }
 
 /* Settings pages and pools: their buttons sit in the band of the window buttons, at its right end
-   beside them, and the page title moves up into the band on the left. */
+   beside them, and the page title moves up into the place of the row they used to take. */
 html.has-window-controls .page-shell:has(.settings-subpage-back, .pool-head) {
   padding-top: 0;
 }
@@ -953,17 +953,43 @@ html.has-window-controls .page-shell:has(.settings-subpage-back, .pool-head) {
   margin: 0 calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)) 0 0.75rem;
 }
 
-.has-window-controls :is(.settings-subpage-back + div, .pool-title) {
-  min-height: env(titlebar-area-height, 0px);
+/* Keeps the title's top margin inside the page, so it does not carry the floated link down too. */
+.has-window-controls .page-chrome:has(> .settings-subpage-back) {
+  display: flow-root;
 }
 
-.has-window-controls .pool-title {
+/* A heading's count sits in the band too, ending where the band's buttons end: the page's side
+   padding (.page-shell 0.75rem, .page-chrome 1rem) in from the window buttons. Fixed, so it stays
+   in the band whether the heading rests below it or is pinned up into it. */
+.has-window-controls .page-header-count {
+  position: fixed;
+  top: 0;
+  right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 1.75rem);
   display: flex;
   align-items: center;
+  height: env(titlebar-area-height, 0px);
+}
+
+/* The title keeps the place of every page's heading, the band's height below the page's top edge,
+   so it does not jump between Settings and its pages and lines up with the menu's name. */
+.has-window-controls :is(.settings-subpage-back + div, .pool-head-title) {
+  min-height: 2.75rem;
+  margin-top: 1.25rem;
+}
+
+.has-window-controls .pool-head-title {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .has-window-controls .pool-head-title {
   order: -1;
+}
+
+/* Two links side by side need more room than a link beside an icon button. */
+.has-window-controls .pool-head {
+  column-gap: 1.25rem;
 }
 
 .has-window-controls .pool-head > .pool-head-action,
