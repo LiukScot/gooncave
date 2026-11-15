@@ -97,6 +97,9 @@ async fn overview(db: &Database, sync: bool) -> Result<Json<Value>> {
 }
 /// Follow changes refused in a row before one account's sync stops for this round.
 const MAX_FOLLOW_FAILURES: usize = 3;
+/// Settings unfollows one artist and syncs at once, so more than this many removals in one sync
+/// means the local list was lost or emptied (a restored backup, a sync gone wrong), not chosen.
+const MAX_UNWATCH_AT_ONCE: usize = 3;
 /// Two-way sync of the artists with each enabled FurAffinity watchlist (see `store::reconcile`).
 /// A failed account is returned as an error and retried on the next sync; its changes are kept.
 /// The caller holds the `subscriptions` lock.
@@ -119,7 +122,18 @@ async fn sync_artists(db: &Database, t: &Transport, sites: &[Site]) -> Result<Ve
         let (seen, local) = db
             .call(move |c| Ok((store::seen_artists(c, &id)?, store::artists(c)?)))
             .await?;
-        let plan = store::reconcile(&watched, seen.as_deref(), &local);
+        let mut plan = store::reconcile(&watched, seen.as_deref(), &local);
+        if plan.unwatch.len() > MAX_UNWATCH_AT_ONCE {
+            eprintln!(
+                "[developer] The artist list lost {} FurAffinity artists at once; they are imported again instead of unwatched",
+                plan.unwatch.len()
+            );
+            errors.push(failed(&Error::Invalid(format!(
+                "{} artists left the list at once, so they were added back instead of unwatched on FurAffinity. Unfollow them one at a time.",
+                plan.unwatch.len()
+            ))));
+            plan = store::reconcile(&watched, None, &local);
+        }
         if plan.local.len() > store::MAX_ARTISTS {
             // Saving it would leave a list GoonCave refuses to read back.
             errors.push(failed(&Error::Invalid(format!(
@@ -1192,6 +1206,28 @@ mod tests {
         let (local, seen) = local_and_seen(&db).await;
         assert_eq!(local, ["ghost", "real", "existing"]);
         assert_eq!(seen.unwrap(), ["existing", "real"]);
+        task.abort();
+    }
+    #[tokio::test]
+    async fn a_list_emptied_at_once_is_imported_again_instead_of_unwatched() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let watched = ["a", "b", "c", "d"];
+        let (site, fa, task) = fake_fa(&watched, &watched, None).await;
+        let t = Transport {
+            allow_loopback: true,
+        };
+        db.call(move |c| {
+            store::save_seen_artists(c, "fixture", &watched.map(str::to_owned))
+        })
+        .await
+        .unwrap();
+        let errors = sync_artists(&db, &t, &[site]).await.unwrap();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(watching(&fa), watched);
+        let (local, seen) = local_and_seen(&db).await;
+        assert_eq!(local, watched);
+        assert_eq!(seen.unwrap(), watched);
         task.abort();
     }
     #[tokio::test]

@@ -72,10 +72,46 @@ export const collectSubscriptionPosts = async (options: {
   return { posts, nextCursor, hasMore };
 };
 
+type LoadOptions<RefreshResult> = Parameters<typeof collectSubscriptionPosts>[0] & {
+  refresh: () => Promise<RefreshResult>;
+};
+
+/** How many saved-feed reads, each with its backfill, one load may chain. */
+const MAX_LOADS = 3;
+
+/**
+ * Reads the next posts, backfilling from the sites where the saved feed ends.
+ * Below `minPosts` kept posts it reads on, up to MAX_LOADS times: with most
+ * posts already read, one backfill can end with a single post on screen.
+ */
 export const loadSubscriptionPosts = async <RefreshResult>(
-  options: Parameters<typeof collectSubscriptionPosts>[0] & {
-    refresh: () => Promise<RefreshResult>;
+  options: LoadOptions<RefreshResult> & { minPosts?: number }
+) => {
+  let result = await loadSubscriptionPostsOnce(options);
+  const posts = [...result.posts];
+  let refreshError = result.refreshError;
+  for (
+    let load = 1;
+    load < MAX_LOADS &&
+    posts.length < (options.minPosts ?? 0) &&
+    result.hasMore &&
+    result.nextCursor !== null &&
+    !options.signal.aborted;
+    load += 1
+  ) {
+    result = await loadSubscriptionPostsOnce({
+      ...options,
+      cursor: result.nextCursor,
+      target: options.target - posts.length
+    });
+    posts.push(...result.posts);
+    refreshError ??= result.refreshError;
   }
+  return { ...result, posts, refreshError };
+};
+
+const loadSubscriptionPostsOnce = async <RefreshResult>(
+  options: LoadOptions<RefreshResult>
 ) => {
   const probe = await options.fetchPage(options.cursor);
   const collectFromProbe = (stopWhenNotReady: boolean) => {

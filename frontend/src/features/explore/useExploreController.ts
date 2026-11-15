@@ -98,6 +98,8 @@ const SUBSCRIPTION_BACKFILL_ROUNDS = 4;
  * fetching, with one it costs at most this many requests.
  */
 const MAX_FILL_ROUNDS = 5;
+/** About two phone screens of tiles: a load that shows fewer keeps fetching, within its caps. */
+const MIN_POSTS_PER_LOAD = 12;
 const FAVORITE_SETTLE_MS = 150;
 
 export type ExploreSiteOption = BooruSite & {
@@ -466,6 +468,7 @@ export function useExploreController({
       limit: remotePageLimit,
       target: PAGE_SIZE,
       maxRounds: MAX_FILL_ROUNDS,
+      minPosts: MIN_POSTS_PER_LOAD,
       keep: keepPost,
       signal,
       onSlowSite: (siteId, skip) =>
@@ -590,6 +593,7 @@ export function useExploreController({
       const first = await loadSubscriptionPosts({
         cursor: null,
         target: PAGE_SIZE,
+        minPosts: MIN_POSTS_PER_LOAD,
         signal: controller.signal,
         refresh: api.refreshExploreSubscriptions,
         fetchPage: (cursor) =>
@@ -876,6 +880,7 @@ export function useExploreController({
         const result = await loadSubscriptionPosts({
           cursor: subscriptionCursorRef.current,
           target: PAGE_SIZE,
+          minPosts: MIN_POSTS_PER_LOAD,
           signal: controller.signal,
           refresh: () =>
             api.refreshExploreSubscriptions(

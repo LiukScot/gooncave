@@ -109,6 +109,38 @@ describe('collectSubscriptionPosts', () => {
     expect(result.refreshError).toBeNull();
   });
 
+  it('reads on while too few unread posts were found, within its cap', async () => {
+    const cursors: Array<string | null> = [];
+    let refreshes = 0;
+
+    const result = await loadSubscriptionPosts({
+      cursor: null,
+      target: 40,
+      minPosts: 3,
+      signal: new AbortController().signal,
+      refresh: async () => {
+        refreshes += 1;
+        return { errors: [] };
+      },
+      // Every read stops at a part of the feed not yet backfilled.
+      fetchPage: async (cursor) => {
+        cursors.push(cursor);
+        const n = cursors.length;
+        return {
+          posts: [post(`p${n}`)],
+          hasMore: true,
+          nextCursor: `c${n}`,
+          ready: n % 2 === 1
+        };
+      },
+      keep: () => true
+    });
+
+    expect(result.posts.map((entry) => entry.remoteId)).toEqual(['p1', 'p3', 'p5']);
+    expect(refreshes).toBe(0);
+    expect(cursors.length).toBeLessThanOrEqual(9);
+  });
+
   it('uses a ready local index without waiting for a remote refresh', async () => {
     const calls: string[] = [];
 

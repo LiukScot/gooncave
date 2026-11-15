@@ -190,6 +190,12 @@ export type FillOptions = {
   target: number;
   /** Request cap, so two near-tied sites cannot trickle one post per click. */
   maxRounds: number;
+  /**
+   * Below this many released posts the fill goes on past `maxRounds`, up to
+   * three times it: when most posts are hidden as read, five rounds can end
+   * with one post next to Load more.
+   */
+  minPosts?: number;
   keep: (post: ExplorePost) => boolean;
   fetchPage: PageFetcher;
   signal?: AbortSignal;
@@ -327,6 +333,10 @@ const fetchHotRound = async (
   return { candidates, errors };
 };
 
+const hasRoundLeft = (round: number, released: number, options: FillOptions) =>
+  round < options.maxRounds ||
+  (released < (options.minPosts ?? 0) && round < options.maxRounds * 3);
+
 /** Hot ranks one bounded page per site together, then appends later rounds. */
 const fillHotPages = async (
   streams: Map<string, SiteStream>,
@@ -337,7 +347,7 @@ const fillHotPages = async (
   const errors: FillResult['errors'] = [];
   for (
     let round = 0;
-    posts.length < options.target && round < options.maxRounds;
+    posts.length < options.target && hasRoundLeft(round, posts.length, options);
     round += 1
   ) {
     const siteIds = [...current]
@@ -375,7 +385,7 @@ export const fillPages = async (
   const errors: FillResult['errors'] = [];
   for (
     let round = 0;
-    posts.length < options.target && round < options.maxRounds;
+    posts.length < options.target && hasRoundLeft(round, posts.length, options);
     round += 1
   ) {
     const best = releaseFloor(current);
@@ -462,7 +472,8 @@ export const openStreams = async (
   const released = releaseReady(streams);
   const filled = await fillPages(released.streams, {
     ...options,
-    target: options.target - released.posts.length
+    target: options.target - released.posts.length,
+    minPosts: (options.minPosts ?? 0) - released.posts.length
   });
   return {
     streams: filled.streams,
