@@ -918,18 +918,26 @@ html {
   app-region: drag;
 }
 
-.has-window-controls :is(.page-header, .pool-head) {
+.has-window-controls .page-header {
   padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
 }
 
-/* The band of the window buttons moves the window on every page, margins and pages without a
-   heading included. It lies behind the page, so the controls drawn over it keep their clicks. */
+/* Outside fullscreen the band of the window buttons is a bar: the page scrolls under it, and it
+   moves the window from any spot. A pinned heading (z-index 400) and the menu (500) lie over it.
+   The bar's own buttons are fixed above it; every control is no-drag, so they keep their clicks. */
+html.has-window-controls {
+  /* Where the bar's buttons end: the page's side padding (.page-shell 0.75rem, .page-chrome 1rem)
+     in from the window buttons, as a heading's right edge sits. */
+  --window-bar-end: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 1.75rem);
+}
+
 html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::before {
   content: '';
   position: fixed;
-  z-index: -1;
+  z-index: 300;
   inset: 0 0 auto;
   height: env(titlebar-area-height, 0px);
+  background: hsl(var(--page-background));
   -webkit-app-region: drag;
   app-region: drag;
 }
@@ -939,42 +947,21 @@ html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::befor
   app-region: no-drag;
 }
 
-/* Settings pages and pools: their buttons sit in the band of the window buttons, at its right end
-   beside them, and the page title moves up into the place of the row they used to take. */
-html.has-window-controls .page-shell:has(.settings-subpage-back, .pool-head) {
-  padding-top: 0;
-}
-
-.has-window-controls .settings-subpage-back {
-  float: right;
-  display: flex;
-  align-items: center;
-  min-height: env(titlebar-area-height, 0px);
-  margin: 0 calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)) 0 0.75rem;
-}
-
-/* Keeps the title's top margin inside the page, so it does not carry the floated link down too. */
-.has-window-controls .page-chrome:has(> .settings-subpage-back) {
-  display: flow-root;
-}
-
-/* A heading's count sits in the band too, ending where the band's buttons end: the page's side
-   padding (.page-shell 0.75rem, .page-chrome 1rem) in from the window buttons. Fixed, so it stays
-   in the band whether the heading rests below it or is pinned up into it. */
-.has-window-controls .page-header-count {
+.has-window-controls :is(.page-header-count, .settings-subpage-back, .pool-head-bar, .window-bar-back) {
   position: fixed;
+  z-index: 350;
   top: 0;
-  right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 1.75rem);
+  right: var(--window-bar-end);
   display: flex;
   align-items: center;
+  gap: 1.25rem;
   height: env(titlebar-area-height, 0px);
+  margin: 0;
 }
 
-/* The title keeps the place of every page's heading, the band's height below the page's top edge,
-   so it does not jump between Settings and its pages and lines up with the menu's name. */
+/* With their buttons in the bar, the title keeps the place of every page's heading. */
 .has-window-controls :is(.settings-subpage-back + div, .pool-head-title) {
   min-height: 2.75rem;
-  margin-top: 1.25rem;
 }
 
 .has-window-controls .pool-head-title {
@@ -983,22 +970,8 @@ html.has-window-controls .page-shell:has(.settings-subpage-back, .pool-head) {
   justify-content: center;
 }
 
-.has-window-controls .pool-head-title {
-  order: -1;
-}
-
-/* Two links side by side need more room than a link beside an icon button. */
-.has-window-controls .pool-head {
-  column-gap: 1.25rem;
-}
-
-.has-window-controls .pool-head > .pool-head-action,
-.has-window-controls .pool-head-actions {
-  min-height: env(titlebar-area-height, 0px);
-}
-
-/* Quiet like the Settings link beside the window buttons, not boxes under them. */
-.has-window-controls .pool-head .pool-head-action {
+/* Quiet like the Settings link in the bar, not boxes. */
+.has-window-controls .pool-head-bar .pool-head-action {
   width: auto;
   height: auto;
   min-width: 0;
@@ -1010,9 +983,33 @@ html.has-window-controls .page-shell:has(.settings-subpage-back, .pool-head) {
   text-underline-offset: 4px;
 }
 
-.has-window-controls .pool-head .pool-head-action:hover {
+.has-window-controls .pool-head-bar .pool-head-action:hover {
   background: transparent;
   text-decoration: underline;
+}
+
+/* An open file's way back is a link in the bar (WindowBarBack), not the picture's corner button. */
+.window-bar-back,
+.has-window-controls .file-detail-overlay-back {
+  display: none;
+}
+
+/* Pinned up into the bar, the heading's title steps down a size so it sits in the bar's height
+   instead of filling it. */
+.has-window-controls .page-header {
+  container-type: scroll-state;
+}
+
+@container scroll-state(stuck: top) {
+  .has-window-controls .page-header > .page-title {
+    font-size: 1.875rem;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .has-window-controls .page-header > .page-title {
+    transition: font-size 200ms var(--ease-out-quint);
+  }
 }
 
 /* In the desktop window a link is a button of the app, not a web address to drag away. */
@@ -3701,6 +3698,15 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   min-width: 0;
 }
 
+/* Outside the desktop window the bar is no box: the back button leads, the actions trail. */
+.pool-head-bar {
+  display: contents;
+}
+
+.pool-head-actions {
+  order: 1;
+}
+
 .file-detail-section-title.pool-title {
   font-size: 1.5rem;
   line-height: 1.2;
@@ -5360,6 +5366,13 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 :root .phone-actions .file-detail-main-action {
   --file-detail-overlay-size: var(--floating-button-size);
   --file-detail-overlay-radius: calc(var(--floating-button-size) / 2);
+}
+
+/* Squares off under the pointer as the search button it replaces does. */
+@media (hover: hover) {
+  :root .phone-actions .file-detail-main-action:hover {
+    border-radius: 1.25rem;
+  }
 }
 
 /* Matching images: the two strategies are panels and their example a

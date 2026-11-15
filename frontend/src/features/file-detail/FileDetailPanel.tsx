@@ -12,7 +12,8 @@ import {
   FileInfoList,
   OverlayButton,
   RelatedPostsSection,
-  TagPills
+  TagPills,
+  WindowBarBack
 } from './DetailSections';
 import { FileMoreMenu } from './FileMoreMenu';
 import { useFullscreenFlip } from './fullscreenFlip';
@@ -629,6 +630,9 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     >
       {voteUndo && mediaFullscreen ? voteUndo : null}
       {voteUndo && !mediaFullscreen ? createPortal(voteUndo, document.body) : null}
+      {mediaFullscreen ? null : (
+        <WindowBarBack label={openedFromHistory ? 'Back to History' : 'Back to gallery'} onClick={onClose} />
+      )}
       <div
         className={`file-detail-track${detailSwipeTransition ? ' is-transitioning' : ''}`}
         style={{

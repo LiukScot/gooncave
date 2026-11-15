@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
-import { Ban, UserRound } from 'lucide-react';
+import { Ban, ChevronLeft, UserRound } from 'lucide-react';
 import React from 'react';
+import { createPortal } from 'react-dom';
 
 import type { TagEntry, TagGroup } from './FileDetailPanel';
 import { sortTagGroups, withImpliedTags } from './sections';
@@ -74,6 +75,21 @@ export function OverlayButton({
       {/* Shown only as a row of the actions panel; in the corner the icon stands alone. */}
       <span className="file-detail-overlay-label" aria-hidden="true">{label}</span>
     </button>
+  );
+}
+
+/**
+ * The way back as a link in the desktop window's bar, beside the window buttons. The bar is fixed
+ * to the window, so it is drawn on the page itself: inside the sliding track `position: fixed`
+ * would follow the track. Hidden outside the desktop window, where the picture's corner has it.
+ */
+export function WindowBarBack({ label, onClick }: { label: string; onClick: () => void }): React.ReactElement {
+  return createPortal(
+    <button type="button" className="btn btn-link window-bar-back" onClick={onClick}>
+      <ChevronLeft className="size-4" aria-hidden="true" />
+      {label}
+    </button>,
+    document.body
   );
 }
 
