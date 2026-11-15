@@ -269,3 +269,23 @@ it('filters the list by name and by site', async () => {
   await act(async () => setValue(filter, ''));
   expect(titles()).toEqual(['red fox', 'wolf', 'rukis', 'nawka', 'Fox Comic']);
 });
+
+it('shows a search that names one artist with the artists, and the rest as searches', async () => {
+  const base = subscriptionsFetch();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await base(input, init);
+      if (!String(input).endsWith('/settings/subscriptions')) return response;
+      return Response.json({ ...(await response.json()), artistSearches: ['wolf'] });
+    })
+  );
+  const container = await render();
+  await waitFor(() => container.textContent?.includes('Fox Comic') ?? false);
+  const block = (name: string) =>
+    Array.from(container.querySelector(`section[aria-label="${name}"]`)?.querySelectorAll('.subscription-item-title') ?? []).map(
+      (node) => node.textContent
+    );
+  expect(block('Searches')).toEqual(['red fox']);
+  expect(block('Artists')).toEqual(['wolf', 'rukis', 'nawka']);
+});

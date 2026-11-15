@@ -146,7 +146,9 @@ function Subscriptions() {
     matches(entry) &&
     (hiddenSites.size === 0 ||
       sitesOf(entry).some((site) => !hiddenSites.has(site.id)));
-  const shownTags = tags.filter(shows);
+  const artistSearches = new Set(subscriptions.data?.artistSearches ?? []);
+  const shownTags = tags.filter((tag) => !artistSearches.has(tag) && shows(tag));
+  const shownArtistSearches = tags.filter((tag) => artistSearches.has(tag) && shows(tag));
   const shownArtists = artists.filter(shows);
   const shownPools = pools.filter(
     (pool) => matches(pool.name) && !hiddenSites.has(pool.siteId)
@@ -254,6 +256,22 @@ function Subscriptions() {
     void navigate({ to: '/app/explore', search: { post: undefined } });
   };
 
+  const searchItem = (search: string) => (
+    <SubscriptionItem
+      key={search}
+      className="subscription-pill"
+      removeLabel={`Unsubscribe from ${search}`}
+      removeDisabled={updateTags.isPending}
+      onRemove={() => void remove(search)}
+      open={
+        <button type="button" className="subscription-item-open" onClick={() => openSearch(search)}>
+          <SiteLogos sites={sitesOf(search)} />
+          <span className="subscription-item-title">{search}</span>
+        </button>
+      }
+    />
+  );
+
   return (
     <section className="settings-section">
       <form
@@ -327,30 +345,13 @@ function Subscriptions() {
       </SearchPanel>
 
       {tags.length || artists.length || pools.length ? (
-        shownTags.length || shownArtists.length || shownPools.length ? (
+        shownTags.length || shownArtistSearches.length || shownArtists.length || shownPools.length ? (
           <>
             <SubscriptionGroup title="Searches" count={shownTags.length} fold={PILLS_FOLD} className="subscription-pills">
-              {shownTags.map((search) => (
-                <SubscriptionItem
-                  key={search}
-                  className="subscription-pill"
-                  removeLabel={`Unsubscribe from ${search}`}
-                  removeDisabled={updateTags.isPending}
-                  onRemove={() => void remove(search)}
-                  open={
-                    <button
-                      type="button"
-                      className="subscription-item-open"
-                      onClick={() => openSearch(search)}
-                    >
-                      <SiteLogos sites={sitesOf(search)} />
-                      <span className="subscription-item-title">{search}</span>
-                    </button>
-                  }
-                />
-              ))}
+              {shownTags.map(searchItem)}
             </SubscriptionGroup>
-            <SubscriptionGroup title="Artists" count={shownArtists.length} fold={PILLS_FOLD} className="subscription-pills">
+            <SubscriptionGroup title="Artists" count={shownArtists.length + shownArtistSearches.length} fold={PILLS_FOLD} className="subscription-pills">
+              {shownArtistSearches.map(searchItem)}
               {shownArtists.map((artist) => (
                 <SubscriptionItem
                   key={`artist:${artist}`}

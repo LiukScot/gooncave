@@ -215,6 +215,8 @@ export type ArtistSyncError = {
 export type SubscriptionSettings = {
   tags: string[];
   artists: string[];
+  /** The searches that name one artist; still searches, not followed on FurAffinity. */
+  artistSearches?: string[];
   /** For each search and artist, the ids of the enabled sites where it has results. */
   siteHits: Record<string, string[]>;
   artistErrors: ArtistSyncError[];

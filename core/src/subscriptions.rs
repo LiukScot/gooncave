@@ -129,7 +129,31 @@ fn site_hits(
     }
     Ok(hits)
 }
-/// The saved searches and artists, with `siteHits`: the enabled sites where each has results.
+/// The saved searches that name one artist: a single plain tag that the tag vocabulary and the
+/// library call an artist, or do not know at all. Booru artists are most single-tag searches, and
+/// a tag the vocabulary files as a species, character or anything else (`cat`) stays a search.
+/// They stay searches in storage: only FurAffinity users go in the artist list, which is synced
+/// with each FurAffinity watchlist.
+fn artist_searches(c: &rusqlite::Connection, tags: &[String]) -> Result<Vec<String>> {
+    let mut s = c.prepare(
+        "SELECT EXISTS(SELECT 1 FROM tag_categories WHERE tag=?1 AND category='artist')
+            OR EXISTS(SELECT 1 FROM file_tags WHERE canonical_tag=?1 AND category='artist')
+            OR NOT (EXISTS(SELECT 1 FROM tag_categories WHERE tag=?1)
+                OR EXISTS(SELECT 1 FROM file_tags WHERE canonical_tag=?1))",
+    )?;
+    let mut artists = Vec::new();
+    for tag in tags {
+        if tag.contains([' ', ':', '*']) || tag.starts_with(['-', '~']) {
+            continue;
+        }
+        if s.query_row([tag], |r| r.get(0))? {
+            artists.push(tag.clone());
+        }
+    }
+    Ok(artists)
+}
+/// The saved searches and artists, with `siteHits`: the enabled sites where each has results, and
+/// `artistSearches` (see [`artist_searches`]).
 /// With `sync`, each FurAffinity account's watchlist is first merged into the artists; the
 /// caller holds the `subscriptions` lock.
 async fn overview(db: &Database, sync: bool) -> Result<Json<Value>> {
@@ -139,12 +163,13 @@ async fn overview(db: &Database, sync: bool) -> Result<Json<Value>> {
     } else {
         vec![]
     };
-    let (tags, artists, hits) = db
+    let (tags, artists, hits, artist_searches) = db
         .call(move |c| {
             let (tags, artists) = (store::searches(c)?, store::artists(c)?);
             let entries: Vec<&String> = tags.iter().chain(&artists).collect();
             let hits = site_hits(c, &sites, &entries)?;
-            Ok((tags, artists, hits))
+            let artist_searches = artist_searches(c, &tags)?;
+            Ok((tags, artists, hits, artist_searches))
         })
         .await?;
     let targets: Vec<Value> = tags
@@ -157,7 +182,7 @@ async fn overview(db: &Database, sync: bool) -> Result<Json<Value>> {
         )
         .collect();
     Ok(Json(
-        json!({"tags":tags,"artists":artists,"siteHits":hits,"artistErrors":errors,"targets":targets}),
+        json!({"tags":tags,"artists":artists,"artistSearches":artist_searches,"siteHits":hits,"artistErrors":errors,"targets":targets}),
     ))
 }
 /// Follow changes refused in a row before one account's sync stops for this round.
@@ -869,6 +894,26 @@ async fn refresh_fa(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_single_tag_counts_as_an_artist_unless_the_vocabulary_files_it_elsewhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        db.call(|c| {
+            c.execute_batch(
+                "INSERT INTO tag_categories(tag,category) VALUES ('cat','species'),('rukis','artist'),('comic','meta');",
+            )?;
+            let tags = ["rukis", "desertkaiju", "grefina_(noirchaton4)", "cat", "comic", "fox score:>10", "-gore", "~a", "dra*"]
+                .map(String::from);
+            assert_eq!(
+                artist_searches(c, &tags)?,
+                ["rukis", "desertkaiju", "grefina_(noirchaton4)"]
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
     use axum::{extract::Request, response::IntoResponse, routing::any};
     use std::sync::{Arc, Mutex};
 
