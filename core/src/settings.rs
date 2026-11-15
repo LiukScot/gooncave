@@ -40,13 +40,12 @@ pub fn read(connection: &Connection, section: &str) -> Result<Value> {
         }
         "shortcuts" => json!({"bindings": read_setting(connection, "shortcuts.bindings", &json!({}))?}),
         "blacklist" => {
-            let mut value = read_setting(connection, "blacklist.settings", &json!({"tags": [], "applyToExplore": true, "applyToGallery": false, "applyToSubscriptions": true}))?;
-            // Saved before Subscriptions had their own switch, when Explore's covered them.
+            let mut value = read_setting(connection, "blacklist.settings", &json!({"tags": [], "applyToExplore": true, "applyToGallery": false, "applyToSubscriptions": false}))?;
+            // Saved before Subscriptions had their own switch: off, like a new blacklist.
             if let Some(settings) = value.as_object_mut() {
-                if !settings.contains_key("applyToSubscriptions") {
-                    let explore = settings.get("applyToExplore").cloned().unwrap_or(json!(true));
-                    settings.insert("applyToSubscriptions".into(), explore);
-                }
+                settings
+                    .entry("applyToSubscriptions")
+                    .or_insert(json!(false));
             }
             value
         }
@@ -200,11 +199,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_blacklist_saved_before_the_subscriptions_switch_keeps_hiding_what_explore_hid() {
+    async fn the_blacklist_covers_only_explore_until_subscriptions_are_switched_on() {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
         db.call(|c| {
-            assert_eq!(read(c, "blacklist")?["applyToSubscriptions"], true);
+            assert_eq!(read(c, "blacklist")?["applyToSubscriptions"], false);
             write_setting(
                 c,
                 "blacklist.settings",

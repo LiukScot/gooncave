@@ -199,7 +199,7 @@ export const BLACKLIST_DEFAULTS: BlacklistSettings = {
   tags: [],
   applyToExplore: true,
   applyToGallery: false,
-  applyToSubscriptions: true
+  applyToSubscriptions: false
 };
 
 /** The saved searches and followed artists, as stored. */
