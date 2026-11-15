@@ -24,6 +24,7 @@ import { isCurrentPeriod, periodLabel } from './popularPeriod';
 import { PopularPeriodNote } from './PopularPeriodNote';
 import { RemoteImage } from './RemoteImage';
 import {
+  furAffinityArtist,
   normalizeSubscriptionSearch,
   groupFeedByDay,
   subscriptionReasons
@@ -326,7 +327,7 @@ export function ExploreView({
         onClose={ctl.closeDetail}
         onVote={(score) => void ctl.votePost(post, score)}
         onFavorite={() => void ctl.toggleFavorite(post, ctl.isFavorited(post))}
-        onSelectTag={(tag) => void ctl.selectTag(tag)}
+        onSelectTag={(tag) => void ctl.selectTag(tag, furAffinityArtist(post, tag))}
         onOpenRelated={ctl.openExcursion}
       />
     );

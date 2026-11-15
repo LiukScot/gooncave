@@ -992,18 +992,18 @@ export function useExploreController({
    * rather than replacing it (issue #307).
    */
   const selectTag = useCallback(
-    async (tag: string) => {
+    async (tag: string, artist?: string) => {
       const mode = await choose('', {
         title: tag,
         actions: [
           { value: 'search', label: 'Search tag' },
-          ...(subscriptionsAvailable ? [subscriptionActionFor(tag)] : []),
+          ...(subscriptionsAvailable ? [subscriptionActionFor(tag, artist)] : []),
           blacklistActionFor(tag)
         ]
       });
       if (!mode) return;
       if (mode !== 'search') {
-        await runSubscriptionAction(mode, tag);
+        await runSubscriptionAction(mode, tag, artist);
         return;
       }
       const next = appendTagTerm(tagInput, tag);

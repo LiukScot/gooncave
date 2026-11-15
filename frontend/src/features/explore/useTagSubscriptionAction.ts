@@ -8,6 +8,7 @@ import type { ChoiceAction } from '@/components/confirm-dialog';
 import { normalizeTag } from '@/features/settings/blacklist';
 import { useDeviceProfile } from '@/hooks/device';
 import {
+  useArtistSubscriptionMutation,
   useBlacklistSettings,
   useAddSubscriptionTag,
   useSubscriptionTags,
@@ -31,28 +32,54 @@ export function useTagSubscriptionAction() {
   const subscriptionTags = useSubscriptionTags();
   const { mutateAsync: addTag } = useAddSubscriptionTag();
   const { mutateAsync: saveTags } = useUpdateSubscriptionTags();
+  const { mutateAsync: followArtist } = useArtistSubscriptionMutation(true);
+  const { mutateAsync: unfollowArtist } = useArtistSubscriptionMutation(false);
   const blacklist = useBlacklistSettings();
   const { mutateAsync: saveBlacklist } = useUpdateBlacklistSettings();
   const subscribedTags = useMemo(
     () => subscriptionTags.data?.tags ?? [],
     [subscriptionTags.data?.tags]
   );
+  const followedArtists = useMemo(
+    () => subscriptionTags.data?.artists ?? [],
+    [subscriptionTags.data?.artists]
+  );
 
+  /**
+   * `artist` is the FurAffinity username when the tag names who posted a
+   * FurAffinity post: subscribing then follows them there, as Settings does.
+   */
   const actionFor = useCallback(
-    (tag: string): ChoiceAction<TagSubscriptionMode> => {
-      const state = subscriptionActionState(tag, subscribedTags);
+    (tag: string, artist?: string): ChoiceAction<TagSubscriptionMode> => {
+      const state = artist
+        ? subscriptionActionState(artist, followedArtists)
+        : subscriptionActionState(tag, subscribedTags);
       return {
         value: state.subscribed ? 'unsubscribe' : 'subscribe',
-        label: subscriptionsAvailable ? state.label : 'Subscriptions unavailable',
+        label: !subscriptionsAvailable
+          ? 'Subscriptions unavailable'
+          : artist
+            ? state.subscribed ? 'Unfollow artist' : 'Follow artist'
+            : state.label,
         variant: state.subscribed ? 'destructive' : 'default'
       };
     },
-    [subscribedTags, subscriptionsAvailable]
+    [followedArtists, subscribedTags, subscriptionsAvailable]
   );
 
   const runAction = useCallback(
-    async (mode: TagSubscriptionMode, tag: string) => {
+    async (mode: TagSubscriptionMode, tag: string, artist?: string) => {
       try {
+        if (artist && (mode === 'subscribe' || mode === 'unsubscribe')) {
+          if (mode === 'subscribe') {
+            await followArtist(artist);
+            toast.success(`Following ${artist}`);
+          } else {
+            await unfollowArtist(artist);
+            toast.success(`Unfollowed ${artist}`);
+          }
+          return;
+        }
         if (mode === 'blacklist' || mode === 'unblacklist') {
           const normalizedTag = normalizeTag(tag);
           const current = await api.getBlacklist();
@@ -89,7 +116,7 @@ export function useTagSubscriptionAction() {
         toast.error((error as Error).message);
       }
     },
-    [addTag, saveBlacklist, saveTags, subscribedTags, subscriptionsAvailable]
+    [addTag, followArtist, saveBlacklist, saveTags, subscribedTags, subscriptionsAvailable, unfollowArtist]
   );
 
   const blacklistActionFor = useCallback(
