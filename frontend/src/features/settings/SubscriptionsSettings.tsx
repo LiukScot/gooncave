@@ -1,5 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router';
-import { X } from 'lucide-react';
+import { Pencil, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
@@ -108,13 +108,16 @@ function SubscriptionGroup({
         <h3 className="appearance-group-title">
           {title} · {count}
         </h3>
+        {/* The tags' edit button of the detail view. */}
         <button
           type="button"
-          className="btn btn-link btn-sm subscription-group-edit"
+          className={`file-detail-ghost-button file-detail-edit-tags-button${editing ? ' is-active' : ''}`}
           aria-pressed={editing}
+          aria-label={editing ? `Done editing ${title.toLowerCase()}` : `Edit ${title.toLowerCase()}`}
+          title={editing ? `Done editing ${title.toLowerCase()}` : `Edit ${title.toLowerCase()}`}
           onClick={() => setEditing((current) => !current)}
         >
-          {editing ? 'Done' : 'Edit'}
+          <Pencil aria-hidden="true" />
         </button>
       </div>
       <FoldedBox rows={rows} className="subscription-fold">

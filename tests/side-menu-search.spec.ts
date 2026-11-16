@@ -956,10 +956,10 @@ test('a block of subscriptions shows its remove buttons only while editing', asy
   await expect(group.locator('.subscription-item')).toHaveCount(3);
   await expect(group.getByRole('button', { name: /^Unsubscribe from/ })).toHaveCount(0);
 
-  await group.getByRole('button', { name: 'Edit' }).click();
+  await group.getByRole('button', { name: 'Edit searches' }).click();
   await expect(group.getByRole('button', { name: /^Unsubscribe from/ })).toHaveCount(3);
   await expect(group.getByRole('button', { name: 'Unsubscribe from fox' })).toBeVisible();
 
-  await group.getByRole('button', { name: 'Done' }).click();
+  await group.getByRole('button', { name: 'Done editing searches' }).click();
   await expect(group.getByRole('button', { name: /^Unsubscribe from/ })).toHaveCount(0);
 });
