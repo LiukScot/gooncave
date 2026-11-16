@@ -29,10 +29,12 @@ jobs:
           real = [n for n in g.node if n.op not in ("Const", "Identity", "NoOp") and n.name.startswith(P)]
           def last(prefix):
               return [n.name for n in real if n.name.startswith(P + prefix)][-1]
-          probes = [P + "root_conv2d/BiasAdd", P + "root_norm/Reshape", P + "root_norm/FusedBatchNormV3", P + "root_norm/Reshape_1", P + "root_norm/add",
-                    P + "block0_cell0_conv2d_01/BiasAdd", P + "block0_cell0_norm_01/add", P + "block0_cell0_act_02/Gelu/mul_1",
-                    P + "block0_cell0_grn/mul", last("block0_cell0_"), last("block0_cell2_"), last("block1_cell0_"),
-                    last("block2_cell0_"), last("block3_cell2_"), last("predictions_norm/"), last("predictions_dense/")]
+          probes = [P + n for n in ("add_2/add", "block1_down_norm/Reshape_1", "block1_down_norm/add", "block1_down_conv2d/Conv2D",
+                    "block1_down_conv2d/BiasAdd", "zero_padding2d_3/Pad", "block1_cell0_conv2d_01/BiasAdd", "block1_cell0_norm_01/add",
+                    "block1_cell0_conv2d_02/BiasAdd", "block1_cell0_act_02/Gelu/mul_1", "block1_cell0_grn/norm/Sqrt",
+                    "block1_cell0_grn/mul", "block1_cell0_conv2d_03/BiasAdd")]
+          print({n.name[len(P):]: [d.size for d in n.attr["_output_shapes"].list.shape[0].dim] for n in g.node if n.name == P + "block1_down_conv2d/Conv2D/ReadVariableOp"})
+          print([ (n.name, n.attr["value"].tensor.tensor_shape) for n in g.node if n.name.startswith(P + "block1_down_conv2d/") and n.op == "Const"])
           inp = [n.name for n in g.node if n.op == "Placeholder"][0]
           fn = tf.compat.v1.wrap_function(lambda: tf.graph_util.import_graph_def(g, name=""), [])
           rgb = np.asarray(Image.open("core/tests/fixtures/wd14/solid-pillow.png").convert("RGB"), dtype=np.float32)
@@ -51,4 +53,4 @@ jobs:
               except Exception as e:
                   print(f"{name[len(P):]}: failed {type(e).__name__}: {str(e)[:200]}", flush=True)
           PY
-          python3 probe.py 2>&1 | grep -E 'relative error|failed|Traceback|Error'
+          python3 probe.py 2>&1 | grep -E 'relative error|failed|Traceback|Error|block1_down'
