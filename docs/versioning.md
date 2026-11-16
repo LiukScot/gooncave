@@ -100,7 +100,16 @@ seen the code, without PR numbers or internal details. Reread each item before
 reporting the draft ready, as [AGENTS.md](../AGENTS.md) describes.
 
 Test the files attached to the draft before publishing. Only the owner
-publishes. To reject a draft, the owner deletes the draft and its `v<version>`
+publishes. Publishing starts the `Flatpak repository` workflow: it signs the
+release's `.flatpak` into a Flatpak repository on GitHub Pages
+(`https://liukscot.github.io/gooncave/`), from which installed desktop copies
+update. The repository holds only the latest published release. To publish it
+again, run `gh workflow run flatpak-repo.yml --ref main`.
+
+The workflow needs GitHub Pages with the source set to GitHub Actions, and the
+`FLATPAK_GPG_PRIVATE_KEY` secret holding an ASCII-armored signing key without a
+passphrase. Keep that key: installed copies trust only it, and a new key makes
+them stop updating until each user adds the repository again. To reject a draft, the owner deletes the draft and its `v<version>`
 tag together, so the next run does not skip those changes.
 
 ## Issues
