@@ -1,7 +1,8 @@
 name: Desktop Flatpak
 
 # Builds the commit of the calling run. CI calls it to check the build; the
-# weekly release also packages it as the .flatpak file it attaches.
+# weekly release also packages it as the .flatpak file the Flatpak repository
+# publishes.
 on:
   workflow_call:
     inputs:

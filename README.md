@@ -74,11 +74,6 @@ updating repository; your library and settings stay:
 flatpak remote-add --user --if-not-exists --from gooncave https://liukscot.github.io/gooncave/gooncave.flatpakrepo && flatpak install --user --reinstall gooncave app.gooncave.desktop
 ```
 
-Each [release](https://github.com/LiukScot/gooncave/releases/latest) also
-attaches `GoonCave-linux-x86_64.flatpak` for offline installs
-(`flatpak install --user GoonCave-linux-x86_64.flatpak`); a copy installed
-that way does not update by itself.
-
 Closing the window quits GoonCave, so syncing and tagging stop with it.
 
 An iPhone app follows; see the [iOS section](ios/README.md). Devices share

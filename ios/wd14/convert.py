@@ -21,7 +21,9 @@ converted = ct.convert(
     convert_to="mlprogram",
     # BGR pixels from 0 to 255, as core/src/wd14_model.rs `prepare` makes them.
     inputs=[ct.TensorType(shape=(1, 448, 448, 3), dtype=np.float32)],
-    compute_precision=ct.precision.FLOAT16,
+    # The squared sums of the GRN layers reach about 1.8e6 in the first block, past the 65504 that
+    # fp16 holds, and turn every score into NaN; those layers compute in fp32.
+    compute_precision=ct.transform.FP16ComputePrecision(op_selector=lambda op: "_grn/" not in op.name),
     minimum_deployment_target=ct.target.iOS16,
 )
 converted.save("WD14.mlpackage")

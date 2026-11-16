@@ -65,25 +65,25 @@ pub(crate) const ARTIFACTS: &[Artifact] = &[
     Artifact {
         path: "WD14.mlpackage/Manifest.json",
         size: 617,
-        sha256: "2b9b60e521336439d89c75898ebb0912a0d4520cf4f1214fb14a8cca863897ff",
+        sha256: "34b1c1132f6d2a5de34f1b249f2c60fd19bd6084ec551c986d5575a640a5d34c",
         url: Some(
-            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-1/Manifest.json",
+            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-2/Manifest.json",
         ),
     },
     Artifact {
         path: "WD14.mlpackage/Data/com.apple.CoreML/model.mlmodel",
-        size: 706_806,
-        sha256: "dc4212b5b365599af17036f94bd82177439755b424e4ca1a9aa61fb56220e1a3",
+        size: 735_488,
+        sha256: "05befe89a5040b07c6c25745e67f0a509c0995e96accb8ad7610eb73f7a92dd1",
         url: Some(
-            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-1/model.mlmodel",
+            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-2/model.mlmodel",
         ),
     },
     Artifact {
         path: "WD14.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
-        size: 194_030_134,
-        sha256: "9c1c13d27757c691c145e4cf64956b45cb8b9008e1e8ec260cf8e996cbd680c5",
+        size: 194_318_902,
+        sha256: "205953ebe1c0e8653cf7fb247235eaac6ceb88975af2e423559ece388a28ea41",
         url: Some(
-            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-1/weight.bin",
+            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-2/weight.bin",
         ),
     },
     VOCABULARY,

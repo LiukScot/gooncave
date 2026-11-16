@@ -381,7 +381,7 @@ mod tests {
         }
         #[cfg(target_os = "ios")]
         for url in [
-            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-1/weight.bin",
+            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-2/weight.bin",
             "https://release-assets.githubusercontent.com/blob",
             "https://objects.githubusercontent.com/blob",
         ] {
