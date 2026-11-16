@@ -912,3 +912,28 @@ test('subscriptions are managed from Settings', async ({ page }) => {
   await page.getByRole('link', { name: 'Back to Settings' }).click();
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
 });
+
+test('a block of subscriptions shows five rows whole and folds from the sixth', async ({ page }) => {
+  await page.setViewportSize({ width: 500, height: 900 });
+  let tags: string[] = [];
+  // Each search is wide enough to take a row of its own; the score makes it a search, not an artist.
+  const searches = (count: number) => Array.from({ length: count }, (_, index) => `fixture_search_with_a_long_name_${index} score:>10`);
+  await page.route(/\/settings\/subscriptions$/, (route) => route.request().resourceType() === 'document'
+    ? route.continue()
+    : route.fulfill({ json: { tags, artists: [], siteHits: {}, artistErrors: [], targets: [], artistSearches: [] } }));
+  await page.route('**/settings/subscriptions/pools', (route) => route.fulfill({ json: { pools: [] } }));
+  const group = page.getByRole('region', { name: 'Searches' });
+  const rows = () => group.locator('.subscription-item').evaluateAll((items) => new Set(items.map((item) => item.getBoundingClientRect().top)).size);
+
+  tags = searches(5);
+  await page.goto('/app/settings/subscriptions');
+  await expect(group.locator('.subscription-item')).toHaveCount(5);
+  expect(await rows()).toBe(5);
+  await expect(group.getByRole('button', { name: 'Show more' })).toHaveCount(0);
+
+  tags = searches(6);
+  await page.reload();
+  await expect(group.locator('.subscription-item')).toHaveCount(6);
+  expect(await rows()).toBe(6);
+  await expect(group.getByRole('button', { name: 'Show more' })).toBeVisible();
+});

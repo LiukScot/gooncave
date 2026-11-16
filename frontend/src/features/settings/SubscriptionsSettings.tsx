@@ -30,6 +30,8 @@ import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 // Four rows of pills and half of the fifth, which fades (app.css: .subscription-pills-fold).
 const PILLS_FOLD = 'var(--subscription-pills-fold)';
+// Five rows show whole; a sixth folds the block (half a row is 1.125rem with a mouse, 1.375rem by touch).
+const PILLS_SLACK_REM = 1.5;
 // About one row of pool covers.
 const COVERS_FOLD = '17rem';
 
@@ -91,6 +93,7 @@ function SubscriptionGroup({
   title,
   count,
   fold,
+  slackRem,
   className,
   children
 }: {
@@ -98,6 +101,7 @@ function SubscriptionGroup({
   count: number;
   /** Any CSS length. */
   fold: string;
+  slackRem?: number;
   className: string;
   children: ReactNode;
 }) {
@@ -107,7 +111,7 @@ function SubscriptionGroup({
       <h3 className="appearance-group-title">
         {title} · {count}
       </h3>
-      <FoldedBox maxHeight={fold} className="subscription-fold">
+      <FoldedBox maxHeight={fold} slackRem={slackRem} className="subscription-fold">
         <div className={className}>{children}</div>
       </FoldedBox>
     </section>
@@ -121,6 +125,7 @@ function Subscriptions() {
   const addTag = useAddSubscriptionTag();
   useErrorToast(addTag.error);
   const setPendingSearch = useExploreUiStore((state) => state.setPendingSearch);
+  const setPoolOrigin = useExploreUiStore((state) => state.setPoolOrigin);
   const navigate = useNavigate();
   const tags = subscriptions.data?.tags ?? [];
   const artists = subscriptions.data?.artists ?? [];
@@ -347,10 +352,10 @@ function Subscriptions() {
       {tags.length || artists.length || pools.length ? (
         shownTags.length || shownArtistSearches.length || shownArtists.length || shownPools.length ? (
           <>
-            <SubscriptionGroup title="Searches" count={shownTags.length} fold={PILLS_FOLD} className="subscription-pills">
+            <SubscriptionGroup title="Searches" count={shownTags.length} fold={PILLS_FOLD} slackRem={PILLS_SLACK_REM} className="subscription-pills">
               {shownTags.map(searchItem)}
             </SubscriptionGroup>
-            <SubscriptionGroup title="Artists" count={shownArtists.length + shownArtistSearches.length} fold={PILLS_FOLD} className="subscription-pills">
+            <SubscriptionGroup title="Artists" count={shownArtists.length + shownArtistSearches.length} fold={PILLS_FOLD} slackRem={PILLS_SLACK_REM} className="subscription-pills">
               {shownArtistSearches.map(searchItem)}
               {shownArtists.map((artist) => (
                 <SubscriptionItem
@@ -381,6 +386,7 @@ function Subscriptions() {
                       className="subscription-item-open"
                       to="/app/pool"
                       search={{ site: pool.siteId, pool: pool.poolId }}
+                      onClick={() => setPoolOrigin('subscriptions')}
                     >
                       {pool.coverUrl ? (
                         <RemoteImage

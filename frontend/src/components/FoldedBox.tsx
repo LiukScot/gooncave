@@ -11,12 +11,15 @@ const SLACK_REM = 6;
 export function FoldedBox({
   children,
   className,
-  maxHeight = '12rem'
+  maxHeight = '12rem',
+  slackRem = SLACK_REM
 }: {
   children: ReactNode;
   className?: string;
   /** Any CSS length. */
   maxHeight?: string;
+  /** How much taller than the cut the content may be and still show whole. */
+  slackRem?: number;
 }) {
   const cutRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -31,8 +34,8 @@ export function FoldedBox({
     const cut = cutRef.current;
     const content = contentRef.current;
     if (!cut || !content || expanded) return;
-    // Unfolded, the cut is already SLACK_REM taller; folded, it is not.
-    const slack = SLACK_REM * parseFloat(getComputedStyle(document.documentElement).fontSize);
+    // Unfolded, the cut is already slackRem taller; folded, it is not.
+    const slack = slackRem * parseFloat(getComputedStyle(document.documentElement).fontSize);
     const measure = () =>
       setOverflows((folded) => content.offsetHeight > cut.clientHeight + (folded ? slack : 0) + 1);
     measure();
@@ -40,7 +43,7 @@ export function FoldedBox({
     const observer = new ResizeObserver(measure);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [expanded]);
+  }, [expanded, slackRem]);
 
   return (
     <div className={className}>
@@ -50,7 +53,7 @@ export function FoldedBox({
         style={
           expanded
             ? undefined
-            : { maxHeight: overflows ? maxHeight : `calc(${maxHeight} + ${SLACK_REM}rem)`, overflow: 'hidden' }
+            : { maxHeight: overflows ? maxHeight : `calc(${maxHeight} + ${slackRem}rem)`, overflow: 'hidden' }
         }
         // Tabbing into the hidden part would scroll the cut under its fade.
         onFocus={(event) => {
