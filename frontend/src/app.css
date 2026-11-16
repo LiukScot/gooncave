@@ -652,10 +652,11 @@
   }
 }
 
-/* Pools: their first page, like a pool tile, with the remove button in its corner. */
+/* Pools: their first page, like a pool tile, with the remove button in its corner.
+   The minimum fits three covers across a phone. */
 .subscription-covers {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
   gap: 1rem 0.75rem;
 }
 
