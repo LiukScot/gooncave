@@ -1,0 +1,40 @@
+name: WD14 diagnose
+on:
+  pull_request:
+    branches: [main]
+    paths: [.github/workflows/wd14-diagnose.yml]
+permissions:
+  contents: read
+jobs:
+  convert:
+    strategy:
+      fail-fast: false
+      matrix:
+        precision: [fp32, mixed]
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - env:
+          PRECISION: ${{ matrix.precision }}
+        run: |
+          python3 -m pip install --quiet tensorflow coremltools numpy pillow huggingface_hub
+          if [ "$PRECISION" = fp32 ]; then
+            sed -i '' 's/compute_precision=.*/compute_precision=ct.precision.FLOAT32,/' ios/wd14/convert.py
+          fi
+          grep compute_precision ios/wd14/convert.py
+          python3 ios/wd14/convert.py
+          python3 - <<'PY'
+          import coremltools as ct, numpy as np
+          from PIL import Image
+          ref = np.load("ios/wd14/reference-scores.npz")
+          for unit in ("CPU_ONLY", "CPU_AND_GPU", "CPU_AND_NE", "ALL"):
+              m = ct.models.MLModel("WD14.mlpackage", compute_units=getattr(ct.ComputeUnit, unit))
+              for name in ("solid", "gradient", "pattern"):
+                  rgb = np.asarray(Image.open(f"core/tests/fixtures/wd14/{name}-pillow.png").convert("RGB"), dtype=np.float32)
+                  s = m.predict({"input_1": rgb[None, :, :, ::-1].copy()})["Identity"].reshape(-1)
+                  print(unit, name, "max diff %.4f" % np.abs(s - ref[name]).max(), "nan", int(np.isnan(s).sum()))
+          PY
