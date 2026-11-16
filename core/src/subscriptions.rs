@@ -568,8 +568,12 @@ pub(crate) async fn watch(db: Database) {
         interval.tick().await;
         match refresh(&db, &Transport::default(), 1, true).await {
             Ok(result) => {
-                if result["errors"].as_array().is_some_and(|a| !a.is_empty()) {
-                    eprintln!("Subscription refresh failed: {result}");
+                for error in result["errors"].as_array().into_iter().flatten() {
+                    eprintln!(
+                        "[developer] The subscriptions of {} did not refresh: {}",
+                        error["siteName"].as_str().unwrap_or("a site"),
+                        error["error"].as_str().unwrap_or("no reason given")
+                    );
                 }
             }
             Err(e) => eprintln!("Subscription refresh could not run: {e}"),
@@ -664,7 +668,16 @@ pub(crate) async fn refresh(
             }
         }
     }
-    saved_errors(db).await
+    let mut result = saved_errors(db).await?;
+    if background {
+        // A site left out keeps the error of its last refresh in the feed; reporting it again on
+        // every automatic refresh would name a failure that did not happen now.
+        let refreshed = sites.iter().map(|s| s.id.as_str()).collect::<HashSet<_>>();
+        if let Some(errors) = result["errors"].as_array_mut() {
+            errors.retain(|e| e["siteId"].as_str().is_some_and(|id| refreshed.contains(id)));
+        }
+    }
+    Ok(result)
 }
 fn site_current(c: &rusqlite::Connection, site: &Site) -> Result<bool> {
     let updated: Option<String> = c
