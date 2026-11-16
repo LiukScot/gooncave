@@ -15,7 +15,9 @@ recorded in [ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md).
 
 - On every start, the app reads the remote copy and merges new data into its
   own database.
-- After each change, the app waits a few seconds, then uploads.
+- After each change, the app waits a few seconds, then uploads. Each upload
+  rewrites the whole sync file, so uploads are at least 2 minutes apart; Sync
+  now and leaving the app upload at once.
 - When the app closes, it uploads again. On the desktop the window closes at
   once and the upload finishes in the background, for at most 15 seconds;
   opening GoonCave meanwhile shows the window again.
