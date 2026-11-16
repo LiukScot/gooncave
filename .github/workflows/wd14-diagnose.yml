@@ -10,7 +10,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        precision: [mixed, fp32]
+        extra:
+          - 'False'
+          - '"/add_" in op.name and op.op_type == "add"'
+          - '"_act_" in op.name'
+          - '"conv2d_01" in op.name'
+          - 'op.op_type not in ("conv", "linear", "matmul")'
     runs-on: macos-26
     timeout-minutes: 40
     steps:
@@ -19,14 +24,20 @@ jobs:
         with:
           python-version: '3.12'
       - env:
-          PRECISION: ${{ matrix.precision }}
+          EXTRA: ${{ matrix.extra }}
         run: |
           python3 -m pip install --quiet tensorflow coremltools numpy pillow huggingface_hub
-          if [ "$PRECISION" = fp32 ]; then
-            sed -i '' 's/compute_precision=.*/compute_precision=ct.precision.FLOAT32,/' ios/wd14/convert.py
-          fi
-          python3 ios/wd14/convert.py > /dev/null 2>&1
+          python3 - <<'PY'
+          import os
+          p = "ios/wd14/convert.py"
+          s = open(p).read()
+          old = 'return op.name not in FP32 and "_grn/" not in op.name'
+          assert old in s
+          open(p, "w").write(s.replace(old, old + " and not (" + os.environ["EXTRA"] + ")"))
+          PY
+          grep -n 'return op.name not in FP32' ios/wd14/convert.py
+          python3 ios/wd14/convert.py > convert.log 2>&1 || { tail -20 convert.log; exit 1; }
           curl --fail --location --silent --show-error --output selected_tags.csv \
             https://huggingface.co/SmilingWolf/wd-v1-4-convnextv2-tagger-v2/resolve/dbd4dbe553ee51feb3bc745b614fb762080e3912/selected_tags.csv
-          shasum -a 256 WD14.mlpackage/Manifest.json WD14.mlpackage/Data/com.apple.CoreML/model.mlmodel WD14.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+          du -sh WD14.mlpackage
           python3 -I ios/wd14/check.py WD14.mlpackage selected_tags.csv
