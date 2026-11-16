@@ -6,50 +6,36 @@ on:
 permissions:
   contents: read
 jobs:
-  layers:
+  conv:
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - run: |
-          python3 -m pip install --quiet tensorflow coremltools numpy pillow huggingface_hub
-          cat > probe.py <<'PY'
-          import numpy as np, tensorflow as tf, coremltools as ct
-          from PIL import Image
-          from huggingface_hub import snapshot_download
-          from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2
-          d = snapshot_download("SmilingWolf/wd-v1-4-convnextv2-tagger-v2", revision="dbd4dbe553ee51feb3bc745b614fb762080e3912",
-              allow_patterns=["saved_model.pb", "keras_metadata.pb", "variables/*"])
-          loaded = tf.saved_model.load(d)
-          g = convert_variables_to_constants_v2(loaded.signatures["serving_default"]).graph.as_graph_def()
-          P = "StatefulPartitionedCall/ConvNextBV2/"
-          real = [n for n in g.node if n.op not in ("Const", "Identity", "NoOp") and n.name.startswith(P)]
-          def last(prefix):
-              return [n.name for n in real if n.name.startswith(P + prefix)][-1]
-          probes = [P + n for n in ("add_2/add", "block1_down_norm/Reshape_1", "block1_down_norm/add", "block1_down_conv2d/Conv2D",
-                    "block1_down_conv2d/BiasAdd", "zero_padding2d_3/Pad", "block1_cell0_conv2d_01/BiasAdd", "block1_cell0_norm_01/add",
-                    "block1_cell0_conv2d_02/BiasAdd", "block1_cell0_act_02/Gelu/mul_1", "block1_cell0_grn/norm/Sqrt",
-                    "block1_cell0_grn/mul", "block1_cell0_conv2d_03/BiasAdd")]
-          print([ (n.name, n.attr["value"].tensor.tensor_shape) for n in g.node if n.name.startswith(P + "block1_down_conv2d/") and n.op == "Const"])
-          inp = [n.name for n in g.node if n.op == "Placeholder"][0]
-          fn = tf.compat.v1.wrap_function(lambda: tf.graph_util.import_graph_def(g, name=""), [])
-          rgb = np.asarray(Image.open("core/tests/fixtures/wd14/solid-pillow.png").convert("RGB"), dtype=np.float32)
-          x = rgb[None, :, :, ::-1].copy()
-          for name in probes:
-              part = fn.prune(feeds=[fn.graph.get_tensor_by_name(inp + ":0")], fetches=[fn.graph.get_tensor_by_name(name + ":0")])
-              expected = part(tf.constant(x))[0].numpy() if isinstance(part(tf.constant(x)), (list, tuple)) else part(tf.constant(x)).numpy()
-              try:
-                  m = ct.convert([part], source="tensorflow", convert_to="mlprogram",
-                      inputs=[ct.TensorType(shape=(1, 448, 448, 3), dtype=np.float32)],
-                      compute_precision=ct.precision.FLOAT32, compute_units=ct.ComputeUnit.CPU_ONLY)
-                  out = list(m.predict({m.get_spec().description.input[0].name: x}).values())[0]
-                  out = out.reshape(expected.shape)
-                  err = np.abs(out - expected).max() / (np.abs(expected).max() + 1e-9)
-                  print(f"{name[len(P):]}: shape {expected.shape} relative error {err:.2e}", flush=True)
-              except Exception as e:
-                  print(f"{name[len(P):]}: failed {type(e).__name__}: {str(e)[:200]}", flush=True)
+          python3 -m pip install --quiet coremltools numpy
+          cat > conv.py <<'PY'
+          import numpy as np, coremltools as ct
+          from coremltools.converters.mil import Builder as mb
+          rng = np.random.default_rng(0)
+          def reference(x, w, s):
+              n, c, h, wd = x.shape; o, _, k, _ = w.shape
+              patches = x.reshape(n, c, h // s, s, wd // s, s)[:, :, :, :k, :, :k]
+              return np.einsum("nchiwj,ocij->nohw", patches, w)
+          for c, size, k, pad in [(3, 448, 4, "same"), (128, 112, 2, "same"), (128, 112, 2, "valid"), (16, 8, 2, "same"), (256, 56, 2, "same")]:
+              x = rng.standard_normal((1, c, size, size)).astype(np.float32)
+              w = rng.standard_normal((2 * c if c > 3 else 128, c, k, k)).astype(np.float32)
+              @mb.program(input_specs=[mb.TensorSpec(shape=x.shape)], opset_version=ct.target.iOS16)
+              def prog(x):
+                  return mb.conv(x=x, weight=w, strides=[k, k], pad_type=pad)
+              for unit in ("CPU_ONLY", "ALL"):
+                  m = ct.convert(prog, convert_to="mlprogram", compute_precision=ct.precision.FLOAT32,
+                                 compute_units=getattr(ct.ComputeUnit, unit), minimum_deployment_target=ct.target.iOS16)
+                  out = list(m.predict({"x": x}).values())[0]
+                  ref = reference(x, w, k)
+                  err = np.abs(out - ref).max() / np.abs(ref).max()
+                  shifted = np.abs(out[:, :, 1:, 1:] - ref[:, :, :-1, :-1]).max() / np.abs(ref).max()
+                  print(f"c={c} size={size} k={k} {pad} {unit}: relative error {err:.2e}, against a one-pixel shift {shifted:.2e}", flush=True)
           PY
-          python3 probe.py 2>&1 | grep -E 'relative error|failed|Traceback|Error|block1_down'
+          python3 conv.py 2>&1 | grep -E 'relative error|Error|Traceback'
