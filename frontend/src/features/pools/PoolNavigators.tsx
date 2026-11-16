@@ -19,6 +19,7 @@ export function PoolNavigators({
 }): React.ReactElement | null {
   const showPost = useOpenExcursionPost();
   const pathname = useLocation({ select: (state) => state.pathname });
+  const feed = useLocation({ select: (state) => (state.search as { feed?: string }).feed });
   const galleryExcursion = useExploreUiStore((state) => state.excursionNav);
   const openLibraryAside = useExploreUiStore((state) => state.openLibraryAside);
   const setPoolOrigin = useExploreUiStore((state) => state.setPoolOrigin);
@@ -81,7 +82,13 @@ export function PoolNavigators({
             search={{ site: pool.siteId, pool: pool.poolId }}
             title={`Open ${pool.name} on ${pool.siteName}`}
             onClick={() =>
-              setPoolOrigin(galleryExcursion ? '/app/gallery' : pathname)
+              setPoolOrigin(
+                galleryExcursion || pathname === '/app/gallery'
+                  ? 'gallery'
+                  : feed === 'subscribed' || feed === 'history'
+                    ? feed
+                    : 'explore'
+              )
             }
           >
             <span className="pool-nav-title">{pool.name}</span>

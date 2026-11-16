@@ -15,6 +15,8 @@ let home: string;
 let app: ElectronApplication;
 // Kept at launch: once the app has exited, `app.process()` can throw.
 let child: ChildProcess;
+// What the app and its core printed, attached to a failed test: a window that closes early says why there.
+let output: string[];
 
 const launch = async (core: string) => {
   app = await electron.launch({
@@ -29,6 +31,10 @@ const launch = async (core: string) => {
     }
   });
   child = app.process();
+  output = [];
+  child.stdout?.on('data', (chunk: Buffer) => output.push(chunk.toString()));
+  child.stderr?.on('data', (chunk: Buffer) => output.push(chunk.toString()));
+  child.once('exit', (code, signal) => output.push(`[app exited with ${code ?? signal}]`));
 };
 
 /** Closes the window and resolves with the app's exit code, or `running` after 15 seconds. */
@@ -46,6 +52,8 @@ test.beforeEach(() => {
 });
 
 test.afterEach(async () => {
+  const testInfo = test.info();
+  if (testInfo.status !== testInfo.expectedStatus) await testInfo.attach('app output', { body: output.join('') });
   // A test that passed has ended the app already.
   if (child && child.exitCode === null && child.signalCode === null) await app.close();
   fs.rmSync(home, { recursive: true, force: true });
@@ -132,14 +140,34 @@ test("a pool's heading leaves room for the window buttons and moves the window",
   await page.goto(new URL('/app/pool?site=e621&pool=1', page.url()).href);
   const heading = page.locator('.pool-head');
   await expect(heading).toBeVisible();
-  const style = await heading.evaluate((element) => ({
-    region: getComputedStyle(element).getPropertyValue('-webkit-app-region'),
-    reserved: parseFloat(getComputedStyle(element).paddingRight),
-    back: getComputedStyle(element.querySelector('button, a')!).getPropertyValue('-webkit-app-region')
-  }));
+  const style = await heading.evaluate((element) => {
+    const area = navigator.windowControlsOverlay.getTitlebarAreaRect();
+    return {
+      region: getComputedStyle(element).getPropertyValue('-webkit-app-region'),
+      barEnd: element.querySelector('.pool-head-bar')!.getBoundingClientRect().right,
+      areaEnd: area.x + area.width,
+      width: window.innerWidth,
+      back: getComputedStyle(element.querySelector('button, a')!).getPropertyValue('-webkit-app-region'),
+      // Chromium resolves drag regions in document order: a later one takes the clicks of a button it overlaps.
+      covered: [...element.querySelectorAll('.pool-head-bar :is(a, button)')].flatMap((control) => {
+        const box = control.getBoundingClientRect();
+        return [...document.querySelectorAll('*')]
+          .filter((other) => control.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING && !control.contains(other))
+          .filter((other) => getComputedStyle(other).getPropertyValue('-webkit-app-region') === 'drag')
+          .filter((other) => {
+            const r = other.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && r.left < box.right && r.right > box.left && r.top < box.bottom && r.bottom > box.top;
+          })
+          .map((other) => `${control.textContent} under ${other.className}`);
+      })
+    };
+  });
   expect(style.region).toBe('drag');
-  expect(style.reserved).toBeGreaterThan(0);
+  // The pool's buttons sit in the top bar, left of the window buttons the system draws.
+  expect(style.areaEnd).toBeLessThan(style.width);
+  expect(style.barEnd).toBeLessThanOrEqual(style.areaEnd);
   expect(style.back).toBe('no-drag');
+  expect(style.covered).toEqual([]);
 });
 
 test('an open file leaves room for the window buttons above it, and the window shows no scrollbar', async () => {

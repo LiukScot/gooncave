@@ -15,13 +15,14 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, onClick }: React.ComponentProps<'a'>) => (
     <a onClick={onClick}>{children}</a>
   ),
-  useLocation: ({ select }: { select: (s: { pathname: string }) => unknown }) =>
-    select({ pathname })
+  useLocation: ({ select }: { select: (s: { pathname: string; search: object }) => unknown }) =>
+    select({ pathname, search })
 }));
 
 const showPost = vi.fn();
 const explorePost = vi.fn();
 let pathname = '/app/explore';
+let search: { feed?: string } = {};
 
 vi.mock('@/features/explore/useOpenBooruPost', () => ({
   useOpenExcursionPost: () => showPost
@@ -53,6 +54,7 @@ afterEach(() => {
     openLibraryAside: null
   });
   pathname = '/app/explore';
+  search = {};
   vi.clearAllMocks();
 });
 
@@ -73,7 +75,18 @@ describe('PoolNavigators', () => {
 
     act(() => container.querySelector('a')?.click());
 
-    expect(useExploreUiStore.getState().poolOrigin).toBe('/app/gallery');
+    expect(useExploreUiStore.getState().poolOrigin).toBe('gallery');
+  });
+
+  it('remembers the Subscribed feed, not plain Explore, as the pool origin', () => {
+    search = { feed: 'subscribed' };
+    const container = document.createElement('div');
+    root = createRoot(container);
+    act(() => root?.render(<PoolNavigators pools={[pool]} />));
+
+    act(() => container.querySelector('a')?.click());
+
+    expect(useExploreUiStore.getState().poolOrigin).toBe('subscribed');
   });
 
   const clickNext = async (container: HTMLElement) => {

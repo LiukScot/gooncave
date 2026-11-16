@@ -101,10 +101,6 @@ function PoolContent({ site, pool }: { site: string; pool: string }) {
   return (
     <div className="page-chrome">
       <div className="pool-head">
-        <div className="pool-head-bar">
-          <PoolBackButton />
-          <PoolHeaderActions site={site} pool={pool} name={head?.name} />
-        </div>
         <div className="pool-head-title">
           <h1 className="uppercase font-semibold file-detail-section-title pool-title mb-1">
             {head ? head.name : 'Pool'}
@@ -116,6 +112,12 @@ function PoolContent({ site, pool }: { site: string; pool: string }) {
                 ? 'Loading…'
                 : ''}
           </div>
+        </div>
+        {/* After the title: in the desktop window it drags, and a later drag region takes the
+            clicks of an earlier button it overlaps. */}
+        <div className="pool-head-bar">
+          <PoolBackButton />
+          <PoolHeaderActions site={site} pool={pool} name={head?.name} />
         </div>
       </div>
       {error ? (

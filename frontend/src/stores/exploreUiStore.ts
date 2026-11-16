@@ -96,9 +96,12 @@ type ExploreUiStore = {
    * post the navigator was on, and the reader is asking for the grid they
    * left. Null when a pool was opened cold, from a link or a reload.
    */
-  poolOrigin: string | null;
-  setPoolOrigin: (path: string | null) => void;
+  poolOrigin: PoolOrigin | null;
+  setPoolOrigin: (origin: PoolOrigin | null) => void;
 };
+
+/** A grid a pool can be opened from: Explore and its two feeds, Gallery, or Settings → Subscriptions. */
+export type PoolOrigin = 'explore' | 'subscribed' | 'history' | 'gallery' | 'subscriptions';
 
 export const useExploreUiStore = create<ExploreUiStore>((set) => ({
   detailNav: null,

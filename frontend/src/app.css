@@ -3806,6 +3806,10 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   display: contents;
 }
 
+.pool-head-bar > :first-child {
+  order: -1;
+}
+
 .pool-head-actions {
   order: 1;
 }

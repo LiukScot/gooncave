@@ -32,6 +32,7 @@ import { useFileDetailController } from '@/features/file-detail/useFileDetailCon
 import { useFileImport } from '@/features/folders/useFileImport';
 import { useFoldersController } from '@/features/folders/useFoldersController';
 import { useGalleryController } from '@/features/library/useGalleryController';
+import { poolBack } from '@/features/pools/PoolHeaderActions';
 import { useDeviceProfile } from '@/hooks/device';
 import { useLibraryVersion } from '@/hooks/files';
 import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
@@ -306,12 +307,10 @@ function DeviceAppShell({ authUser }: { authUser: DeviceProfile }) {
   // to outlive the page, or the release of the finger finds no listener.
   useEdgeSwipeBack(() => {
     if (pathname !== '/app/pool') return false;
-    const toGallery = useExploreUiStore.getState().poolOrigin === '/app/gallery';
+    const { to, search } = poolBack(useExploreUiStore.getState().poolOrigin);
     return {
       leave: () => {
-        void (toGallery
-          ? navigate({ to: '/app/gallery', search: { fileId: undefined, fs: undefined } })
-          : navigate({ to: '/app/explore', search: { post: undefined } }));
+        void navigate({ to, search });
       },
       stay: () => router.history.back()
     };
