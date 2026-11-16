@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   DOUBLE_TAP_ZOOM,
+  isMouseWheel,
   isZoomed,
   NO_ZOOM,
   panBy,
@@ -69,12 +70,12 @@ export const useMediaZoom = (enabled: boolean, resetKey: string | null) => {
     // Registered by hand rather than through onWheel: React attaches wheel
     // listeners passively, and a passive listener cannot stop the page from
     // scrolling underneath the zoom.
-    // A touchpad pinch arrives as a wheel with Ctrl held (Ctrl and a mouse wheel too): it zooms.
-    // Two fingers sliding on the touchpad, or a plain wheel, move a zoomed picture.
+    // A mouse wheel and a touchpad pinch (a wheel with Ctrl held) zoom on the point under the
+    // pointer; two fingers sliding on a touchpad move a zoomed picture, as a left drag does.
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const rect = wrap.getBoundingClientRect();
-      if (!event.ctrlKey) {
+      if (!event.ctrlKey && !isMouseWheel(event)) {
         setZoom((current) =>
           isZoomed(current) ? panBy(current, { x: -event.deltaX, y: -event.deltaY }, rect) : current
         );

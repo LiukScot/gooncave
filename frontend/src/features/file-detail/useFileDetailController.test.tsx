@@ -93,10 +93,10 @@ it('subscribes to and blacklists a tag picked from a gallery tag pill', async ()
     }
     if (url.endsWith('/settings/subscriptions/tags') && init?.method === 'POST') {
       subscribed.push((JSON.parse(String(init.body)) as { tag: string }).tag);
-      return Response.json({ tags: subscribed });
+      return Response.json({ tags: subscribed, artists: [] });
     }
     if (url.endsWith('/settings/subscriptions/tags')) {
-      return Response.json({ tags: subscribed });
+      return Response.json({ tags: subscribed, artists: [] });
     }
     return Response.json({ sites: [] });
   });
@@ -147,14 +147,14 @@ it('subscribes to and blacklists a tag picked from a gallery tag pill', async ()
     )
   );
 
-  act(() => ctl!.panelProps.onSelectTag('red_fox_(character)'));
+  act(() => ctl!.panelProps.onSelectTag('red_fox_(character)', 'general'));
   await waitFor(() => Boolean(buttonLabelled('Subscribe')));
   act(() => buttonLabelled('Subscribe')!.click());
 
   await waitFor(() => subscribed.length > 0);
   expect(subscribed).toEqual(['red_fox_(character)']);
 
-  act(() => ctl!.panelProps.onSelectTag('red_fox_(character)'));
+  act(() => ctl!.panelProps.onSelectTag('red_fox_(character)', 'general'));
   await waitFor(() => Boolean(buttonLabelled('Add to blacklist')));
   expect(buttonLabelled('Add to blacklist')?.dataset.variant).toBe('destructive');
   expect(document.querySelector('[aria-label="Blacklisted"]')).toBeNull();
@@ -162,4 +162,55 @@ it('subscribes to and blacklists a tag picked from a gallery tag pill', async ()
   await waitFor(() => blacklisted.length > 1);
   expect(blacklisted).toEqual(['gore', 'red_fox_(character)']);
   await waitFor(() => Boolean(document.querySelector('[aria-label="Blacklisted"]')));
+});
+
+it('subscribes to a tag picked from an artist pill as an artist', async () => {
+  const bodies: unknown[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/settings/subscriptions/tags') && init?.method === 'POST') {
+        bodies.push(JSON.parse(String(init.body)));
+        return Response.json({ tags: [], artists: ['nawka'] });
+      }
+      if (String(input).endsWith('/settings/subscriptions/tags')) {
+        return Response.json({ tags: [], artists: [] });
+      }
+      if (String(input).endsWith('/settings/blacklist')) {
+        return Response.json({ tags: [], applyToExplore: true, applyToGallery: false });
+      }
+      return Response.json({ sites: [] });
+    })
+  );
+  let ctl: FileDetailControllerOutput | null = null;
+  function Harness() {
+    ctl = useFileDetailController({
+      gallery: { files: [], currentIndex: -1, goRelative: () => {} },
+      sourceSettings: { display: [], targets: [] },
+      mediaFullscreen: false,
+      onFullscreenChange: () => {},
+      onClose: () => {},
+      onFileDeleted: () => {},
+      onFileRestored: () => {}
+    });
+    return null;
+  }
+  const container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  act(() =>
+    root!.render(
+      <QueryClientProvider client={queryClient}>
+        <ConfirmProvider>
+          <Harness />
+        </ConfirmProvider>
+      </QueryClientProvider>
+    )
+  );
+  act(() => ctl!.panelProps.onSelectTag('nawka', 'artist'));
+  await waitFor(() => Boolean(buttonLabelled('Subscribe')));
+  act(() => buttonLabelled('Subscribe')!.click());
+  await waitFor(() => bodies.length > 0);
+  expect(bodies).toEqual([{ tag: 'nawka', artist: true }]);
 });

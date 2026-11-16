@@ -11,8 +11,8 @@ use std::{
 use block2::RcBlock;
 use dispatch2::DispatchQueue;
 use gooncave_core::browser::{
-    cookie_domain, cookie_pairs, origin, site, Browser, Page, Pending, Site, CHALLENGED, FETCH,
-    STOPPED, UNREACHABLE, USERNAME,
+    cookie_domain, cookie_pairs, media_origin, origin, site, Browser, FilePage, Page, Pending,
+    Site, CHALLENGED, FETCH, FETCH_FILE, STOPPED, UNREACHABLE, USERNAME,
 };
 use gooncave_core::eprintln;
 use objc2::{
@@ -189,6 +189,17 @@ impl Browser for Remote {
         Box::pin(async move {
             let _busy = busy.lock().await;
             fetch(&url, cookie.as_deref()).await
+        })
+    }
+
+    fn fetch_file(&self, url: String) -> Pending<Option<FilePage>> {
+        let busy = self.0.clone();
+        Box::pin(async move {
+            let Some((site, origin)) = media_origin(&url) else {
+                return Ok(None);
+            };
+            let _busy = busy.lock().await;
+            fetch_file(site, &origin, &url).await.map(Some)
         })
     }
 
@@ -597,6 +608,39 @@ async fn fetch(url: &str, cookie: Option<&str>) -> Result<Page, String> {
                 .ok_or_else(|| UNREACHABLE.to_owned())?,
             body: value["body"].as_str().unwrap_or_default().to_owned(),
         });
+    }
+}
+
+/// GETs a picture or video from a media host. Its check clears a request only from a page of
+/// that host, so the worker moves there first, as it does for a site's pages.
+async fn fetch_file(site: &'static Site, origin: &str, url: &str) -> Result<FilePage, String> {
+    let mut force = false;
+    loop {
+        ready(site, origin, force).await?;
+        let json = script(On::Worker, FETCH_FILE, Some(url.to_owned())).await?;
+        let value: serde_json::Value = serde_json::from_str(&json).map_err(|error| {
+            eprintln!("Browser script returned no file: {error}");
+            UNREACHABLE.to_owned()
+        })?;
+        let challenged = value["challenged"].as_bool() == Some(true);
+        if challenged && !force {
+            // The clearance expired since the worker's page loaded; get a new one.
+            force = true;
+            continue;
+        }
+        let status = value["status"]
+            .as_u64()
+            .and_then(|status| u16::try_from(status).ok())
+            .ok_or_else(|| UNREACHABLE.to_owned())?;
+        if status >= 400 {
+            eprintln!("[developer] {origin} answered {status} to GoonCave's browser (cf-mitigated: {challenged})");
+        }
+        let body = base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            value["body"].as_str().unwrap_or_default(),
+        )
+        .map_err(|_| UNREACHABLE.to_owned())?;
+        return Ok(FilePage { status, body });
     }
 }
 

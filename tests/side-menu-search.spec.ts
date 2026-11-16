@@ -37,7 +37,6 @@ async function mockSites(page: Page) {
     json: { posts: [post('2')], hasMore: false, nextCursor: null, ready: true }
   }));
   await page.route('**/explore/subscriptions/refresh', (route) => route.fulfill({ json: { errors: [] } }));
-  await page.route('**/explore/subscriptions/bookmark', (route) => route.fulfill({ json: { ok: true } }));
 }
 
 test.describe('on a phone', () => {
@@ -668,7 +667,8 @@ test.describe('on a phone', () => {
     await page.getByRole('button', { name: 'Open menu' }).click();
     await page.getByRole('navigation', { name: 'Main menu' }).getByRole('link', { name: 'Subscriptions' }).click();
     await expect(page.getByRole('heading', { name: 'Subscriptions', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Manage subscriptions' })).toBeVisible();
+    // Outside the desktop window's top bar, subscriptions are managed from Settings.
+    await expect(page.getByRole('link', { name: 'Manage subscriptions' })).toBeHidden();
     await expect(page.locator('[data-read-key="one:2"]')).toBeVisible();
 
     await page.getByRole('button', { name: /^Filter this feed/ }).click();
@@ -683,7 +683,7 @@ test.describe('on a phone', () => {
     await expect(page).toHaveURL(/post=/);
     await page.goBack();
     await expect(page).toHaveURL(/feed=subscribed$/);
-    await expect(page.getByRole('heading', { name: 'Subscriptions', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Subscriptions', exact: true })).toBeVisible();
 
     // Back returns to Explore, with its order where it was left
     await page.goBack();
@@ -903,4 +903,63 @@ test.describe('with a mouse', () => {
     await expect(page.locator('.app-menu')).toBeHidden();
     await expect(page.locator('.search-lens')).toBeHidden();
   });
+});
+
+test('subscriptions are managed from Settings', async ({ page }) => {
+  await page.goto('/app/settings');
+  await page.locator('.page-shell').getByRole('link', { name: /^Subscriptions/ }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Subscriptions', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Back to Settings' }).click();
+  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
+});
+
+test('a block of subscriptions shows nine rows whole and folds from the tenth', async ({ page }) => {
+  await page.setViewportSize({ width: 500, height: 900 });
+  let tags: string[] = [];
+  // Each search is wide enough to take a row of its own; the score makes it a search, not an artist.
+  const searches = (count: number) => Array.from({ length: count }, (_, index) => `fixture_search_with_a_long_name_${index} score:>10`);
+  await page.route(/\/settings\/subscriptions$/, (route) => route.request().resourceType() === 'document'
+    ? route.continue()
+    : route.fulfill({ json: { tags, artists: [], siteHits: {}, artistErrors: [], targets: [], artistSearches: [] } }));
+  await page.route('**/settings/subscriptions/pools', (route) => route.fulfill({ json: { pools: [] } }));
+  const group = page.getByRole('region', { name: 'Searches' });
+  const rows = () => group.locator('.subscription-item').evaluateAll((items) => new Set(items.map((item) => item.getBoundingClientRect().top)).size);
+
+  tags = searches(9);
+  await page.goto('/app/settings/subscriptions');
+  await expect(group.locator('.subscription-item')).toHaveCount(9);
+  expect(await rows()).toBe(9);
+  await expect(group.getByRole('button', { name: 'Show more' })).toHaveCount(0);
+
+  tags = searches(10);
+  await page.reload();
+  await expect(group.locator('.subscription-item')).toHaveCount(10);
+  expect(await rows()).toBe(10);
+  const more = group.getByRole('button', { name: 'Show more' });
+  await expect(more).toBeVisible();
+  // Eight rows stay whole above the cut; the ninth fades and the tenth is hidden.
+  const cut = await group.locator('.subscription-fold > div').first().boundingBox();
+  const items = await group.locator('.subscription-item').evaluateAll((list) => list.map((item) => item.getBoundingClientRect().bottom));
+  expect(items[7]).toBeLessThanOrEqual(cut!.y + cut!.height);
+  expect(items[8]).toBeGreaterThan(cut!.y + cut!.height);
+  expect((await more.boundingBox())!.height).toBeGreaterThanOrEqual(36);
+});
+
+test('a block of subscriptions shows its remove buttons only while editing', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.route(/\/settings\/subscriptions$/, (route) => route.request().resourceType() === 'document'
+    ? route.continue()
+    : route.fulfill({ json: { tags: ['fox', 'wolf', 'cat'], artists: [], siteHits: {}, artistErrors: [], targets: [], artistSearches: [] } }));
+  await page.route('**/settings/subscriptions/pools', (route) => route.fulfill({ json: { pools: [] } }));
+  await page.goto('/app/settings/subscriptions');
+  const group = page.getByRole('region', { name: 'Searches' });
+  await expect(group.locator('.subscription-item')).toHaveCount(3);
+  await expect(group.getByRole('button', { name: /^Unsubscribe from/ })).toHaveCount(0);
+
+  await group.getByRole('button', { name: 'Edit searches' }).click();
+  await expect(group.getByRole('button', { name: /^Unsubscribe from/ })).toHaveCount(3);
+  await expect(group.getByRole('button', { name: 'Unsubscribe from fox' })).toBeVisible();
+
+  await group.getByRole('button', { name: 'Done editing searches' }).click();
+  await expect(group.getByRole('button', { name: /^Unsubscribe from/ })).toHaveCount(0);
 });

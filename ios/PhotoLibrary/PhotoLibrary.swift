@@ -65,6 +65,20 @@ public func deletePhotos(_ identifiers: UnsafePointer<CChar>, _ done: Done, _ co
     }
 }
 
+/// One generator kept prepared, so a tap does not wait for the haptic engine to wake.
+private let hapticGenerator = UIImpactFeedbackGenerator(style: .medium)
+/// A little under a full medium tap, which felt strong on every touch.
+private let hapticIntensity: CGFloat = 0.8
+
+/// Gives one medium, short tap. Does not answer.
+@_cdecl("gooncave_haptic")
+public func haptic() {
+    DispatchQueue.main.async {
+        hapticGenerator.impactOccurred(intensity: hapticIntensity)
+        hapticGenerator.prepare()
+    }
+}
+
 /// Shows the system share sheet with a file (`{"path"}`) or a web address (`{"url"}`). Answers
 /// `{"shared": true}` when the person sent it somewhere, `{"shared": false}` when they closed the
 /// sheet, or `{"error"}`.

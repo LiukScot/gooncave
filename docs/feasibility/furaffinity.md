@@ -345,7 +345,7 @@ Four findings that shape the design:
 
 **Implemented (2026-09-11):** Subscribed is a persistent, indexed feed. The worker progressively writes booru tag results and FurAffinity's `/msg/submissions/` inbox into `subscription_feed_items`; the UI pages one global chronological cursor from `/explore/subscriptions` instead of paging every remote source while the user waits.
 
-The sync cursor is not read tracking: it only remembers which tag group or FurAffinity inbox page to fetch next. e621-family searches group up to 40 OR alternatives, Danbooru groups up to 2, and engines without a proven OR contract scan one tag at a time. Each site advances round-robin, and one source failure does not block the others. This follows the useful part of [e1547's follow sync](https://github.com/clynamic/e1547/tree/master/lib/follow): update subscriptions separately, persist their posts, and render the timeline from local state.
+The sync cursor is not read tracking: it only remembers which tag group or FurAffinity inbox page to fetch next. e621-family searches group up to 40 OR alternatives, Rule34 groups up to 20, Danbooru groups up to 2, and engines without a proven OR contract scan one tag at a time. Each site advances round-robin, and one source failure does not block the others. This follows the useful part of [e1547's follow sync](https://github.com/clynamic/e1547/tree/master/lib/follow): update subscriptions separately, persist their posts, and render the timeline from local state.
 
 The design discussion below is retained as historical context and is superseded by the implementation above.
 
@@ -406,6 +406,8 @@ That leaves two coherent shapes, and they are not interchangeable:
 
 - **Mirror.** The artist rows in settings *are* the FA watchlist. Adding a row calls `/watch/`, removing one calls `/unwatch/`, and the list is read back from `/watchlist/by/<user>/`. What the settings screen shows is what FA has.
 - **Local filter.** Gooncave keeps its own list and narrows the inbox to it. Following in gooncave then does not follow on FA, so the same artist can be "subscribed" here and unfollowed there — two sources of truth for one idea.
+
+**Superseded:** GoonCave now keeps its own artist list and syncs it both ways with each account's watchlist, so the artists also feed the other sites (see `docs/core.md`). The text below is the original decision.
 
 **Mirror is the right shape**, and finding 2 above is what makes it possible: watch and unwatch are reachable with the same token pattern as favourites, so gooncave can offer a follow button rather than sending the user to FA's site. The local-filter variant would need the inbox filtered per row anyway, which is the same request plus a divergence bug.
 

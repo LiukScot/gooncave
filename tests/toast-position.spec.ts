@@ -59,7 +59,8 @@ test('in a window narrow enough to reach the corner buttons, the toast stays abo
   await page.goto('/app/gallery');
   await page.locator('.gallery-thumb').first().click();
   await expect(page.locator('.file-detail-panel-current .file-detail-tags')).toBeVisible();
-  await page.setViewportSize({ width: 800, height: 600 });
+  // Up to 600px wide sonner's toasts span the whole width, over the corner buttons too.
+  await page.setViewportSize({ width: 500, height: 600 });
   await expect(page.locator('.phone-actions')).toBeVisible();
   const actions = await page.locator('.phone-actions').evaluate((element) => window.innerHeight - element.getBoundingClientRect().top);
   expect(await toastGap(page)).toBeGreaterThanOrEqual(actions);
@@ -212,4 +213,20 @@ test('a site that stays offline is reported once, not again on every search', as
   // The answer arrives after the request; give it time to show a toast.
   await page.waitForTimeout(1_500);
   await expect(toast).toHaveCount(0);
+});
+
+test.describe('in a wide desktop window', () => {
+  test.use({ hasTouch: false, isMobile: false, viewport: { width: 1280, height: 800 } });
+
+  test('a toast on the left stays low beside the corner buttons on the right', async ({ page }) => {
+    await page.goto('/app/gallery');
+    // The first card is a video, whose middle is its play button.
+    await page.getByRole('button', { name: /landscape\.png/ }).click();
+    await expect(page.locator('.file-detail-panel-current .file-detail-tags')).toBeVisible();
+    const actions = page.locator('.phone-actions');
+    await expect(actions).toBeVisible();
+    const height = await actions.evaluate((element) => window.innerHeight - element.getBoundingClientRect().top);
+    // Before any toast exists too, so the first one does not land high and then drop.
+    await expect.poll(() => toastGap(page)).toBeLessThan(height);
+  });
 });

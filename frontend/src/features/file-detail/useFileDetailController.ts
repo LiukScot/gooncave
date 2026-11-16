@@ -1170,7 +1170,7 @@ export function useFileDetailController(
    * pill at a time, and clearing it is what the box itself is for (#307).
    */
   const selectTag = useCallback(
-    async (tag: string) => {
+    async (tag: string, category: string) => {
       const mode = await choose('', {
         title: tag,
         actions: [
@@ -1188,7 +1188,7 @@ export function useFileDetailController(
         return;
       }
       if (mode !== 'search') {
-        await runSubscriptionAction(mode, tag);
+        await runSubscriptionAction(mode, tag, category);
         return;
       }
       const next = appendTagTerm(
@@ -1319,7 +1319,7 @@ export function useFileDetailController(
       onAddManualTag: () => void addManualTag(),
       onToggleTagsEditing: () => setTagsEditing((current) => !current),
       onRemoveTag: (entry: TagEntry) => void removeTag(entry),
-      onSelectTag: (tag: string) => void selectTag(tag),
+      onSelectTag: (tag: string, category: string) => void selectTag(tag, category),
       onRefreshTags: () => void refreshTags(),
 
       providerHighlights,

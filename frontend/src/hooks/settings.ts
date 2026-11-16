@@ -8,7 +8,8 @@ import {
   type BlacklistSettings,
   type ExtraSettings,
   type PoolSubscription,
-  type SubscriptionSettings
+  type SubscriptionSettings,
+  type SubscriptionTargets
 } from '@/api';
 import { writeExploreSnapshot } from '@/features/explore/exploreSnapshot';
 import { useDeviceProfile } from '@/hooks/device';
@@ -120,7 +121,7 @@ export function useSubscriptionTags(options: { enabled?: boolean } = {}) {
   // Subscriptions live on boorus; a core without them has none to read.
   const capabilities = useDeviceProfile().data?.capabilities;
   const boorusAvailable = capabilities?.subscriptions !== false && capabilities?.boorus !== false;
-  return useQuery<{ tags: string[] }>({
+  return useQuery<SubscriptionTargets>({
     queryKey: queryKeys.settings.subscriptionTags(),
     queryFn: () => api.getSubscriptionTags(),
     staleTime: 30_000,
@@ -128,15 +129,17 @@ export function useSubscriptionTags(options: { enabled?: boolean } = {}) {
   });
 }
 
-export const useAddSubscriptionTag = () => useAddSubscription(api.addSubscriptionTag);
-
-function useAddSubscription(add: (value: string) => Promise<{ tags: string[] }>) {
+/** Adds a search or tag; the server decides whether it is followed as an artist. */
+export function useAddSubscriptionTag() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: add,
-    onSuccess: ({ tags }) => {
+    mutationFn: api.addSubscriptionTag,
+    onSuccess: ({ tags, artists }) => {
       writeExploreSnapshot(null);
-      queryClient.setQueryData(queryKeys.settings.subscriptionTags(), { tags });
+      queryClient.setQueryData<SubscriptionTargets>(
+        queryKeys.settings.subscriptionTags(),
+        { tags, artists }
+      );
       queryClient.setQueryData<SubscriptionSettings>(
         queryKeys.settings.subscriptions(),
         (current) =>
@@ -144,9 +147,10 @@ function useAddSubscription(add: (value: string) => Promise<{ tags: string[] }>)
             ? {
                 ...current,
                 tags,
+                artists,
                 targets: [
                   ...tags.map((value) => ({ kind: 'tag' as const, value })),
-                  ...current.targets.filter((target) => target.kind === 'artist')
+                  ...artists.map((value) => ({ kind: 'artist' as const, value }))
                 ]
               }
             : undefined
@@ -161,7 +165,10 @@ export function useUpdateSubscriptionTags() {
     mutationFn: (tags: string[]) => api.updateSubscriptionTags(tags),
     onSuccess: ({ tags }) => {
       writeExploreSnapshot(null);
-      queryClient.setQueryData(queryKeys.settings.subscriptionTags(), { tags });
+      queryClient.setQueryData<SubscriptionTargets>(
+        queryKeys.settings.subscriptionTags(),
+        (current) => ({ artists: current?.artists ?? [], tags })
+      );
       queryClient.setQueryData<SubscriptionSettings>(
         queryKeys.settings.subscriptions(),
         (current) =>
@@ -204,17 +211,18 @@ export function usePoolSubscriptionMutation(subscribed: boolean) {
   });
 }
 
+/** Follows or unfollows one artist; the list is replaced by the server's, after its FurAffinity sync. */
 export function useArtistSubscriptionMutation(subscribed: boolean) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ siteId, artist }: { siteId: string; artist: string }) =>
-      subscribed
-        ? api.subscribeArtist(siteId, artist)
-        : api.unsubscribeArtist(siteId, artist),
-    onSuccess: () => {
+    mutationFn: (artist: string) =>
+      subscribed ? api.subscribeArtist(artist) : api.unsubscribeArtist(artist),
+    onSuccess: (data) => {
       writeExploreSnapshot(null);
-      return queryClient.invalidateQueries({
-        queryKey: queryKeys.settings.subscriptions()
+      queryClient.setQueryData(queryKeys.settings.subscriptions(), data);
+      queryClient.setQueryData<SubscriptionTargets>(queryKeys.settings.subscriptionTags(), {
+        tags: data.tags,
+        artists: data.artists
       });
     }
   });

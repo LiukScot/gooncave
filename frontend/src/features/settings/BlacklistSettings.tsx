@@ -3,27 +3,29 @@ import { useEffect, useState } from 'react';
 import { parseBlacklistInput } from './blacklist';
 import { TagDatabaseStatus } from './TagDatabaseStatus';
 
+import { PanelMultiChoice } from '@/features/shell/SearchPanel';
 import {
   useBlacklistSettings,
   useUpdateBlacklistSettings
 } from '@/hooks/settings';
 
-type BlacklistTarget = 'applyToExplore' | 'applyToGallery';
+type BlacklistTarget = 'applyToExplore' | 'applyToSubscriptions' | 'applyToGallery';
 
 const TARGETS: {
   key: BlacklistTarget;
   label: string;
-  description: string;
 }[] = [
   {
     key: 'applyToExplore',
-    label: 'Explore',
-    description: 'Hide booru results carrying a blacklisted tag.'
+    label: 'Explore'
+  },
+  {
+    key: 'applyToSubscriptions',
+    label: 'Subscriptions'
   },
   {
     key: 'applyToGallery',
-    label: 'Gallery',
-    description: 'Hide your own files carrying a blacklisted tag.'
+    label: 'Gallery'
   }
 ];
 
@@ -84,28 +86,19 @@ export function BlacklistSettings() {
         ) : null}
       </div>
 
-      <div className="list-group">
-        {TARGETS.map(({ key, label, description }) => (
-          <div key={key} className="list-group-item flex items-center gap-3">
-            <span className="flex-1 min-w-0">
-              <label className="block font-medium" htmlFor={`blacklist-${key}`}>
-                {label}
-              </label>
-              <span className="block text-muted-foreground text-xs">
-                {description}
-              </span>
-            </span>
-            <input
-              className="form-check-input shrink-0"
-              type="checkbox"
-              id={`blacklist-${key}`}
-              name={`blacklist-${key}`}
-              checked={settings[key]}
-              onChange={() => toggle(key)}
-            />
-          </div>
-        ))}
-      </div>
+      <section className="appearance-group">
+        <h2 className="appearance-group-title">
+          Activate blacklist on
+        </h2>
+        <PanelMultiChoice
+          label="Activate blacklist on"
+          options={TARGETS.map(({ key, label }) => ({
+            label,
+            pressed: settings[key],
+            onToggle: () => toggle(key)
+          }))}
+        />
+      </section>
 
       <TagDatabaseStatus />
 

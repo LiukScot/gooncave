@@ -1,13 +1,24 @@
 import { Link, useNavigate } from '@tanstack/react-router';
-import { BookImage, Search, UserRound, X } from 'lucide-react';
+import { Pencil, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
-import type { PoolSubscription } from '@/api';
+import type { BooruSite, PoolSubscription } from '@/api';
+import { FoldedBox } from '@/components/FoldedBox';
+import { HelpPopover } from '@/components/HelpPopover';
 import { RemoteImage } from '@/features/explore/RemoteImage';
 import { normalizeSubscriptionSearch } from '@/features/explore/subscriptionFeed';
+import { SiteLogo } from '@/features/file-detail/SourcesDialog';
 import { TagSearchInput } from '@/features/library/TagSearchInput';
 import {
+  PanelSection,
+  PanelToggle,
+  SearchPanel,
+  type FilterChip
+} from '@/features/shell/SearchPanel';
+import { useBooruSites } from '@/hooks/booru-sites';
+import {
+  useAddSubscriptionTag,
   useArtistSubscriptionMutation,
   usePoolSubscriptionMutation,
   useSubscriptionPools,
@@ -17,30 +28,52 @@ import {
 import { useErrorToast } from '@/lib/useErrorToast';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
+// Rows shown whole before Show more; one row more is shown whole too.
+const PILL_ROWS = 8;
+const COVER_ROWS = 3;
+
+const HELP =
+  "Searches, artists and pools are stored in GoonCave and run on every configured booru. Spaces and operators such as score:>10 are kept. A single name that is an artist is followed as one: it is also synced both ways with each FurAffinity account’s watchlist, so following or unfollowing on either side is copied to the other. Other tags are never followed on FurAffinity.";
+
 const rows = (value: string): string[] =>
   value
     .split(/\r?\n/)
     .map((entry) => entry.trim())
     .filter(Boolean);
 
+/** The logo of each site where a followed entry has results. */
+function SiteLogos({ sites }: { sites: BooruSite[] }) {
+  return (
+    <span className="subscription-item-origin">
+      {sites.map((site) => (
+        <span key={site.id} role="img" aria-label={site.name}>
+          <SiteLogo url={site.baseUrl} className="subscription-item-logo" />
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /** One followed thing: the part that opens it, then its remove button. */
-function SubscriptionRow({
+function SubscriptionItem({
+  className,
   open,
   removeLabel,
   removeDisabled,
   onRemove
 }: {
+  className: string;
   open: ReactNode;
   removeLabel: string;
   removeDisabled: boolean;
   onRemove: () => void;
 }) {
   return (
-    <div className="list-group-item subscription-row">
+    <div className={`subscription-item ${className}`}>
       {open}
       <button
         type="button"
-        className="btn btn-outline-light btn-sm subscription-row-remove"
+        className="subscription-item-remove"
         aria-label={removeLabel}
         title={removeLabel}
         disabled={removeDisabled}
@@ -52,13 +85,116 @@ function SubscriptionRow({
   );
 }
 
-function SearchSubscriptions() {
+/** Searches, artists or pools: a titled block with how many it shows, folded after `rows` rows. */
+function SubscriptionGroup({
+  title,
+  count,
+  rows,
+  className,
+  children
+}: {
+  title: string;
+  count: number;
+  rows: number;
+  className: string;
+  children: ReactNode;
+}) {
+  // The remove buttons stay hidden until Edit: one per entry took half of every pill.
+  const [editing, setEditing] = useState(false);
+  if (count === 0) return null;
+  return (
+    <section className={`appearance-group subscription-group${editing ? ' is-editing' : ''}`} aria-label={title}>
+      <div className="subscription-group-head">
+        <h3 className="appearance-group-title">
+          {title} · {count}
+        </h3>
+        {/* The tags' edit button of the detail view. */}
+        <button
+          type="button"
+          className={`file-detail-ghost-button file-detail-edit-tags-button${editing ? ' is-active' : ''}`}
+          aria-pressed={editing}
+          aria-label={editing ? `Done editing ${title.toLowerCase()}` : `Edit ${title.toLowerCase()}`}
+          title={editing ? `Done editing ${title.toLowerCase()}` : `Edit ${title.toLowerCase()}`}
+          onClick={() => setEditing((current) => !current)}
+        >
+          <Pencil aria-hidden="true" />
+        </button>
+      </div>
+      <FoldedBox rows={rows} className="subscription-fold">
+        <div className={className}>{children}</div>
+      </FoldedBox>
+    </section>
+  );
+}
+
+function Subscriptions() {
   const subscriptions = useSubscriptions();
   const updateTags = useUpdateSubscriptionTags();
   useErrorToast(updateTags.error);
+  const addTag = useAddSubscriptionTag();
+  useErrorToast(addTag.error);
   const setPendingSearch = useExploreUiStore((state) => state.setPendingSearch);
+  const setPoolOrigin = useExploreUiStore((state) => state.setPoolOrigin);
   const navigate = useNavigate();
   const tags = subscriptions.data?.tags ?? [];
+  const artists = subscriptions.data?.artists ?? [];
+  const siteHits = subscriptions.data?.siteHits ?? {};
+  const sites = (useBooruSites().data ?? []).filter((site) => site.enabled);
+  const artistErrors = subscriptions.data?.artistErrors ?? [];
+  const poolQuery = useSubscriptionPools();
+  const pools = poolQuery.data?.pools ?? [];
+  const followPool = usePoolSubscriptionMutation(true);
+  const unfollowPool = usePoolSubscriptionMutation(false);
+  const followArtist = useArtistSubscriptionMutation(true);
+  const unfollowArtist = useArtistSubscriptionMutation(false);
+  useErrorToast(followArtist.error ?? unfollowArtist.error);
+  useErrorToast(subscriptions.error);
+  useErrorToast(poolQuery.error);
+  useErrorToast(
+    artistErrors.length
+      ? `${artistErrors.map((failure) => failure.siteName).join(', ')} watchlist not synced. Your changes are kept for the next sync.`
+      : null,
+    { action: { label: 'Accounts', onClick: () => void navigate({ to: '/app/settings/accounts' }) } }
+  );
+  const [filterText, setFilterText] = useState('');
+  const [hiddenSites, setHiddenSites] = useState<Set<string>>(new Set());
+  const query = filterText.trim().toLowerCase();
+  const matches = (name: string) => name.toLowerCase().includes(query);
+  const sitesOf = (entry: string) =>
+    sites.filter((site) => siteHits[entry]?.includes(site.id));
+  // An entry without results anywhere stays visible only while no site is hidden.
+  const shows = (entry: string) =>
+    matches(entry) &&
+    (hiddenSites.size === 0 ||
+      sitesOf(entry).some((site) => !hiddenSites.has(site.id)));
+  const artistSearches = new Set(subscriptions.data?.artistSearches ?? []);
+  const shownTags = tags.filter((tag) => !artistSearches.has(tag) && shows(tag));
+  const shownArtistSearches = tags.filter((tag) => artistSearches.has(tag) && shows(tag));
+  const shownArtists = artists.filter(shows);
+  const shownPools = pools.filter(
+    (pool) => matches(pool.name) && !hiddenSites.has(pool.siteId)
+  );
+  const enabledSites = sites.filter((site) => !hiddenSites.has(site.id)).length;
+  const filters: FilterChip[] = [
+    ...(query
+      ? [
+          {
+            key: 'text',
+            label: `“${filterText.trim()}”`,
+            clear: () => setFilterText('')
+          }
+        ]
+      : []),
+    ...(hiddenSites.size > 0
+      ? [
+          {
+            key: 'sites',
+            label: `${enabledSites} of ${sites.length} sites`,
+            clear: () => setHiddenSites(new Set())
+          }
+        ]
+      : [])
+  ];
   const savedTags = tags.join('\n');
   const [newSearch, setNewSearch] = useState('');
   const [draft, setDraft] = useState<string | null>(null);
@@ -68,7 +204,8 @@ function SearchSubscriptions() {
   const value = draft ?? savedTags;
   const dirty = rows(value).join('\n') !== savedTags;
   const normalizedNew = normalizeSubscriptionSearch(newSearch);
-  const alreadyFollowed = tags.includes(normalizedNew);
+  const alreadyFollowed =
+    tags.includes(normalizedNew) || artists.includes(normalizedNew);
 
   const save = async (next: string[]) => {
     try {
@@ -82,7 +219,12 @@ function SearchSubscriptions() {
 
   const add = async () => {
     if (!normalizedNew || alreadyFollowed) return;
-    if (await save([...tags, normalizedNew])) setNewSearch('');
+    try {
+      await addTag.mutateAsync({ search: normalizedNew });
+      setNewSearch('');
+    } catch {
+      // The mutation error is shown as a toast, and the typed text stays.
+    }
   };
 
   const remove = async (search: string) => {
@@ -93,20 +235,68 @@ function SearchSubscriptions() {
     });
   };
 
+  const removePool = async (pool: PoolSubscription) => {
+    const target = { siteId: pool.siteId, poolId: pool.poolId };
+    try {
+      await unfollowPool.mutateAsync(target);
+    } catch (error) {
+      toast.error((error as Error).message);
+      return;
+    }
+    toast.success(`Unsubscribed from ${pool.name}`, {
+      action: {
+        label: 'Undo',
+        onClick: () =>
+          followPool
+            .mutateAsync(target)
+            .catch((error: Error) => toast.error(error.message))
+      }
+    });
+  };
+
+  const removeArtist = async (artist: string) => {
+    try {
+      await unfollowArtist.mutateAsync(artist);
+    } catch {
+      // The mutation error is shown under the list.
+      return;
+    }
+    toast.success(`Unfollowed ${artist}`, {
+      action: {
+        label: 'Undo',
+        onClick: () =>
+          followArtist
+            .mutateAsync(artist)
+            .catch((error: Error) => toast.error(error.message))
+      }
+    });
+  };
+
   const openSearch = (search: string) => {
     setPendingSearch(search);
     void navigate({ to: '/app/explore', search: { post: undefined } });
   };
 
+  const searchItem = (search: string) => (
+    <SubscriptionItem
+      key={search}
+      className="subscription-pill"
+      removeLabel={`Unsubscribe from ${search}`}
+      removeDisabled={updateTags.isPending}
+      onRemove={() => void remove(search)}
+      open={
+        <button type="button" className="subscription-item-open" onClick={() => openSearch(search)}>
+          <SiteLogos sites={sitesOf(search)} />
+          <span className="subscription-item-title">{search}</span>
+        </button>
+      }
+    />
+  );
+
   return (
     <section className="settings-section">
-      <h2 className="h5 mb-1">Searches</h2>
-      <p className="text-muted-foreground text-xs mb-3">
-        Stored only in GoonCave and run on every configured booru. Spaces and
-        operators such as score:&gt;10 are kept.
-      </p>
       <form
-        className="flex gap-2 mb-3"
+        className="flex items-center gap-2 mb-3"
         onSubmit={(event) => {
           event.preventDefault();
           void add();
@@ -127,46 +317,139 @@ function SearchSubscriptions() {
         <button
           className="btn btn-primary btn-sm shrink-0"
           type="submit"
-          disabled={!normalizedNew || alreadyFollowed || updateTags.isPending}
+          disabled={!normalizedNew || alreadyFollowed || addTag.isPending}
         >
           {alreadyFollowed ? 'Subscribed' : 'Subscribe'}
         </button>
+        <HelpPopover text={HELP} />
       </form>
 
-      {tags.length ? (
-        <div className="list-group list-group-segmented mb-3">
-          {tags.map((search) => (
-            <SubscriptionRow
-              key={search}
-              removeLabel={`Unsubscribe from ${search}`}
-              removeDisabled={updateTags.isPending}
-              onRemove={() => void remove(search)}
-              open={
-                <button
-                  type="button"
-                  className="subscription-row-open"
-                  onClick={() => openSearch(search)}
-                >
-                  <Search className="subscription-row-icon" aria-hidden="true" />
-                  <span className="subscription-row-text">
-                    <span className="subscription-row-title">{search}</span>
-                    <span className="subscription-row-meta">All sites</span>
-                  </span>
-                </button>
-              }
-            />
-          ))}
-        </div>
+      <SearchPanel
+        title="Filter subscriptions"
+        filters={filters}
+        search={
+          <input
+            className="form-control"
+            type="search"
+            name="subscription-filter"
+            autoComplete="off"
+            aria-label="Filter subscriptions by name"
+            placeholder="Name"
+            value={filterText}
+            onChange={(event) => setFilterText(event.target.value)}
+          />
+        }
+      >
+        <PanelSection
+          label="Sites"
+          aside={sites.length > 0 ? `${enabledSites} of ${sites.length}` : undefined}
+        >
+          <div className="panel-pills">
+            {sites.map((site) => (
+              <PanelToggle
+                key={site.id}
+                pressed={!hiddenSites.has(site.id)}
+                onToggle={() =>
+                  setHiddenSites((current) => {
+                    const next = new Set(current);
+                    if (!next.delete(site.id)) next.add(site.id);
+                    return next;
+                  })
+                }
+                icon={<SiteLogo url={site.baseUrl} className="panel-pill-logo" />}
+              >
+                {site.name}
+              </PanelToggle>
+            ))}
+          </div>
+        </PanelSection>
+      </SearchPanel>
+
+      {tags.length || artists.length || pools.length ? (
+        shownTags.length || shownArtistSearches.length || shownArtists.length || shownPools.length ? (
+          <>
+            <SubscriptionGroup title="Searches" count={shownTags.length} rows={PILL_ROWS} className="subscription-pills">
+              {shownTags.map(searchItem)}
+            </SubscriptionGroup>
+            <SubscriptionGroup title="Artists" count={shownArtists.length + shownArtistSearches.length} rows={PILL_ROWS} className="subscription-pills">
+              {shownArtistSearches.map(searchItem)}
+              {shownArtists.map((artist) => (
+                <SubscriptionItem
+                  key={`artist:${artist}`}
+                  className="subscription-pill"
+                  removeLabel={`Unfollow ${artist}`}
+                  removeDisabled={unfollowArtist.isPending}
+                  onRemove={() => void removeArtist(artist)}
+                  open={
+                    <span className="subscription-item-open">
+                      <SiteLogos sites={sitesOf(artist)} />
+                      <span className="subscription-item-title">{artist}</span>
+                    </span>
+                  }
+                />
+              ))}
+            </SubscriptionGroup>
+            <SubscriptionGroup title="Pools" count={shownPools.length} rows={COVER_ROWS} className="subscription-covers">
+              {shownPools.map((pool) => (
+                <SubscriptionItem
+                  key={`${pool.siteId}:${pool.poolId}`}
+                  className="subscription-cover-card"
+                  removeLabel={`Unsubscribe from ${pool.name}`}
+                  removeDisabled={unfollowPool.isPending}
+                  onRemove={() => void removePool(pool)}
+                  open={
+                    <Link
+                      className="subscription-item-open"
+                      to="/app/pool"
+                      search={{ site: pool.siteId, pool: pool.poolId }}
+                      onClick={() => setPoolOrigin('subscriptions')}
+                    >
+                      {pool.coverUrl ? (
+                        <RemoteImage
+                          src={pool.coverUrl}
+                          alt=""
+                          className="subscription-cover"
+                          loading="lazy"
+                          decoding="async"
+                          // danbooru's CDN answers 403 without a Referer; `origin`
+                          // sends the host and never the path.
+                          referrerPolicy="origin"
+                          fallback={<span className="subscription-cover" />}
+                        />
+                      ) : (
+                        <span className="subscription-cover" />
+                      )}
+                      <span className="subscription-item-title">{pool.name}</span>
+                      <span className="subscription-item-meta">
+                        <SiteLogos sites={sites.filter((site) => site.id === pool.siteId)} />{' '}
+                        {pool.siteName} · {pool.postCount}{' '}
+                        {pool.postCount === 1 ? 'page' : 'pages'}
+                      </span>
+                    </Link>
+                  }
+                />
+              ))}
+            </SubscriptionGroup>
+          </>
+        ) : (
+          <p className="text-muted-foreground text-sm mb-3">
+            Nothing followed matches these filters.
+          </p>
+        )
       ) : subscriptions.isLoading ? null : (
         <p className="text-muted-foreground text-sm mb-3">
-          No searches yet. Type one above, or hit Subscribe next to a search in
-          Explore.
+          Nothing followed yet. Type a search or an artist name above, hit
+          Subscribe next to a search in Explore, or open a comic or a pool and
+          hit Subscribe at the top.
         </p>
       )}
 
       <details className="subscription-text-editor">
         <summary className="text-sm font-medium">Edit as text</summary>
-        <label className="block font-medium mt-3 mb-2" htmlFor="subscription-tags">
+        <label
+          className="block font-medium mt-3 mb-2"
+          htmlFor="subscription-tags"
+        >
           One search per row
         </label>
         <textarea
@@ -188,7 +471,9 @@ function SearchSubscriptions() {
             {updateTags.isPending ? 'Saving…' : 'Save searches'}
           </button>
           {dirty ? (
-            <span className="text-muted-foreground text-xs">Unsaved changes</span>
+            <span className="text-muted-foreground text-xs">
+              Unsaved changes
+            </span>
           ) : null}
         </div>
       </details>
@@ -196,217 +481,10 @@ function SearchSubscriptions() {
   );
 }
 
-function PoolSubscriptions() {
-  const pools = useSubscriptionPools();
-  const follow = usePoolSubscriptionMutation(true);
-  const unfollow = usePoolSubscriptionMutation(false);
-  const list = pools.data?.pools ?? [];
-
-  const remove = async (pool: PoolSubscription) => {
-    const target = { siteId: pool.siteId, poolId: pool.poolId };
-    try {
-      await unfollow.mutateAsync(target);
-    } catch (error) {
-      toast.error((error as Error).message);
-      return;
-    }
-    toast.success(`Unsubscribed from ${pool.name}`, {
-      action: {
-        label: 'Undo',
-        onClick: () =>
-          follow
-            .mutateAsync(target)
-            .catch((error: Error) => toast.error(error.message))
-      }
-    });
-  };
-
-  return (
-    <section className="settings-section">
-      <h2 className="h5 mb-1">Pools</h2>
-      <p className="text-muted-foreground text-xs mb-3">
-        New pages added to a pool show up in Subscriptions.
-      </p>
-      {list.length ? (
-        <div className="list-group list-group-segmented">
-          {list.map((pool) => (
-            <SubscriptionRow
-              key={`${pool.siteId}:${pool.poolId}`}
-              removeLabel={`Unsubscribe from ${pool.name}`}
-              removeDisabled={unfollow.isPending}
-              onRemove={() => void remove(pool)}
-              open={
-                <Link
-                  className="subscription-row-open"
-                  to="/app/pool"
-                  search={{ site: pool.siteId, pool: pool.poolId }}
-                >
-                  <BookImage className="subscription-row-icon" aria-hidden="true" />
-                  <span className="subscription-row-text">
-                    <span className="subscription-row-title">{pool.name}</span>
-                    <span className="subscription-row-meta">
-                      {pool.siteName} · {pool.postCount}{' '}
-                      {pool.postCount === 1 ? 'page' : 'pages'}
-                    </span>
-                  </span>
-                  {pool.coverUrl ? (
-                    <RemoteImage
-                      src={pool.coverUrl}
-                      alt=""
-                      className="subscription-row-cover rounded"
-                      loading="lazy"
-                      decoding="async"
-                      // danbooru's CDN answers 403 without a Referer; `origin`
-                      // sends the host and never the path.
-                      referrerPolicy="origin"
-                      fallback={<span className="subscription-row-cover rounded" />}
-                    />
-                  ) : (
-                    <span className="subscription-row-cover rounded" />
-                  )}
-                </Link>
-              }
-            />
-          ))}
-        </div>
-      ) : pools.isLoading ? null : (
-        <p className="text-muted-foreground text-sm mb-0">
-          No pools yet. Open a comic or a pool and hit Subscribe at the top.
-        </p>
-      )}
-      {pools.error ? (
-        <p className="text-destructive text-sm mt-2 mb-0">{pools.error.message}</p>
-      ) : null}
-    </section>
-  );
-}
-
-function ArtistSubscriptions() {
-  const subscriptions = useSubscriptions();
-  const follow = useArtistSubscriptionMutation(true);
-  const unfollow = useArtistSubscriptionMutation(false);
-  const [artistDrafts, setArtistDrafts] = useState<Record<string, string>>({});
-  const artistMutationError = follow.error?.message ?? unfollow.error?.message;
-
-  return (
-    <section className="settings-section">
-      <h2 className="h5 mb-1">FurAffinity artists</h2>
-      <p className="text-muted-foreground text-xs mb-3">
-        This is a live mirror of each FurAffinity account’s watchlist.
-        Following or unfollowing here immediately changes that remote account;
-        artists are not stored as a second local list.
-      </p>
-
-      {subscriptions.isLoading ? (
-        <p className="text-muted-foreground text-sm">Loading watchlists…</p>
-      ) : subscriptions.data?.artistSources.length ? (
-        subscriptions.data.artistSources.map((source) => {
-          const artistDraft = artistDrafts[source.siteId] ?? '';
-          return (
-            <div className="mb-3" key={source.siteId}>
-              <div className="font-medium mb-2">{source.siteName}</div>
-              <form
-                className="flex gap-2"
-                onSubmit={async (event) => {
-                  event.preventDefault();
-                  try {
-                    await follow.mutateAsync({
-                      siteId: source.siteId,
-                      artist: artistDraft.trim()
-                    });
-                    setArtistDrafts((current) => ({
-                      ...current,
-                      [source.siteId]: ''
-                    }));
-                  } catch {
-                    // The mutation error stays beside the form, and the
-                    // typed username remains available for correction.
-                  }
-                }}
-              >
-                <label className="visually-hidden" htmlFor={`follow-${source.siteId}`}>
-                  Artist username
-                </label>
-                <input
-                  className="form-control form-control-sm"
-                  id={`follow-${source.siteId}`}
-                  name={`follow-${source.siteId}`}
-                  type="text"
-                  autoComplete="off"
-                  placeholder="Artist username"
-                  value={artistDraft}
-                  onChange={(event) =>
-                    setArtistDrafts((current) => ({
-                      ...current,
-                      [source.siteId]: event.target.value
-                    }))
-                  }
-                />
-                <button
-                  className="btn btn-primary btn-sm shrink-0"
-                  type="submit"
-                  disabled={!artistDraft.trim() || follow.isPending}
-                >
-                  Follow
-                </button>
-              </form>
-              {source.error ? (
-                <p className="text-destructive text-sm mt-2 mb-0">{source.error}</p>
-              ) : source.artists.length ? (
-                <div className="list-group list-group-segmented mt-3">
-                  {source.artists.map((artist) => (
-                    <SubscriptionRow
-                      key={artist.toLowerCase()}
-                      removeLabel={`Unfollow ${artist}`}
-                      removeDisabled={unfollow.isPending}
-                      onRemove={() =>
-                        unfollow.mutate({ siteId: source.siteId, artist })
-                      }
-                      open={
-                        <span className="subscription-row-open">
-                          <UserRound
-                            className="subscription-row-icon"
-                            aria-hidden="true"
-                          />
-                          <span className="subscription-row-text">
-                            <span className="subscription-row-title">{artist}</span>
-                          </span>
-                        </span>
-                      }
-                    />
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground text-sm mt-2 mb-0">
-                  This account is not watching any artists.
-                </p>
-              )}
-            </div>
-          );
-        })
-      ) : (
-        <p className="text-muted-foreground text-sm">
-          No enabled FurAffinity account is configured. Add one under Settings →
-          Accounts to follow artists.
-        </p>
-      )}
-
-      {subscriptions.error ? (
-        <p className="text-destructive text-sm">{subscriptions.error.message}</p>
-      ) : null}
-      {artistMutationError ? (
-        <p className="text-destructive text-sm">{artistMutationError}</p>
-      ) : null}
-    </section>
-  );
-}
-
 export function SubscriptionsSettings() {
   return (
     <div className="col-12">
-      <SearchSubscriptions />
-      <PoolSubscriptions />
-      <ArtistSubscriptions />
+      <Subscriptions />
     </div>
   );
 }

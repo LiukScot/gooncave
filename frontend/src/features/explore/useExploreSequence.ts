@@ -49,7 +49,8 @@ export const useExploreSequence = ({
   onStep,
   hasMore,
   loading,
-  loadMore
+  loadMore,
+  loadEarly = true
 }: {
   posts: ExplorePost[];
   stack?: (posts: ExplorePost[]) => ExplorePost[][];
@@ -61,6 +62,8 @@ export const useExploreSequence = ({
   hasMore: boolean;
   loading: boolean;
   loadMore: () => Promise<ExplorePost[]>;
+  /** Load the next page while the reader is near the end; stepping past the end loads it anyway. */
+  loadEarly?: boolean;
 }): ExploreSequence => {
   const stacks = useMemo(() => stack(posts), [stack, posts]);
   const navKeys = useMemo(
@@ -120,7 +123,7 @@ export const useExploreSequence = ({
       prefetchedForAnchorRef.current = null;
       return;
     }
-    if (poolContext || !hasMore || loading) return;
+    if (!loadEarly || poolContext || !hasMore || loading) return;
     if (anchorIndex < navKeys.length - 2 || anchorIndex < 0) return;
     const edgeKey = navKeys.at(-1);
     if (!edgeKey || prefetchedForAnchorRef.current === openKey) return;
@@ -143,6 +146,7 @@ export const useExploreSequence = ({
     navKeys,
     poolContext,
     openKey,
+    loadEarly,
     selectedPost
   ]);
 

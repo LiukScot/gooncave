@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "library-haptics",
+  "description": "The library page, served over loopback HTTP, may only ask for a haptic tap.",
+  "windows": ["main"],
+  "remote": { "urls": ["http://127.0.0.1:*/*"] },
+  "permissions": ["allow-haptic"]
+}

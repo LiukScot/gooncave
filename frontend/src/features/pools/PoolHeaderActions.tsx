@@ -7,38 +7,43 @@ import {
   usePoolSubscriptionMutation,
   useSubscriptionPools
 } from '@/hooks/settings';
-import { useExploreUiStore } from '@/stores/exploreUiStore';
+import { type PoolOrigin, useExploreUiStore } from '@/stores/exploreUiStore';
+
+/** Where a pool's back leads and what it says. Explore is the fallback for a pool opened cold. */
+export function poolBack(origin: PoolOrigin | null) {
+  switch (origin) {
+    case 'gallery':
+      return { label: 'Back to gallery', to: '/app/gallery', search: { fileId: undefined, fs: undefined } } as const;
+    case 'subscriptions':
+      return { label: 'Back to subscriptions', to: '/app/settings/subscriptions', search: {} } as const;
+    case 'subscribed':
+    case 'history':
+      return {
+        label: origin === 'subscribed' ? 'Back to subscriptions' : 'Back to history',
+        to: '/app/explore',
+        search: { post: undefined, feed: origin }
+      } as const;
+    default:
+      return { label: 'Back to explore', to: '/app/explore', search: { post: undefined } } as const;
+  }
+}
 
 /**
  * The way out of a pool: back to the grid the reader came from, at the place
  * they left it — not to the post whose navigator opened this, which is where
- * the browser's own back button leads. Explore is the fallback for a pool
- * opened cold.
+ * the browser's own back button leads.
  */
 export function PoolBackButton(): React.ReactElement {
-  const cameFromGallery =
-    useExploreUiStore((state) => state.poolOrigin) === '/app/gallery';
-  return cameFromGallery ? (
+  const { label, ...back } = poolBack(useExploreUiStore((state) => state.poolOrigin));
+  return (
     <Link
       className="btn btn-outline-light btn-sm file-detail-icon-button pool-head-action"
-      to="/app/gallery"
-      search={{ fileId: undefined, fs: undefined }}
-      aria-label="Back to gallery"
-      title="Back to gallery"
+      {...back}
+      aria-label={label}
+      title={label}
     >
       <ChevronLeft className="size-4" aria-hidden="true" />
-      <span className="pool-head-action-label">Back to gallery</span>
-    </Link>
-  ) : (
-    <Link
-      className="btn btn-outline-light btn-sm file-detail-icon-button pool-head-action"
-      to="/app/explore"
-      search={{ post: undefined }}
-      aria-label="Back to explore"
-      title="Back to explore"
-    >
-      <ChevronLeft className="size-4" aria-hidden="true" />
-      <span className="pool-head-action-label">Back to explore</span>
+      <span className="pool-head-action-label">{label}</span>
     </Link>
   );
 }

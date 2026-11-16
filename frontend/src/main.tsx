@@ -4,6 +4,7 @@ import './index.css';
 import './app.css';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { isTauri } from '@tauri-apps/api/core';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -12,6 +13,7 @@ import { ConfirmProvider } from './components/confirm-dialog';
 import { Toaster } from './components/ui/sonner';
 import { applyAppearance } from './lib/appearanceTheme';
 import { installExternalLinks } from './lib/externalLinks';
+import { listenForHaptics } from './lib/haptics';
 import { applyScreenCorner, isIos } from './lib/platform';
 import { createQueryClient } from './lib/query-client';
 import { installWindowErrorLog } from './lib/windowErrorLog';
@@ -48,6 +50,9 @@ applyAppearance();
 useAppearanceStore.subscribe(applyAppearance);
 
 const queryClient = createQueryClient();
+
+// Only the iPhone shell is Tauri; desktop is Electron and the web is a browser.
+if (isTauri()) listenForHaptics();
 
 const root = createRoot(container);
 root.render(

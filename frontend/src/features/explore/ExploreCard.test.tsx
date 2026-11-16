@@ -156,7 +156,7 @@ it('marks a completed upvote with the voted visual state', async () => {
   expect(upvote?.getAttribute('aria-label')).toBe('Undo upvote; score 42');
 });
 
-it('shows neither a vote button nor a score when the site cannot vote', async () => {
+it('shows the score without a vote arrow when the site cannot vote', async () => {
   const container = document.createElement('div');
   root = createRoot(container);
 
@@ -181,7 +181,7 @@ it('shows neither a vote button nor a score when the site cannot vote', async ()
   });
 
   expect(container.querySelector('[data-test-id="explore-upvote"]')).toBeNull();
-  expect(container.querySelector('.explore-card-actions')?.textContent).toBe('');
+  expect(container.querySelector('[data-test-id="explore-score"]')?.textContent).toBe('Score 42');
 });
 
 it('plays a video inline without opening the post', async () => {
@@ -380,4 +380,52 @@ it('releases the image of a card far from the viewport and keeps its height', as
 
   await away(true);
   expect(container.querySelector('img')).not.toBeNull();
+});
+
+it('keeps the held height of a card without a known ratio until its picture loads again', async () => {
+  const container = document.createElement('div');
+  root = createRoot(container);
+  const unsized = { ...post, width: null, height: null };
+
+  await act(async () => {
+    root?.render(
+      <ExploreCard
+        posts={[unsized]}
+        hasRelations={() => false}
+        supportsVote={() => false}
+        canFavorite={() => true}
+        favorited={() => false}
+        voted={() => null}
+        voteBusy={() => false}
+        favoriteBusy={() => false}
+        sourceIcon={() => ({ key: 'furaffinity', label: 'FurAffinity', iconUrl: null })}
+        subscriptionReasons={() => null}
+        onOpen={() => undefined}
+        onVote={() => undefined}
+        onFavorite={() => undefined}
+      />
+    );
+  });
+
+  const away = (isIntersecting: boolean) =>
+    act(async () => {
+      wideObserver()?.callback(
+        [
+          {
+            isIntersecting,
+            boundingClientRect: { height: 140 }
+          } as IntersectionObserverEntry
+        ],
+        {} as IntersectionObserver
+      );
+    });
+  const card = () => container.querySelector<HTMLElement>('[data-test-id="explore-card"]');
+  await away(false);
+  await away(true);
+  expect(card()?.style.height).toBe('140px');
+
+  await act(async () => {
+    container.querySelector('img')?.dispatchEvent(new Event('load'));
+  });
+  expect(card()?.style.height).toBe('');
 });

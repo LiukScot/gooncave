@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 fn selector(raw: &str) -> Selector {
     Selector::parse(raw).expect("static selector")
 }
-fn artist(raw: &str) -> Result<&str> {
+pub(crate) fn artist(raw: &str) -> Result<&str> {
     let name = raw.trim().trim_start_matches('_');
     if name.is_empty()
         || name.len() > 50
@@ -136,9 +136,10 @@ pub(crate) async fn set_artist(t: &Transport, site: &Site, raw: &str, desired: b
         .await?;
     if response.status().as_u16() >= 400 {
         return Err(crate::booru_http::rejected(
-            response.status(),
+            response,
             "FurAffinity refused the follow change. Refresh your session in Accounts.",
-        ));
+        )
+        .await);
     }
     drop(response);
     let html = t.text(view, engines::web_headers(site)?).await?;

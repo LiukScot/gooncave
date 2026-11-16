@@ -200,7 +200,20 @@
     -webkit-touch-callout: none;
   }
 
+  /* The app is controls, not a document: a long press, a drifting drag or Select All must not
+     select headings, tiles and buttons. Fields and the text people copy opt back in. */
+  input,
+  textarea,
+  [contenteditable],
+  .file-detail-source-text,
+  .report-log {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
   body {
+    -webkit-user-select: none;
+    user-select: none;
     margin: 0;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
       Arial, sans-serif;

@@ -212,6 +212,16 @@ fn retry(window: WebviewWindow, core: tauri::State<'_, Arc<Core>>) -> Result<(),
     window.navigate(origin).map_err(|e| e.to_string())
 }
 
+/// One medium, short tap under the finger. Over IPC, not HTTP: the library's own requests fill
+/// the web view's connections to the loopback server and a tap would wait behind them.
+#[tauri::command]
+fn haptic() -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    return photos::haptic();
+    #[cfg(not(target_os = "ios"))]
+    Err("Haptic feedback needs the iPhone app.".into())
+}
+
 /// Gives the FurAffinity browser the window's view controller, where its sheets open.
 #[cfg(target_os = "ios")]
 fn start_browser(window: &WebviewWindow) -> tauri::Result<()> {
@@ -347,7 +357,7 @@ fn open_window(app: &tauri::App, core: &Arc<Core>) -> Result<(), Box<dyn std::er
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![retry])
+        .invoke_handler(tauri::generate_handler![retry, haptic])
         .setup(|app| {
             #[cfg(target_os = "ios")]
             gooncave_core::decoder::register(Box::new(media::Native));

@@ -491,29 +491,19 @@
   }
 }
 
-/* A subscription row: the open target fills the row, the remove button sits
-   beside it. Two siblings, because a button cannot live inside a link. */
-.list-group-segmented > .subscription-row {
+/* A followed thing: the part that opens it, then its remove button. Two siblings, because a
+   button cannot live inside a link. */
+.subscription-item {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0 0.75rem 0 0;
+  min-width: 0;
 }
 
-@media (hover: hover) {
-  :root .list-group-segmented > .list-group-item.subscription-row:has(> a.subscription-row-open:hover, > button.subscription-row-open:hover) {
-    border-color: hsl(var(--muted));
-    background: hsl(var(--muted));
-  }
-}
-
-.subscription-row-open {
+.subscription-item-open {
   display: flex;
-  flex: 1;
   min-width: 0;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 0 0.75rem 1rem;
+  gap: 0.5rem;
+  padding: 0;
   border: 0;
   background: none;
   color: inherit;
@@ -521,58 +511,185 @@
   text-decoration: none;
 }
 
-:is(a, button).subscription-row-open {
+:is(a, button).subscription-item-open {
   cursor: pointer;
 }
 
-:is(a, button).subscription-row-open:focus-visible {
+:is(a, button).subscription-item-open:focus-visible,
+.subscription-item-remove:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: -2px;
   border-radius: inherit;
 }
 
-.subscription-row-icon {
-  width: 1.25rem;
-  height: 1.25rem;
-  flex-shrink: 0;
-  color: hsl(var(--muted-foreground));
-}
-
-.subscription-row-text {
-  flex: 1;
+.subscription-item-title {
   min-width: 0;
-}
-
-.subscription-row-title {
-  display: block;
-  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
-.subscription-row-meta {
-  display: block;
+.subscription-item-meta {
   color: hsl(var(--muted-foreground));
   font-size: 0.75rem;
 }
 
-/* Half a pool tile: enough to recognise the first page at a glance. */
-.subscription-row-cover {
+.subscription-item-origin {
+  display: inline-flex;
+  flex: none;
+  gap: 0.25rem;
+  vertical-align: middle;
+  line-height: 0;
+}
+
+.subscription-item-origin:empty {
+  display: none;
+}
+
+.subscription-item-logo {
   display: block;
-  flex-shrink: 0;
-  width: 2.75rem;
+  width: 1rem;
+  height: 1rem;
+}
+
+.subscription-item-logo > img,
+.subscription-item-logo > svg {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  object-fit: contain;
+}
+
+.subscription-item-remove {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+
+/* Searches and artists: pills that wrap, a thumb's height on a phone like the panel's pills. */
+.subscription-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--subscription-pills-gap);
+}
+
+/* Compact pills on every screen, so a phone fits about three names in a row. */
+.subscription-fold {
+  --subscription-pill-height: 2.25rem;
+  --subscription-pills-gap: 0.375rem;
+}
+
+/* The edit button is the tags' one of the detail view, at the block's top right. */
+.subscription-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.625rem;
+}
+
+.subscription-group-head > .appearance-group-title {
+  margin-bottom: 0;
+}
+
+/* Show more is a text link; its padding gives it a finger-sized target without moving the
+   text or the block. */
+.subscription-fold > .folded-box-toggle {
+  min-height: 2.75rem;
+  padding-inline: 0.75rem;
+  margin-left: -0.75rem;
+}
+
+.subscription-group:not(.is-editing) .subscription-item-remove {
+  display: none;
+}
+
+.subscription-pill {
+  align-items: stretch;
+  min-height: var(--subscription-pill-height);
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  font-size: 0.8125rem;
+}
+
+.subscription-pill > .subscription-item-open {
+  padding: 0.25rem 0.875rem;
+  border-radius: 999px;
+}
+
+.subscription-group.is-editing .subscription-pill > .subscription-item-open {
+  padding-right: 0.25rem;
+  border-radius: 999px 0 0 999px;
+}
+
+.subscription-pill > .subscription-item-remove {
+  width: 2.5rem;
+  border-radius: 0 999px 999px 0;
+}
+
+@media (max-width: 767px) {
+  .subscription-group {
+    padding: 1rem;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .subscription-pill > .subscription-item-remove {
+    width: 2rem;
+  }
+
+  :root .subscription-pill:has(> button.subscription-item-open:hover) {
+    background: hsl(var(--secondary));
+  }
+
+  .subscription-item-remove:hover {
+    color: hsl(var(--foreground));
+  }
+}
+
+/* Pools: their first page, like a pool tile, with the remove button in its corner.
+   The minimum fits three covers across a phone. */
+.subscription-covers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+  gap: 1rem 0.75rem;
+}
+
+.subscription-cover-card {
+  position: relative;
+}
+
+.subscription-cover-card > .subscription-item-open {
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+}
+
+.subscription-cover {
+  display: block;
+  width: 100%;
   aspect-ratio: 3 / 4;
+  margin-bottom: 0.25rem;
+  border-radius: 0.75rem;
   object-fit: cover;
   background: hsl(var(--surface-media));
 }
 
-.subscription-row-remove {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
+.subscription-cover-card > .subscription-item-remove {
+  position: absolute;
+  top: 0.375rem;
+  right: 0.375rem;
   width: 2rem;
   height: 2rem;
-  padding: 0;
+  border-radius: 999px;
+  background: hsl(var(--page-background) / 0.7);
+  color: hsl(var(--foreground));
 }
 
 .subscription-text-editor > summary {
@@ -796,9 +913,6 @@
   height: 100%;
   padding: calc(1rem + env(safe-area-inset-top)) 0.75rem calc(1rem + env(safe-area-inset-bottom));
   overflow-y: auto;
-  /* Controls, not text to copy: a press that drifts would select the entries. */
-  -webkit-user-select: none;
-  user-select: none;
 }
 
 .app-menu-brand {
@@ -888,34 +1002,147 @@ html {
 }
 
 /* The desktop window has no system title bar (desktop/electron/main.js): the
-   heading and the menu's name move the window, a double click maximizes it,
-   and the heading stays in place to hold the window buttons the system draws
-   over its right end. */
+   strip along the top, the headings and the menu's name move the window, and
+   a double click maximizes it. */
 .has-window-controls :is(.page-header, .pool-head, .app-menu-brand) {
   -webkit-app-region: drag;
   app-region: drag;
-  /* A press that starts a window move must not select the heading instead. */
-  -webkit-user-select: none;
-  user-select: none;
 }
 
-.has-window-controls :is(.page-header, .pool-head) {
+.has-window-controls .page-header {
   padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
 }
 
-.has-window-controls :is(.page-header, .pool-head) :is(button, a, input, [role='button']) {
+/* Outside fullscreen the band of the window buttons is a bar: the page scrolls under it, and it
+   moves the window from any spot. A pinned heading (z-index 400) and the menu (500) lie over it.
+   The bar's own buttons are fixed above it; every control is no-drag, so they keep their clicks. */
+html.has-window-controls {
+  /* Where the bar's buttons end: the page's side padding (.page-shell 0.75rem, .page-chrome 1rem)
+     in from the window buttons, as a heading's right edge sits. */
+  --window-bar-end: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 1.75rem);
+}
+
+html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::before {
+  content: '';
+  position: fixed;
+  z-index: 300;
+  inset: 0 0 auto;
+  height: env(titlebar-area-height, 0px);
+  background: hsl(var(--page-background));
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+/* Chromium stacks drag regions in document order, not by z-index: a drag region later in the page
+   takes the clicks of a button before it. So the bar's buttons sit inside their drag region or
+   after it, never before one that overlaps them (as the Settings title row would). */
+.has-window-controls :is(button, a, input, select, textarea, [role='button']) {
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+.has-window-controls :is(.page-header-bar, .settings-subpage-back, .pool-head-bar, .window-bar-back) {
+  position: fixed;
+  /* Above the pinned title rows, under the open menu. */
+  z-index: 450;
+  top: 0;
+  right: var(--window-bar-end);
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  height: env(titlebar-area-height, 0px);
+  margin: 0;
+}
+
+/* Outside the desktop window a heading's count sits in its row, and its bar action is reached from
+   Settings instead. */
+.page-header-bar {
+  display: contents;
+}
+
+.page-header-bar-action {
+  display: none;
+}
+
+.has-window-controls .page-header-bar-action {
+  display: inline-flex;
+}
+
+/* With their buttons in the bar, the title keeps the place of every page's heading, pinned over
+   the bar like .page-header so the bar never hides it. */
+.has-window-controls :is(.settings-subpage-head, .pool-head-title) {
+  min-height: 2.75rem;
+}
+
+.has-window-controls :is(.settings-subpage-head, .pool-head) {
+  position: sticky;
+  z-index: 400;
+  top: 0;
+  background: hsl(var(--page-background));
+}
+
+.has-window-controls .pool-head-title {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Quiet like the Settings link in the bar, not boxes. */
+.has-window-controls .pool-head-bar .pool-head-action {
+  width: auto;
+  height: env(titlebar-area-height, 0px);
+  min-width: 0;
+  gap: 0.375rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: hsl(var(--primary));
+  text-underline-offset: 4px;
+}
+
+.has-window-controls .pool-head-bar .pool-head-action:hover {
+  background: transparent;
+  text-decoration: underline;
+}
+
+/* A link in the bar takes clicks over the bar's whole height, not only its line of text: a click
+   just above or below the label would land on the strip and move the window instead. */
+.has-window-controls :is(.page-header-bar, .settings-subpage-back) :is(a, button) {
+  height: env(titlebar-area-height, 0px);
+}
+
+/* An open file's way back is a link in the bar (WindowBarBack), not the picture's corner button. */
+.window-bar-back,
+.has-window-controls .file-detail-overlay-back {
+  display: none;
+}
+
+/* The bar spaces its buttons apart; this one is a button itself, its arrow beside its text. */
+.has-window-controls .window-bar-back {
+  gap: 0.375rem;
+}
+
+/* Pinned up into the bar, the heading's title steps down a size so it sits in the bar's height
+   instead of filling it. */
+.has-window-controls .page-header {
+  container-type: scroll-state;
+}
+
+@container scroll-state(stuck: top) {
+  .has-window-controls .page-header > .page-title {
+    font-size: 1.875rem;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .has-window-controls .page-header > .page-title {
+    transition: font-size 200ms var(--ease-out-quint);
+  }
 }
 
 /* In the desktop window a link is a button of the app, not a web address to drag away. */
 .has-window-controls a {
   -webkit-user-drag: none;
-}
-
-.has-window-controls .page-header input {
-  -webkit-user-select: text;
-  user-select: text;
 }
 
 .has-window-controls .page-header.is-scrolled-away:not(:has(:focus-visible)) {
@@ -943,6 +1170,23 @@ html.has-window-controls {
 
 html.has-window-controls::-webkit-scrollbar {
   display: none;
+}
+
+/* Without a system frame, a black page runs into whatever lies behind the window. The window gets
+   the menu's divider all round: --border is translucent, so it lies over the menu's own --card, as
+   it does beside the menu. Its radius follows the corner the system rounds (GNOME's 12px).
+   Inset shadows, not a border: at a fractional scale (1.67) the right and bottom border lands
+   past the last pixel of the window and is never drawn. */
+html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::after {
+  content: '';
+  position: fixed;
+  z-index: 2147483647;
+  inset: 0;
+  border-radius: 12px;
+  box-shadow:
+    inset 0 0 0 1px hsl(var(--border)),
+    inset 0 0 0 2px hsl(var(--card));
+  pointer-events: none;
 }
 
 .page-header-count {
@@ -1004,9 +1248,6 @@ html.has-window-controls::-webkit-scrollbar {
 
 /* What narrows the view, under the title. */
 .active-filters {
-  /* Buttons, not text: a press that drifts would select their labels. */
-  -webkit-user-select: none;
-  user-select: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1709,6 +1950,23 @@ html.panel-over-keyboard #root {
   @apply gap-2;
 }
 
+/* Subscriptions as a timeline: a month heading where the month changes, a
+   day heading over each day's grid. Only the subscribed feed has dates;
+   every other feed is one undated section and shows neither. */
+.explore-feed-day + .explore-feed-day {
+  @apply mt-6;
+}
+
+.explore-feed-month-title {
+  @apply mb-3 text-xl font-semibold;
+  color: hsl(var(--foreground));
+}
+
+.explore-feed-day-title {
+  @apply mb-2 text-sm font-medium;
+  color: hsl(var(--muted-foreground));
+}
+
 .gallery-masonry.is-virtual {
   position: relative;
   display: block;
@@ -2390,9 +2648,6 @@ html.panel-over-keyboard #root {
 
 .file-detail-media-wrap {
   position: relative;
-  /* A double click opens fullscreen; Chromium would also select the picture
-     and paint it with the selection colour. */
-  user-select: none;
   /* Full width even when the picture is narrower: the band behind it, and
      the buttons and gestures on it, run edge to edge. */
   width: 100%;
@@ -3571,6 +3826,19 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   min-width: 0;
 }
 
+/* Outside the desktop window the bar is no box: the back button leads, the actions trail. */
+.pool-head-bar {
+  display: contents;
+}
+
+.pool-head-bar > :first-child {
+  order: -1;
+}
+
+.pool-head-actions {
+  order: 1;
+}
+
 .file-detail-section-title.pool-title {
   font-size: 1.5rem;
   line-height: 1.2;
@@ -3803,9 +4071,11 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   height: 1rem;
 }
 
-.file-detail-edit-tags-button.is-active {
-  background: hsl(var(--secondary));
-  color: hsl(var(--foreground));
+/* Editing is on: the pencil is tinted with the accent, lighter than a filled chip. */
+.file-detail-edit-tags-button.is-active,
+.file-detail-edit-tags-button.is-active:hover {
+  background: hsl(var(--primary) / 0.18);
+  color: hsl(var(--primary));
 }
 
 .credential-status {
@@ -3900,7 +4170,6 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   color: hsl(var(--primary-foreground));
   background: hsl(var(--primary));
   cursor: help;
-  user-select: none;
   flex-shrink: 0;
   margin-left: 0.35rem;
   vertical-align: middle;
@@ -5233,6 +5502,13 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   --file-detail-overlay-radius: calc(var(--floating-button-size) / 2);
 }
 
+/* Squares off under the pointer as the search button it replaces does. */
+@media (hover: hover) {
+  :root .phone-actions .file-detail-main-action:hover {
+    border-radius: 1.25rem;
+  }
+}
+
 /* Matching images: the two strategies are panels and their example a
    quieter tile inside. */
 :root :is(.duplicate-strategy-card, .duplicate-allowlist, .duplicate-outcome, .duplicate-preview) {
@@ -5468,10 +5744,31 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   }
 }
 
-.appearance-sections {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
+/* One group of six in two rows of three (six labels in one row do not fit a phone), rounded at
+   the block's own corners only. */
+.appearance-sections > .panel-choice {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.appearance-sections > .panel-choice > .btn {
+  border-radius: 0.5rem;
+}
+
+.appearance-sections > .panel-choice > .btn:nth-child(1) {
+  border-top-left-radius: 1rem;
+}
+
+.appearance-sections > .panel-choice > .btn:nth-child(3) {
+  border-top-right-radius: 1rem;
+}
+
+.appearance-sections > .panel-choice > .btn:nth-last-child(3) {
+  border-bottom-left-radius: 1rem;
+}
+
+.appearance-sections > .panel-choice > .btn:last-child {
+  border-bottom-right-radius: 1rem;
 }
 
 .appearance-mode {

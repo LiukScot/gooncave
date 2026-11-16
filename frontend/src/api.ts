@@ -191,25 +191,35 @@ export type BlacklistSettings = {
   tags: string[];
   applyToExplore: boolean;
   applyToGallery: boolean;
+  applyToSubscriptions: boolean;
 };
 
 /** Mirrors the backend defaults, used while the real settings load. */
 export const BLACKLIST_DEFAULTS: BlacklistSettings = {
   tags: [],
   applyToExplore: true,
-  applyToGallery: false
+  applyToGallery: false,
+  applyToSubscriptions: false
 };
 
-export type ArtistSubscriptionSource = {
+/** The saved searches and followed artists, as stored. */
+export type SubscriptionTargets = { tags: string[]; artists: string[] };
+
+/** A FurAffinity account whose watchlist could not be synced with the artists. */
+export type ArtistSyncError = {
   siteId: string;
   siteName: string;
-  artists: string[];
-  error: string | null;
+  error: string;
 };
 
 export type SubscriptionSettings = {
   tags: string[];
-  artistSources: ArtistSubscriptionSource[];
+  artists: string[];
+  /** The searches that name one artist; still searches, not followed on FurAffinity. */
+  artistSearches?: string[];
+  /** For each search and artist, the ids of the enabled sites where it has results. */
+  siteHits: Record<string, string[]>;
+  artistErrors: ArtistSyncError[];
   targets: Array<{ kind: 'tag' | 'artist'; value: string }>;
 };
 
@@ -1320,7 +1330,6 @@ export const api = {
   exploreSubscriptions: async (params: {
     siteIds?: string[];
     cursor?: string;
-    resume?: boolean;
     limit?: number;
     signal?: AbortSignal;
   }) => {
@@ -1328,7 +1337,6 @@ export const api = {
     if (params.limit) query.set('limit', String(params.limit));
     if (params.siteIds) query.set('sites', params.siteIds.join(','));
     if (params.cursor) query.set('cursor', params.cursor);
-    if (params.resume) query.set('resume', '1');
     const res = await apiFetch(
       `${API_BASE}/explore/subscriptions?${query.toString()}`,
       params.signal ? { signal: params.signal } : undefined
@@ -1351,15 +1359,6 @@ export const api = {
       params.signal ? { signal: params.signal } : undefined
     );
     return handle<{ posts: ExplorePost[]; nextCursor: string | null }>(res);
-  },
-  saveSubscriptionBookmark: async (post: { siteId: string; remoteId: string }) => {
-    const res = await apiFetch(`${API_BASE}/explore/subscriptions/bookmark`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(post),
-      keepalive: true
-    });
-    return handle<{ ok: boolean }>(res);
   },
   exploreGalleryMatches: async (
     posts: ExplorePost[],
@@ -1639,7 +1638,7 @@ export const api = {
   },
   getSubscriptionTags: async () => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/tags`);
-    return handle<{ tags: string[] }>(res);
+    return handle<SubscriptionTargets>(res);
   },
   updateSubscriptionTags: async (tags: string[]) => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/tags`, {
@@ -1649,13 +1648,19 @@ export const api = {
     });
     return handle<{ tags: string[] }>(res);
   },
-  addSubscriptionTag: async (tag: string) => {
+  /**
+   * Adds one entry: `tag` (a booru's name for it) or `search` (kept as typed). The core follows
+   * a single artist name as an artist; `artist` says the caller knows it is one.
+   */
+  addSubscriptionTag: async (
+    entry: { tag: string; artist?: boolean } | { search: string }
+  ) => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/tags`, {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ tag })
+      body: JSON.stringify(entry)
     });
-    return handle<{ tags: string[] }>(res);
+    return handle<SubscriptionTargets>(res);
   },
   getSubscriptionPools: async () => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/pools`);
@@ -1677,21 +1682,21 @@ export const api = {
     });
     return handle<{ pools: PoolSubscription[] }>(res);
   },
-  subscribeArtist: async (siteId: string, artist: string) => {
+  subscribeArtist: async (artist: string) => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/artists`, {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ siteId, artist })
+      body: JSON.stringify({ artist })
     });
-    return handle<{ ok: boolean }>(res);
+    return handle<SubscriptionSettings>(res);
   },
-  unsubscribeArtist: async (siteId: string, artist: string) => {
+  unsubscribeArtist: async (artist: string) => {
     const res = await apiFetch(`${API_BASE}/settings/subscriptions/artists`, {
       method: 'DELETE',
       headers: jsonHeaders,
-      body: JSON.stringify({ siteId, artist })
+      body: JSON.stringify({ artist })
     });
-    return handle<{ ok: boolean }>(res);
+    return handle<SubscriptionSettings>(res);
   },
   updateBlacklist: async (patch: Partial<BlacklistSettings>) => {
     const res = await apiFetch(`${API_BASE}/settings/blacklist`, {

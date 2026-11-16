@@ -170,7 +170,7 @@ allowlist is enabled.
 | `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.processing`, `capabilities.duplicates`, `capabilities.autoFavorite`, `capabilities.tagRefresh`, `capabilities.sync`, `capabilities.browserSignIn`, true in the desktop and iPhone apps, where FurAffinity and Rule34 sign-in opens a window or a sheet |
 | `GET/PUT /settings/extra` | Existing boolean settings and `maxGridColumns`, an integer from 0 through 12; PUT is a partial update |
 | `GET/PUT /settings/shortcuts` | `{ "bindings": { "action": "key" } }`; at most 64 entries, names and keys from 1 through 32 characters |
-| `GET/PUT /settings/blacklist` | `tags` (at most 500 strings, each from 1 through 100 characters), `applyToExplore`, `applyToGallery`; PUT is a partial update |
+| `GET/PUT /settings/blacklist` | `tags` (at most 500 strings, each from 1 through 100 characters), `applyToExplore`, `applyToGallery`, `applyToSubscriptions` (off by default, also for a setting saved without it); PUT is a partial update |
 | `GET /files` | `{ files, total }` with `folderId`, `mediaType`, `location` (`LOCAL` for originals on this device, or `REMOTE`), `limit` (1–1000), `offset` and `sort` (`mtime_desc`, `mtime_asc`, `rated`, `random` with an optional `seed`; default newest import first). `mtime_*` and the ties of `rated` follow `gallery_at`, the date the content first entered the library, or the last time it was uploaded or shared again, which is the same on every device. `tags` supports required terms, `~` alternatives, `-` exclusions, `score:` comparisons, `parent:any` and `pool:any`; at most 60 terms and 16 KiB |
 | `DELETE /files/{id}` | Deletes the file from disk, its row, read marks and an unshared thumbnail |
 | `POST /files/{id}/vote` | `{ "value": 1 }` or `-1`; one vote per file every 24 hours, never below 0. A refused vote returns HTTP 409 with the current `voteScore` and `nextVoteAt` |
@@ -210,13 +210,12 @@ allowlist is enabled.
 | `POST /explore/favorite`, `/explore/unfavorite` | Change the remote favorite and save/remove its managed local copy; body contains `siteId` and `remoteId`. Media URLs are resolved from the original post. The request is recorded in `pending_favorites` before the site is asked and cleared once the file is in the library; the core finishes the leftover rows when it starts. Unsupported auto-voting returns `voteError` without undoing the favorite |
 | `GET /favorites/sync/status`, `POST /favorites/sync`, `/favorites/sync/cancel` | Background import, bounded pagination, progress, per-site errors and cancellation; optional `providers` selects site IDs or preset keys. `deleteMissing=true` removes only managed copies after a complete, error-free remote listing |
 | `GET /credentials`, `PUT /credentials` | Device-only SauceNAO API key; reads return only whether a key is saved |
-| `GET /settings/subscriptions`, `/settings/subscriptions/tags` | Saved searches; the full settings response also reads enabled FurAffinity watchlists, with per-site errors |
-| `PUT/POST /settings/subscriptions/tags` | Replace searches (`tags`) or add one normalized tag (`tag`); up to 500 searches of 100 characters. PUT preserves spaces and search operators |
-| `POST/DELETE /settings/subscriptions/artists` | Follow/unfollow a FurAffinity artist (`siteId`, `artist`), confirmed by rereading the remote account |
+| `GET /settings/subscriptions`, `/settings/subscriptions/tags` | Saved searches; the full settings response also returns `artists` and first syncs each enabled FurAffinity watchlist with them (two ways), listing failed accounts in `artistErrors` (`siteId`, `siteName`, `error`) and, in `siteHits`, the ids of the enabled sites where each search and artist has results (from the saved feed, no request; FurAffinity sites count an artist held at the last watchlist sync), and in `artistSearches` the saved searches that name one artist: a single plain tag that `tag_categories` or a library file calls an `artist`, or that neither knows. They stay searches, not followed on FurAffinity; a refresh running at that moment skips the sync |
+| `PUT/POST /settings/subscriptions/tags` | Replace searches (`tags`) with PUT, or add one entry with POST: a normalized tag (`tag`) or a search kept as typed (`search`); up to 500 searches of 100 characters. POST answers `tags` and `artists`. A single plain name (no spaces, `~`, `-` or `:`) that is an artist is followed as an artist, as `POST /settings/subscriptions/artists` does: it is an `artist` in `tag_categories`, an `artist` tag of a library file, or sent with `artist: true`. Every other entry is a saved search. Tags are never watched on FurAffinity |
+| `POST/DELETE /settings/subscriptions/artists` | Follow/unfollow an artist (`artist`) in GoonCave's list, then sync it to each enabled FurAffinity account (watch/unwatch, confirmed by rereading the artist page); returns the full settings response. Artists also run as searches on the other sites. The sync runs on `GET /settings/subscriptions`, on these calls and in every refresh: a change on FurAffinity since the last sync is copied into the list, a change in GoonCave is copied to FurAffinity, and the first sync only imports. A failed account keeps the change and retries on the next sync. An artist FurAffinity does not know (HTTP 400, "This user cannot be found.") moves from the artists to the saved searches, so the boorus keep searching it; it is no sync error |
 | `GET/POST/DELETE /settings/subscriptions/pools` | Followed pools of existing sites: `siteId`, `siteName`, `poolId`, `name`, `postCount`, `coverUrl`. POST/DELETE take `siteId` and `poolId`; POST reads the name, page count and first-page preview from the site (e621 and Danbooru only); up to 500 pools. Synced between devices |
-| `GET /explore/subscriptions` | Cached posts in descending upload/discovery order, `sites`, opaque `cursor`, `limit` 1–100; `resume=1` starts at the saved reading bookmark |
+| `GET /explore/subscriptions` | Cached posts in descending upload/discovery order, `sites`, opaque `cursor`, `limit` 1–100; without a cursor it starts at the newest post |
 | `POST /explore/subscriptions/refresh` | Refresh and backfill enabled sites, `rounds` 1–4; returns per-site errors |
-| `PUT /explore/subscriptions/bookmark` | Save the visible feed post (`siteId`, `remoteId`) |
 | `POST /duplicates/scan/start`, `GET /duplicates/scan/status`, `POST /duplicates/scan/cancel` | Background scan for visual copies. Files of one media type whose shapes are within 3% are compared; copies at different resolutions use the site-preview tolerance, and the duplicate policy keeps the largest. Optional `mediaType`, `pixelThreshold` (0–1, default 0.0005; mean difference, and no single sample may differ by more than 10 of 255 levels), `sampleSize` (8–256), `videoFrames` (1–8), `maxComparisons` (1–100000). A running scan answers `busy` |
 | `GET /duplicates/favorites/recheck` | `{running, percent}`: whether the one-time repair of favorite links is running and how many of the files it must settle are settled (0 to 100, kept in `favorite_link_checks`, so it survives a restart). The core starts it at launch until it has run to the end (recorded in `meta` as `favorite_links.checked`). For each library image linked from more than one post it downloads every post's preview and removes the links whose picture is not the file's (same test as `/explore/gallery-matches`). Only posts of the file's exact width and height are judged; others stay, and a file where no linked post matches keeps all its links. Posts a site would not show are tried again after 30 minutes; after 4 rounds the repair is recorded as done anyway. A stop part way resumes on the next launch, skipping settled files. It starts a file only after the app has made no request for 3 seconds, so screens the person opens are not queued behind its downloads. After each round a full favorites sync starts, so posts that lost their link are downloaded again. Posts of sites read through the browser engine (FurAffinity, Gelbooru) and GIF or video posts are left alone. A picture counts as the same when its sample matches the file with no sharp difference. Migrations `0029` and `0030` clear earlier checks so the repair runs again. |
 | `GET/PUT /duplicates/settings` | Saved policy; PUT accepts only `{ "enabled": false }` |
@@ -542,15 +541,16 @@ Settings → Subscriptions stores searches on this device and mirrors each enabl
 FurAffinity account's watchlist. Follow and Unfollow change that remote account;
 they require a username and session cookie in Accounts. Other sites follow
 artist tags through saved searches. Search operators and compound searches stay one query; simple
-tags are batched with OR on e621 (up to 40) and Danbooru (up to two).
+tags are batched with OR on e621 (up to 40), Rule34 (up to 20) and Danbooru (up to two).
+Other sites, Gelbooru included, search one tag at a time.
 A followed pool adds the search `pool:ID` on its own site only, sent alone.
 Followed pools stay on this device: each device gives a synced site its own ID.
 
 The core refreshes on startup and every 15 minutes. These background cycles skip
 sites whose pages only GoonCave's browser can load, such as FurAffinity; opening the
 Subscribed feed refreshes every site. Each cycle reads the
-newest page and continues older pages, with at most four requests per site and
-four sites concurrently. Explicit refresh can request up to four cycles. Progress
+newest page of the next searches, up to 24 requests and stopping at the end of the
+list, then up to three pages of older posts, with four sites concurrently. Explicit refresh can request up to four cycles. Progress
 and indexed posts survive restart; closing the app cancels in-flight requests.
 Only complete pages are committed. Changing searches invalidates late responses
 and clears search-based feeds while retaining FurAffinity's indexed posts.
@@ -562,8 +562,8 @@ refreshed, so new discoveries do not move the posts already displayed. Read
 marks and local favorite changes are applied to cached posts. Network errors
 retain saved posts and appear beside the affected site.
 
-The Subscriptions page saves the visible or opened feed post after a short pause
-and when the window closes. On the next visit, the feed starts at that bookmark.
+The Subscriptions page always opens at the newest posts. If the first page is
+empty, the page loads it again once the background refresh has finished.
 The existing Unread only filter still applies. List restoration within an open app retains
 the existing scroll position and cards.
 
@@ -573,6 +573,6 @@ cargo test --locked -p gooncave-core --lib subscription
 ```
 
 These checks use fake credentials and loopback sites. They cover saved searches,
-stable cursors, bookmarks after restart, late-response invalidation, search
+stable cursors, late-response invalidation, search
 batching, backfill, and confirmed FurAffinity follow/unfollow. Live account
 verification remains separate; the tests do not change real remote watchlists.

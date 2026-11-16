@@ -345,6 +345,27 @@ describe('fillPages', () => {
     expect(more.hasMore).toBe(true);
   });
 
+  it('goes past the round cap while read posts leave too few to show', async () => {
+    // One site, one post per page, and only every third post unread.
+    const { fetchPage } = fakeSites({
+      a: Array.from({ length: 40 }, (_, n) => [post('a', `a${n}`, 1000 - n)])
+    });
+    const unread = (entry: ExplorePost) => Number(entry.remoteId.slice(1)) % 3 === 0;
+
+    const capped = await openStreams(
+      ['a'],
+      options(fetchPage, { limit: 1, target: 40, maxRounds: 2, keep: unread })
+    );
+    const opened = await openStreams(
+      ['a'],
+      options(fetchPage, { limit: 1, target: 40, maxRounds: 2, minPosts: 3, keep: unread })
+    );
+
+    expect(capped.posts.length).toBe(1);
+    expect(opened.posts.length).toBeGreaterThanOrEqual(3);
+    expect(opened.hasMore).toBe(true);
+  });
+
   it('shows nothing more once every site is exhausted', async () => {
     const { fetchPage } = fakeSites({ a: [[post('a', 'a1', 900)]] });
     const opened = await openStreams(['a'], options(fetchPage));

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   collectSubscriptionPosts,
+  groupFeedByDay,
   loadSubscriptionPosts,
   subscriptionActionState,
   subscriptionReasons
@@ -106,6 +107,38 @@ describe('collectSubscriptionPosts', () => {
     ]);
     expect(result.refreshed).toEqual({ errors: [] });
     expect(result.refreshError).toBeNull();
+  });
+
+  it('reads on while too few unread posts were found, within its cap', async () => {
+    const cursors: Array<string | null> = [];
+    let refreshes = 0;
+
+    const result = await loadSubscriptionPosts({
+      cursor: null,
+      target: 40,
+      minPosts: 3,
+      signal: new AbortController().signal,
+      refresh: async () => {
+        refreshes += 1;
+        return { errors: [] };
+      },
+      // Every read stops at a part of the feed not yet backfilled.
+      fetchPage: async (cursor) => {
+        cursors.push(cursor);
+        const n = cursors.length;
+        return {
+          posts: [post(`p${n}`)],
+          hasMore: true,
+          nextCursor: `c${n}`,
+          ready: n % 2 === 1
+        };
+      },
+      keep: () => true
+    });
+
+    expect(result.posts.map((entry) => entry.remoteId)).toEqual(['p1', 'p3', 'p5']);
+    expect(refreshes).toBe(0);
+    expect(cursors.length).toBeLessThanOrEqual(9);
   });
 
   it('uses a ready local index without waiting for a remote refresh', async () => {
@@ -230,5 +263,45 @@ describe('subscriptionReasons', () => {
     } as ExplorePost;
 
     expect(subscriptionReasons(artistPost, ['wolf'])).toEqual(['Peyote']);
+  });
+});
+
+describe('groupFeedByDay', () => {
+  const at = (createdAt: string | null) => ({ createdAt });
+  const now = new Date(2026, 10, 14, 12);
+
+  it('starts a day at each new local date and a month at each new month', () => {
+    const days = groupFeedByDay(
+      [
+        at(new Date(2026, 10, 14, 9).toISOString()),
+        at(new Date(2026, 10, 14, 1).toISOString()),
+        at(new Date(2026, 10, 13, 22).toISOString()),
+        at(new Date(2026, 10, 2, 8).toISOString()),
+        at(new Date(2026, 9, 30, 8).toISOString())
+      ],
+      now
+    );
+    expect(days.map((day) => [day.key, day.posts.length])).toEqual([
+      ['2026-11-14', 2],
+      ['2026-11-13', 1],
+      ['2026-11-02', 1],
+      ['2026-10-30', 1]
+    ]);
+    expect(days.slice(0, 2).map((day) => day.dayLabel)).toEqual([
+      'Today',
+      'Yesterday'
+    ]);
+    expect(days.map((day) => day.monthLabel !== null)).toEqual([true, false, false, true]);
+  });
+
+  it('keeps an undated post in the day it arrived in', () => {
+    const days = groupFeedByDay(
+      [at(null), at(new Date(2026, 10, 14).toISOString()), at(null), at('not a date')],
+      now
+    );
+    expect(days.map((day) => [day.key, day.posts.length])).toEqual([
+      [null, 1],
+      ['2026-11-14', 3]
+    ]);
   });
 });

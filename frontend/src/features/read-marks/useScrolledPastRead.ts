@@ -13,22 +13,18 @@ export const ROWS_BEHIND = 2;
 const FALLBACK_ROW_HEIGHT = 220;
 
 /**
- * The average height of one masonry row. Columns are packed to roughly equal
- * height, so the grid's own height divided by the cards per column is the row
- * height, whatever mix of tall and short tiles this page happens to hold.
+ * The average height of one masonry row: in a masonry each card is one row of
+ * its column, so the mean card height is the row height, whatever mix of tall
+ * and short tiles the page holds. Measured on the cards rather than the grid,
+ * which also holds headings and the part-empty last row of each day.
  *
  * Taking a single card's height instead made the threshold jump between runs:
  * the first tile can be a portrait twice the height of the next one.
  */
-export const averageRowHeight = (
-  gridHeight: number,
-  cardCount: number,
-  columnCount: number
-): number => {
-  if (gridHeight <= 0 || cardCount <= 0 || columnCount <= 0) {
-    return FALLBACK_ROW_HEIGHT;
-  }
-  return (gridHeight * columnCount) / cardCount;
+export const averageRowHeight = (cardHeights: readonly number[]): number => {
+  const laidOut = cardHeights.filter((height) => height > 0);
+  if (!laidOut.length) return FALLBACK_ROW_HEIGHT;
+  return laidOut.reduce((sum, height) => sum + height, 0) / laidOut.length;
 };
 
 /**
@@ -96,9 +92,7 @@ export function useScrolledPastRead(
     if (!cards.length) return;
 
     const rowHeight = averageRowHeight(
-      grid.getBoundingClientRect().height,
-      cards.length,
-      columnCount
+      cards.map((card) => card.getBoundingClientRect().height)
     );
     const readDistance = Math.round(ROWS_BEHIND * rowHeight);
     const mark = (key: string, target?: Element) => {

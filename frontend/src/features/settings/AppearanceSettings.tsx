@@ -179,18 +179,14 @@ function SectionToggles() {
   const toggle = useAppearanceStore((state) => state.toggleSection);
   return (
     <div className="appearance-sections">
-      {/* Two rows of three: six labels in one row do not fit a phone. */}
-      {[DETAIL_SECTIONS.slice(0, 3), DETAIL_SECTIONS.slice(3)].map((row, index) => (
-        <PanelMultiChoice
-          key={row[0].id}
-          label={index === 0 ? 'Sections shown under the file' : 'More sections shown under the file'}
-          options={row.map((section) => ({
-            label: section.label,
-            pressed: !hidden.includes(section.id),
-            onToggle: () => toggle(section.id)
-          }))}
-        />
-      ))}
+      <PanelMultiChoice
+        label="Sections shown under the file"
+        options={DETAIL_SECTIONS.map((section) => ({
+          label: section.label,
+          pressed: !hidden.includes(section.id),
+          onToggle: () => toggle(section.id)
+        }))}
+      />
     </div>
   );
 }

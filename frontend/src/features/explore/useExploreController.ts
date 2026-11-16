@@ -34,7 +34,6 @@ import { stackDuplicates } from './stackDuplicates';
 import { loadSubscriptionPosts } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
 import { useOpenPostLink } from './useOpenPostLink';
-import { useSubscriptionBookmark } from './useSubscriptionBookmark';
 import { useTagSubscriptionAction } from './useTagSubscriptionAction';
 import { withVisualMatches } from './visualMatch';
 import { voteDelta } from './voteDelta';
@@ -99,6 +98,8 @@ const SUBSCRIPTION_BACKFILL_ROUNDS = 4;
  * fetching, with one it costs at most this many requests.
  */
 const MAX_FILL_ROUNDS = 5;
+/** About two phone screens of tiles: a load that shows fewer keeps fetching, within its caps. */
+const MIN_POSTS_PER_LOAD = 12;
 const FAVORITE_SETTLE_MS = 150;
 
 export type ExploreSiteOption = BooruSite & {
@@ -233,7 +234,6 @@ export function useExploreController({
   const [hasMore, setHasMore] = useState(false);
 
   const [selectedPost, setSelectedPost] = useState<ExplorePost | null>(null);
-  useSubscriptionBookmark(sort === 'subscribed', posts, selectedPost);
   const poolContext = useExploreUiStore((state) => state.poolContext);
   const setPoolContext = useExploreUiStore((state) => state.setPoolContext);
   /**
@@ -322,9 +322,10 @@ export function useExploreController({
     []
   );
 
+  // Followed artists run as tag searches on the boorus, so here they count as searches.
   const subscribedTags = useMemo(
-    () => subscriptionTags.data?.tags ?? [],
-    [subscriptionTags.data?.tags]
+    () => [...(subscriptionTags.data?.tags ?? []), ...(subscriptionTags.data?.artists ?? [])],
+    [subscriptionTags.data?.tags, subscriptionTags.data?.artists]
   );
   const subscribedArtistSiteIds = useMemo(
     () =>
@@ -398,11 +399,13 @@ export function useExploreController({
   const hiddenTags = useMemo(
     () =>
       new Set(
-        blacklist.applyToExplore
+        (sort === 'subscribed'
+          ? blacklist.applyToSubscriptions
+          : blacklist.applyToExplore)
           ? effectiveBlacklist(blacklist.tags, tagQuery)
           : []
       ),
-    [blacklist.applyToExplore, blacklist.tags, tagQuery]
+    [blacklist.applyToExplore, blacklist.applyToSubscriptions, blacklist.tags, sort, tagQuery]
   );
 
   const siteById = useMemo(
@@ -467,6 +470,7 @@ export function useExploreController({
       limit: remotePageLimit,
       target: PAGE_SIZE,
       maxRounds: MAX_FILL_ROUNDS,
+      minPosts: MIN_POSTS_PER_LOAD,
       keep: keepPost,
       signal,
       onSlowSite: (siteId, skip) =>
@@ -591,13 +595,13 @@ export function useExploreController({
       const first = await loadSubscriptionPosts({
         cursor: null,
         target: PAGE_SIZE,
+        minPosts: MIN_POSTS_PER_LOAD,
         signal: controller.signal,
         refresh: api.refreshExploreSubscriptions,
         fetchPage: (cursor) =>
           api.exploreSubscriptions({
             siteIds: activeSiteIds,
             cursor: cursor ?? undefined,
-            resume: cursor === null,
             limit: PAGE_SIZE,
             signal: controller.signal
           }),
@@ -624,13 +628,24 @@ export function useExploreController({
       if (first.refreshed === null && first.refreshError === null) {
         void api
           .refreshExploreSubscriptions()
-          .then((result) => {
+          .then(async (result) => {
             if (controller.signal.aborted) return;
             setSiteErrors(result.errors);
             // The refresh may have saved newer posts. With nothing on screen, read again from the top.
             if (!first.hasMore && !first.posts.length) {
-              subscriptionCursorRef.current = null;
-              setHasMore(true);
+              const page = await api.exploreSubscriptions({
+                siteIds: activeSiteIds,
+                limit: PAGE_SIZE,
+                signal: controller.signal
+              });
+              const fresh = await preparePosts(
+                page.posts.filter(keepPost),
+                controller.signal
+              );
+              if (controller.signal.aborted) return;
+              setPosts(fresh);
+              subscriptionCursorRef.current = page.nextCursor;
+              setHasMore(page.hasMore);
             }
           })
           .catch((error: Error) => {
@@ -867,6 +882,7 @@ export function useExploreController({
         const result = await loadSubscriptionPosts({
           cursor: subscriptionCursorRef.current,
           target: PAGE_SIZE,
+          minPosts: MIN_POSTS_PER_LOAD,
           signal: controller.signal,
           refresh: () =>
             api.refreshExploreSubscriptions(
@@ -978,7 +994,7 @@ export function useExploreController({
    * rather than replacing it (issue #307).
    */
   const selectTag = useCallback(
-    async (tag: string) => {
+    async (tag: string, category: string) => {
       const mode = await choose('', {
         title: tag,
         actions: [
@@ -989,7 +1005,7 @@ export function useExploreController({
       });
       if (!mode) return;
       if (mode !== 'search') {
-        await runSubscriptionAction(mode, tag);
+        await runSubscriptionAction(mode, tag, category);
         return;
       }
       const next = appendTagTerm(tagInput, tag);
@@ -1327,7 +1343,9 @@ export function useExploreController({
       onStep: updateReturnAnchor,
       hasMore,
       loading,
-      loadMore
+      loadMore,
+      // Subscriptions are a backlog to read through: a page loads only when the reader asks.
+      loadEarly: sort !== 'subscribed'
     });
 
   const toggleUnreadOnly = useCallback(() => {

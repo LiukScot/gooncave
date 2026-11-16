@@ -21,7 +21,8 @@ import type { ExplorePost } from '@/api';
 import {
   OverlayButton,
   RelatedPostsSection,
-  TagPills
+  TagPills,
+  WindowBarBack
 } from '@/features/file-detail/DetailSections';
 import type {
   TagEntry,
@@ -164,7 +165,7 @@ export function ExploreDetailPanel({
   onClose: () => void;
   onVote: (score: 1 | -1) => void;
   onFavorite: () => void;
-  onSelectTag: (tag: string) => void;
+  onSelectTag: (tag: string, category: string) => void;
   /** Swaps the open post for one of its relatives, without leaving explore. */
   onOpenRelated: (post: ExplorePost) => void;
 }): React.ReactElement {
@@ -808,6 +809,7 @@ export function ExploreDetailPanel({
         {renderLayer(post, null)}
         {renderLayer(nextPost ?? nextPreview, 'next')}
       </div>
+      {mediaFullscreen ? null : <WindowBarBack label={backLabel} onClick={() => onClose()} />}
       {/* Outside the media wrap: in fullscreen the picture covers the screen,
           and a control nested in it would be the thing the exit tap has to
           miss. */}

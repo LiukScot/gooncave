@@ -54,6 +54,7 @@ const SHARED_SETTINGS: &[&str] = &[
     crate::duplicate_policy::SETTINGS_KEY,
     "shortcuts.bindings",
     "subscriptions.tags",
+    "subscriptions.artists",
     "source_targets",
     "source_display",
     "source_display_initialized",

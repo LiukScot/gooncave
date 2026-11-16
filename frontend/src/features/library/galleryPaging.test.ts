@@ -8,11 +8,19 @@ import {
 } from './galleryPaging';
 
 describe('resetFetchLimit', () => {
-  it('keeps visible files in place, updates them, removes deleted ones and appends new files', () => {
+  it('keeps visible files in place, updates them, removes deleted ones and appends new files after them', () => {
     expect(mergeGalleryRefresh(
       [{ id: 'a', score: 0 }, { id: 'deleted', score: 0 }, { id: 'b', score: 0 }],
-      [{ id: 'new', score: 0 }, { id: 'b', score: 1 }, { id: 'a', score: 2 }]
+      [{ id: 'b', score: 1 }, { id: 'a', score: 2 }, { id: 'new', score: 0 }]
     )).toEqual([{ id: 'a', score: 2 }, { id: 'b', score: 1 }, { id: 'new', score: 0 }]);
+  });
+
+  it('holds back a new file that belongs among the loaded ones, so it never lands far from its place', () => {
+    // Three photos added together, synced while the reader was further down the gallery.
+    expect(mergeGalleryRefresh(
+      [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+      [{ id: 'photo1' }, { id: 'a' }, { id: 'photo2' }, { id: 'b' }, { id: 'c' }, { id: 'older' }]
+    )).toEqual([{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'older' }]);
   });
   it('asks for one page when nothing is cached', () => {
     expect(resetFetchLimit(0)).toBe(GALLERY_PAGE_SIZE);
