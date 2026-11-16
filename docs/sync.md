@@ -138,6 +138,9 @@ opposite ways. Custom sites in its preferred list travel by address.
     favorite always has one: the booru. Any other file needs a copy in the
     sync folder. A file opened in the last 24 hours stays, unless opening it
     downloaded it: that original leaves when the detail view closes.
+- On iPhone the downloads of originals go on while the app is suspended or
+  locked: the system downloads them and wakes the app to add each file. When
+  the iPhone is full they stop with a message until a file fits again.
 - The detail view of a file has **Keep on this device**. It downloads the
   original and keeps it whatever the setting says.
 - An original that is not on the device loads when it is opened: from the sync

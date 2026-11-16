@@ -15,6 +15,18 @@
 	<!-- Without it iOS caps the app's own animations at 60 Hz on a 120 Hz iPhone. -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!-- Background refreshes and syncs; the last one is the unique names of a sync the person starts on iOS 26. -->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>app.gooncave.ios.refresh</string>
+		<string>app.gooncave.ios.processing</string>
+		<string>app.gooncave.ios.continued.*</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
 	<key>UIStatusBarStyle</key>
 	<string>UIStatusBarStyleLightContent</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>

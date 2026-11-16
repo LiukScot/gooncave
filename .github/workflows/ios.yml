@@ -143,3 +143,64 @@ jobs:
 
       - name: Lint the iPhone shell
         run: cargo clippy --locked -p gooncave-ios --all-targets -- -D warnings
+
+      # The Core ML package is a release asset that is published separately from the code; until
+      # that release exists the check has nothing to read.
+      - name: Find the WD14 Core ML release
+        id: wd14
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if gh release view wd14-coreml-1 --repo "$REPOSITORY" >/dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Release wd14-coreml-1 does not exist yet; the WD14 Core ML check was skipped."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Only main saves: each pull request would otherwise store its own 195 MB copy.
+      - name: Restore the WD14 Core ML files
+        if: steps.wd14.outputs.found == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/wd14
+          key: wd14-coreml-${{ hashFiles('core/src/wd14_model.rs') }}
+
+      - name: Setup Python
+        if: steps.wd14.outputs.found == 'true'
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      # Same files, hashes and revision as core/src/wd14_model.rs.
+      - name: Check WD14 Core ML against the desktop model
+        if: steps.wd14.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          WD14: ${{ runner.temp }}/wd14
+        run: |
+          package="$WD14/WD14.mlpackage"
+          mkdir -p "$package/Data/com.apple.CoreML/weights"
+          fetch() { [ -f "$2" ] || gh release download wd14-coreml-1 --repo "$REPOSITORY" --pattern "$1" --output "$2"; }
+          fetch Manifest.json "$package/Manifest.json"
+          fetch model.mlmodel "$package/Data/com.apple.CoreML/model.mlmodel"
+          fetch weight.bin "$package/Data/com.apple.CoreML/weights/weight.bin"
+          [ -f "$WD14/selected_tags.csv" ] || curl --fail --location --silent --show-error --output "$WD14/selected_tags.csv" \
+            https://huggingface.co/SmilingWolf/wd-v1-4-convnextv2-tagger-v2/resolve/dbd4dbe553ee51feb3bc745b614fb762080e3912/selected_tags.csv
+          shasum -a 256 -c <<EOF
+          2b9b60e521336439d89c75898ebb0912a0d4520cf4f1214fb14a8cca863897ff  $package/Manifest.json
+          dc4212b5b365599af17036f94bd82177439755b424e4ca1a9aa61fb56220e1a3  $package/Data/com.apple.CoreML/model.mlmodel
+          9c1c13d27757c691c145e4cf64956b45cb8b9008e1e8ec260cf8e996cbd680c5  $package/Data/com.apple.CoreML/weights/weight.bin
+          8c8750600db36233a1b274ac88bd46289e588b338218c2e4c62bbc9f2b516368  $WD14/selected_tags.csv
+          EOF
+          python3 -m pip install --quiet coremltools numpy pillow
+          python3 -I ios/wd14/check.py "$package" "$WD14/selected_tags.csv"
+
+      - name: Save the WD14 Core ML files
+        if: steps.wd14.outputs.found == 'true' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/wd14
+          key: wd14-coreml-${{ hashFiles('core/src/wd14_model.rs') }}

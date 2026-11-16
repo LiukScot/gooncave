@@ -13,6 +13,7 @@ use tokio::sync::{Semaphore, SemaphorePermit};
 
 pub(crate) const MAX_API_BYTES: usize = 8 * 1024 * 1024;
 const NETWORK_CONCURRENCY: usize = 4;
+pub(crate) const USER_AGENT: &str = "GoonCave (https://github.com/LiukScot/gooncave)";
 const TIMEOUT: Duration = Duration::from_secs(25);
 /// Seconds between attempts after a CAPTCHA or a 429; its length is the retry
 /// count. Cloudflare challenges only some requests, so a later one often passes.
@@ -375,7 +376,7 @@ impl Transport {
             ));
         }
         let client = Client::builder()
-            .user_agent("GoonCave (https://github.com/LiukScot/gooncave)")
+            .user_agent(USER_AGENT)
             .timeout(TIMEOUT)
             .connect_timeout(Duration::from_secs(10))
             .redirect(reqwest::redirect::Policy::none())

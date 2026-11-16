@@ -8,7 +8,9 @@ iPhone build and validation documentation.
 - The iPhone app is standalone. It runs the shared Rust core on the phone and
   needs no server ([ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md)).
 - The shell is Tauri. It shows the shared React interface and calls the Rust
-  core directly, with no Swift bridge.
+  core directly. A small Swift library (`PhotoLibrary/`) reaches the iOS APIs
+  with no Rust bindings: Photos, the share sheet, haptics, background tasks and
+  Core ML, which runs automatic tagging (`wd14/` converts and checks the model).
 - **Rust core on iPhone:** the Rust core runs on iPhone and keeps its data.
 - **Standalone parity:** every row of the [feature inventory](../docs/feature-inventory.md)
   works on iPhone.
@@ -143,6 +145,29 @@ verify that taps and scrolling work.
   the log says so and animations go back to 60 fps.
 - iOS suspends web view JavaScript in the background. Background work runs in
   the Rust core.
+- While the app is closed to the Home Screen, iOS wakes it from time to time
+  (`Background.swift`). Each time the app reads new favorites, refreshes
+  subscriptions, and syncs the database with the WebDAV folder. iOS decides
+  when and how often, and gives the longest runs while the phone charges;
+  nothing runs after the app is force quit.
+- When the app leaves the screen, it uploads its last changes to the WebDAV
+  folder in the seconds iOS allows.
+- On iOS 26 or later, a favorites sync you start keeps going after you leave
+  the app, with its progress and a Stop button on the Lock Screen. Before
+  iOS 26 it pauses when the app leaves the screen.
+- Downloads of originals continue while the app is suspended or locked.
+  The core decides which files to fetch and hands up to 12 at a time to a
+  background `URLSession` (`Downloads.swift`, `src-tauri/src/transfers.rs`);
+  iOS performs the transfers and relaunches the app in the background when
+  they finish. The core then checks each file and adds it to the library.
+  Opening a file that is not on the phone still downloads it inside the app.
+  Tauri owns the app delegate, so `handleEventsForBackgroundURLSession` is not
+  implemented: the session created at launch with the same identifier receives
+  the events, and a background task keeps the app running while the core
+  installs each file. When the phone is full the downloads stop with a message
+  in Settings and one file is tried every minute until it fits.
+- Re-signing with KravaSign must keep background tasks working. Check on a
+  device that the tasks in `Info.ios.plist` still run after a re-sign.
 - Background tasks on iPhone are slower and have no GPU. The phone processes
   only the files other devices have not processed, in resumable chunks.
 - Folder access and background scheduling need iOS equivalents. If a feature

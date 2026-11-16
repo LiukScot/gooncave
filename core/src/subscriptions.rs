@@ -587,7 +587,12 @@ async fn saved_errors(db: &Database) -> Result<Value> {
 }
 /// `background` leaves out sites whose pages only GoonCave's browser can load: each refresh
 /// would start a browser process, and the feed refreshes them when it opens.
-async fn refresh(db: &Database, t: &Transport, rounds: u64, background: bool) -> Result<Value> {
+pub(crate) async fn refresh(
+    db: &Database,
+    t: &Transport,
+    rounds: u64,
+    background: bool,
+) -> Result<Value> {
     let _guard = match db.subscriptions.try_lock() {
         Ok(guard) => guard,
         Err(_) => {

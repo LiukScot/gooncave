@@ -25,7 +25,7 @@ Gelbooru/Rule34, FurAffinity and Szurubooru. Remote votes work on e621/e926,
 Danbooru and Szurubooru. Subscriptions collect followed searches and
 FurAffinity's watchlist in a persistent feed. File source matching uses Fluffle
 and SauceNAO and refreshes tags from configured booru sites. Optional WD14
-tagging runs on Linux x86-64 computers with AVX2. The gallery stacks visual
+tagging runs on Linux x86-64 computers with AVX2 and on the iPhone. The gallery stacks visual
 copies into one tile, and a confirmed duplicate policy resolves them. Device
 sync through a WebDAV folder shares tags, votes, favorites, read marks,
 sources and settings; media files are not copied yet.
@@ -264,7 +264,7 @@ a 1 GiB limit. An oversized or malformed source fails the refresh.
 
 ## Automatic tagging
 
-Settings → Extra shows the 388,733,784-byte download before enabling WD14.
+Settings → Extra shows the download (388,733,784 bytes on Linux, 194,991,463 on the iPhone) before enabling WD14.
 It is off by default. The model and vocabulary come from
 `SmilingWolf/wd-v1-4-convnextv2-tagger-v2`, revision
 `dbd4dbe553ee51feb3bc745b614fb762080e3912`; both sizes and SHA-256 hashes
@@ -304,7 +304,8 @@ The future sync protocol transfers `wd14_results`; it never transfers the
 device-only `meta` enable flag, runtime, model cache or local applied rows.
 File sources lists WD14 for tag visibility and links to Extra for activation.
 Automatic source targets and Target all include only booru sites.
-Phone tagging remains unavailable until ADR 0004's model-size decision;
+The iPhone runs the same model through Core ML in 16-bit weights, supplied by the
+shell (`wd14_inference`) and downloaded as a 195.0 MB GitHub release asset.
 Windows and other desktop targets do not have a supported tagging runtime yet.
 
 ## Verification

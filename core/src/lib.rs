@@ -11,6 +11,7 @@ macro_rules! eprintln {
 
 pub mod app_log;
 mod auto_favorite;
+pub mod background;
 mod backup;
 mod booru_engines;
 mod booru_favorites;
@@ -52,7 +53,9 @@ mod subscription_store;
 mod subscriptions;
 mod sync;
 mod tags;
+pub mod transfers;
 mod wd14;
+pub mod wd14_inference;
 mod wd14_model;
 mod wd14_store;
 mod webdav;

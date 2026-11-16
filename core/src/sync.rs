@@ -2393,8 +2393,9 @@ async fn prune(folder: &Folder) -> Result<()> {
     Ok(())
 }
 
-/// Runs one cycle if a folder is connected and records the outcome in the status.
-async fn run(db: &Database, trigger: Trigger) -> Result<()> {
+/// Runs one cycle if a folder is connected and records the outcome in the status. Waits for a
+/// cycle already running.
+pub(crate) async fn run(db: &Database, trigger: Trigger) -> Result<()> {
     let _running = db.sync.running.lock().await;
     let Some(saved) = db.call(|c| connection(c)).await? else {
         // Imported records still wait for their files without a folder.

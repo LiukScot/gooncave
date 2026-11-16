@@ -4,13 +4,14 @@
 //! device deletes them for good.
 
 use crate::{
-    booru_favorites,
-    booru_http::Transport,
+    booru_engines, booru_favorites,
+    booru_http::{Transport, USER_AGENT},
     boorus,
     db::{read_setting, write_setting, Database, OWNER_ID},
     favorite_library,
     library::{self, NOW},
     media, sync,
+    transfers::{self, Outcome, Transfers},
     webdav::Folder,
     Error, Result,
 };
@@ -23,8 +24,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
+    future::Future,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{atomic::Ordering, Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -248,6 +250,11 @@ pub(crate) struct Job {
     /// Deleted files whose booru favorites could not be removed since the app started; not
     /// retried in the background until a restart.
     unfavorite_failed: Mutex<HashSet<String>>,
+    /// Files handed to the system's background downloads and not yet reported, by SHA-256, with
+    /// the key each transfer runs under.
+    enqueued: Mutex<HashMap<String, String>>,
+    /// A transfer or an install found no room on the device; set until one succeeds again.
+    disk_full: std::sync::atomic::AtomicBool,
     /// What the worker is doing; `Null` until its first pass reports.
     pub(crate) status: Mutex<Value>,
     /// When each file, by id, was last opened since the app started.
@@ -747,16 +754,25 @@ pub(crate) async fn fetch(db: &Database, id: &str) -> Result<()> {
     let Some((sha, ..)) = db.call(row.clone()).await? else {
         return Err(Error::Invalid("File not found.".into()));
     };
+    exclusive(db, &sha, fetch_locked(db, row)).await
+}
+
+/// Runs `work` while nothing else fetches or installs the file with `sha`.
+async fn exclusive<T>(
+    db: &Database,
+    sha: &str,
+    work: impl Future<Output = Result<T>>,
+) -> Result<T> {
     let lock = db
         .originals
         .fetching
         .lock()
         .unwrap_or_else(|p| p.into_inner())
-        .entry(sha.clone())
+        .entry(sha.to_owned())
         .or_default()
         .clone();
     let fetching = lock.lock().await;
-    let result = fetch_locked(db, row).await;
+    let result = work.await;
     drop(fetching);
     let mut map = db
         .originals
@@ -765,7 +781,7 @@ pub(crate) async fn fetch(db: &Database, id: &str) -> Result<()> {
         .unwrap_or_else(|p| p.into_inner());
     // The map and this call hold the only references: nobody else waits on this file.
     if Arc::strong_count(&lock) == 2 {
-        map.remove(&sha);
+        map.remove(sha);
     }
     result
 }
@@ -793,6 +809,31 @@ async fn fetch_locked(
     }
     // Also waits out a sync pass, which links synced files to their favorites.
     let _writes = db.favorites.writes.lock().await;
+    for (site, remote_id) in favorite_posts(db, path).await? {
+        let provider = booru_favorites::provider(&site);
+        let imported =
+            favorite_library::download(db, &Transport::default(), &site, &remote_id, None).await;
+        match imported {
+            Ok(_) => {
+                if db
+                    .call(row.clone())
+                    .await?
+                    .is_none_or(|(.., location, _)| location == "LOCAL")
+                {
+                    return Ok(());
+                }
+            }
+            Err(error) => eprintln!("Cannot fetch {sha} from {provider}: {error}"),
+        }
+    }
+    Err(folder_error.unwrap_or_else(|| {
+        Error::Remote("This file is not on this device, and neither the sync folder nor a booru favorite has its original. Open GoonCave on a device that has it and turn on Sync pictures and videos in Backup & sync.".into())
+    }))
+}
+
+/// The booru favorites of the file at `path`, with the site each belongs to. A favorite whose
+/// site was removed is left out.
+async fn favorite_posts(db: &Database, path: String) -> Result<Vec<(boorus::Site, String)>> {
     let favorites: Vec<(String, String)> = db
         .call(move |c| {
             let mut s = c.prepare(
@@ -804,51 +845,44 @@ async fn fetch_locked(
             Ok(rows)
         })
         .await?;
-    if !favorites.is_empty() {
-        let sites = boorus::sites(db).await?;
-        for (provider, remote_id) in favorites {
-            let Some(site) = sites
-                .iter()
-                .find(|s| booru_favorites::provider(s) == provider)
-            else {
-                continue;
-            };
-            let imported =
-                favorite_library::download(db, &Transport::default(), site, &remote_id, None).await;
-            match imported {
-                Ok(_) => {
-                    if db
-                        .call(row.clone())
-                        .await?
-                        .is_none_or(|(.., location, _)| location == "LOCAL")
-                    {
-                        return Ok(());
-                    }
-                }
-                Err(error) => eprintln!("Cannot fetch {sha} from {provider}: {error}"),
-            }
-        }
+    if favorites.is_empty() {
+        return Ok(Vec::new());
     }
-    Err(folder_error.unwrap_or_else(|| {
-        Error::Remote("This file is not on this device, and neither the sync folder nor a booru favorite has its original. Open GoonCave on a device that has it and turn on Sync pictures and videos in Backup & sync.".into())
-    }))
+    let sites = boorus::sites(db).await?;
+    Ok(favorites
+        .into_iter()
+        .filter_map(|(provider, remote_id)| {
+            let site = sites
+                .iter()
+                .find(|s| booru_favorites::provider(s) == provider)?;
+            Some((site.clone(), remote_id))
+        })
+        .collect())
 }
 
-/// Downloads the original from the folder into `Synced` and imports it. Returns `false` when
-/// the folder does not hold it.
-async fn from_folder(db: &Database, folder: &Folder, sha: &str, size: i64) -> Result<bool> {
+/// The name and extension of the original in the folder, or `None` when the folder does not hold it.
+async fn listed_original(
+    db: &Database,
+    folder: &Folder,
+    sha: &str,
+) -> Result<Option<(String, String)>> {
     let mut listing = listing(db, folder, false).await?;
     if !listing.media.contains_key(sha) {
         listing = self::listing(db, folder, true).await?;
     }
     let Some(name) = listing.media.get(sha).cloned() else {
-        return Ok(false);
+        return Ok(None);
     };
-    let Some(extension) = extension(&name) else {
+    Ok(extension(&name).map(|extension| (name, extension)))
+}
+
+/// Downloads the original from the folder into `Synced` and imports it. Returns `false` when
+/// the folder does not hold it.
+async fn from_folder(db: &Database, folder: &Folder, sha: &str, size: i64) -> Result<bool> {
+    let Some((name, extension)) = listed_original(db, folder, sha).await? else {
         return Ok(false);
     };
     let (folder_id, directory) = db.call(|c| synced_folder(c)).await?;
-    let target = directory.join(format!("{sha}.{extension}"));
     let part = tempfile::Builder::new()
         .prefix(".original-")
         .tempfile_in(&directory)?;
@@ -856,14 +890,38 @@ async fn from_folder(db: &Database, folder: &Folder, sha: &str, size: i64) -> Re
     let got = folder
         .download(&format!("{MEDIA}{name}"), part.path(), limit)
         .await?;
-    if got.as_deref() != Some(sha) {
+    install_from_folder(
+        db,
+        &folder_id,
+        &directory,
+        sha,
+        &extension,
+        part.path(),
+        got.as_deref(),
+    )
+    .await?;
+    Ok(true)
+}
+
+/// Adds the original downloaded to `part` to the library if its SHA-256, `got`, is `sha`.
+async fn install_from_folder(
+    db: &Database,
+    folder_id: &str,
+    directory: &Path,
+    sha: &str,
+    extension: &str,
+    part: &Path,
+    got: Option<&str>,
+) -> Result<()> {
+    if got != Some(sha) {
         return Err(Error::Remote(
             "The copy of this file in the WebDAV folder is damaged. Open GoonCave on the device that has it to upload it again.".into(),
         ));
     }
-    part.persist(&target).map_err(|e| Error::Io(e.error))?;
-    library::import(db, &folder_id, &target, None).await?;
-    Ok(true)
+    let target = directory.join(format!("{sha}.{extension}"));
+    tokio::fs::rename(part, &target).await?;
+    library::import(db, folder_id, &target, None).await?;
+    Ok(())
 }
 
 /// Each GIF is downloaded whole and decoded frame by frame; as many at once as Explore.
@@ -1042,7 +1100,274 @@ async fn provider_motion_source(
     Ok(None)
 }
 
-/// Fetches in the background every original this device keeps and lacks.
+/// How many files wait in the system's background downloads at once.
+const MAX_OUTSTANDING: usize = 12;
+const FULL: &str =
+    "This device is full. Free some space and GoonCave downloads the rest by itself.";
+const FOLDER_KEY: &str = "folder:";
+const FAVORITE_KEY: &str = "favorite:";
+
+/// What a background transfer downloads, from its key.
+enum Key<'a> {
+    Folder {
+        sha: &'a str,
+    },
+    Favorite {
+        sha: &'a str,
+        provider: &'a str,
+        remote_id: &'a str,
+    },
+}
+
+impl<'a> Key<'a> {
+    fn parse(key: &'a str) -> Option<Self> {
+        if let Some(sha) = key.strip_prefix(FOLDER_KEY) {
+            return Some(Self::Folder { sha });
+        }
+        let mut parts = key.strip_prefix(FAVORITE_KEY)?.splitn(3, ':');
+        Some(Self::Favorite {
+            sha: parts.next()?,
+            provider: parts.next()?,
+            remote_id: parts.next()?,
+        })
+    }
+
+    fn sha(&self) -> &'a str {
+        match self {
+            Self::Folder { sha } | Self::Favorite { sha, .. } => sha,
+        }
+    }
+}
+
+fn is_full(error: &Error) -> bool {
+    matches!(error, Error::Io(error) if error.kind() == std::io::ErrorKind::StorageFull)
+}
+
+/// The size and path of a file with `sha` this device lacks.
+async fn remote_row(db: &Database, sha: &str) -> Result<Option<(i64, String)>> {
+    let sha = sha.to_owned();
+    db.call(move |c| {
+        Ok(c.query_row(
+            "SELECT size_bytes, path FROM files WHERE sha256 = ?1 AND location_type = 'REMOTE' LIMIT 1",
+            [sha],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?)
+    })
+    .await
+}
+
+fn hand_over(
+    db: &Database,
+    transfers: &dyn Transfers,
+    sha: &str,
+    key: String,
+    url: &str,
+    headers: &[(String, String)],
+    destination: &Path,
+) {
+    // Recorded first: a backend may report a failure before `enqueue` returns.
+    db.originals
+        .enqueued
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .insert(sha.to_owned(), key.clone());
+    transfers.enqueue(&key, url, headers, destination);
+}
+
+/// Hands the download of the file with `sha` to the system, which goes on while the app is
+/// suspended. Returns `false` when only this process can fetch it: no copy in the folder, or a
+/// site that answers only the in-app browser.
+async fn enqueue(db: &Database, transfers: &dyn Transfers, sha: &str) -> Result<bool> {
+    let Some((_, path)) = remote_row(db, sha).await? else {
+        return Ok(false);
+    };
+    match sync::connected_folder(db).await {
+        Ok(Some(folder)) => match listed_original(db, &folder, sha).await {
+            Ok(Some((name, extension))) => {
+                let (_, directory) = db.call(|c| synced_folder(c)).await?;
+                let (url, headers) = folder.download_request(&format!("{MEDIA}{name}"))?;
+                let destination = directory.join(format!(".original-{sha}.{extension}"));
+                let key = format!("{FOLDER_KEY}{sha}");
+                hand_over(db, transfers, sha, key, &url, &headers, &destination);
+                return Ok(true);
+            }
+            Ok(None) => {}
+            Err(error) => eprintln!("Cannot list the sync folder for {sha}: {error}"),
+        },
+        Ok(None) => {}
+        Err(error) => eprintln!("Cannot reach the sync folder for {sha}: {error}"),
+    }
+    let _writes = db.favorites.writes.lock().await;
+    for (site, remote_id) in favorite_posts(db, path).await? {
+        let plan = match favorite_library::plan(db, &Transport::default(), &site, &remote_id, None)
+            .await
+        {
+            Ok(plan) => plan,
+            Err(error) => {
+                eprintln!(
+                    "Cannot plan the download of {sha} from {}: {error}",
+                    site.id
+                );
+                continue;
+            }
+        };
+        let browser = crate::browser::get().is_some()
+            && (crate::browser::serves(&plan.url)
+                || crate::browser::media_site(&plan.url).is_some());
+        if browser || tokio::fs::try_exists(&plan.target).await? {
+            return Ok(false);
+        }
+        let mut headers: Vec<(String, String)> = booru_engines::headers(&site, true)?
+            .iter()
+            .filter_map(|(name, value)| Some((name.to_string(), value.to_str().ok()?.to_owned())))
+            .collect();
+        headers.push(("user-agent".into(), USER_AGENT.into()));
+        let provider = booru_favorites::provider(&site);
+        let destination = plan
+            .target
+            .with_file_name(format!(".favorite-{sha}.{}", plan.extension));
+        let key = format!("{FAVORITE_KEY}{sha}:{provider}:{remote_id}");
+        hand_over(
+            db,
+            transfers,
+            sha,
+            key,
+            plan.url.as_str(),
+            &headers,
+            &destination,
+        );
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+/// Adds the file a background transfer downloaded to `part`, or notes why it could not be.
+async fn install_transfer(db: &Database, key: &Key<'_>, part: &Path) -> Result<()> {
+    let sha = key.sha();
+    let Some((size, _)) = remote_row(db, sha).await? else {
+        // The file arrived another way meanwhile, or left the library.
+        return Ok(tokio::fs::remove_file(part).await?);
+    };
+    match key {
+        Key::Folder { .. } => {
+            if tokio::fs::metadata(part).await?.len() > u64::try_from(size).unwrap_or(0) {
+                return Err(Error::Remote(
+                    "A file in the WebDAV folder is larger than expected.".into(),
+                ));
+            }
+            let extension = part
+                .extension()
+                .and_then(|s| s.to_str())
+                .ok_or_else(|| Error::Storage("A downloaded file has no extension.".into()))?;
+            let hashed = part.to_owned();
+            let got = tokio::task::spawn_blocking(move || library::sha256_of(&hashed))
+                .await
+                .map_err(|error| Error::Storage(error.to_string()))??;
+            let (folder_id, directory) = db.call(|c| synced_folder(c)).await?;
+            install_from_folder(db, &folder_id, &directory, sha, extension, part, Some(&got)).await
+        }
+        Key::Favorite {
+            provider,
+            remote_id,
+            ..
+        } => {
+            let _writes = db.favorites.writes.lock().await;
+            let sites = boorus::sites(db).await?;
+            let site = sites
+                .iter()
+                .find(|s| booru_favorites::provider(s) == *provider)
+                .ok_or_else(|| Error::Remote("The site of this favorite was removed.".into()))?;
+            favorite_library::adopt(db, &Transport::default(), site, remote_id, part).await?;
+            Ok(())
+        }
+    }
+}
+
+/// A background transfer ended: adds its file to the library, or notes why it could not. See
+/// [`transfers::finished`].
+pub(crate) async fn transfer_finished(db: &Database, key: &str, outcome: Outcome) {
+    let Some(parsed) = Key::parse(key) else {
+        eprintln!("[developer] A background download reported a key GoonCave did not make: {key}");
+        if let Outcome::Done(part) = outcome {
+            remove_part(&part).await;
+        }
+        return;
+    };
+    let sha = parsed.sha();
+    let forget = || {
+        db.originals
+            .enqueued
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(sha);
+    };
+    let result = match outcome {
+        Outcome::Done(part) => {
+            let installed = exclusive(db, sha, install_transfer(db, &parsed, &part)).await;
+            if installed.is_err() {
+                remove_part(&part).await;
+            }
+            installed
+        }
+        Outcome::Full => Err(std::io::Error::from(std::io::ErrorKind::StorageFull).into()),
+        Outcome::Failed(message) => Err(Error::Remote(message)),
+        // Dropped on purpose, or by the system: the next pass downloads it again if it is wanted.
+        Outcome::Cancelled => return forget(),
+    };
+    match result {
+        Ok(()) => db.originals.disk_full.store(false, Ordering::Relaxed),
+        Err(error) if is_full(&error) => {
+            eprintln!("[developer] The device has no room for the original of {sha}");
+            db.originals.disk_full.store(true, Ordering::Relaxed);
+        }
+        Err(error) => {
+            eprintln!("Cannot fetch the original of {sha}: {error}");
+            db.originals
+                .failed
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .insert(sha.to_owned());
+        }
+    }
+    // Forgotten only now, so a pass meanwhile does not start the same download again.
+    forget();
+    let waiting = db
+        .originals
+        .enqueued
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .len();
+    // One pass lists the folder again, so it waits until the queue has room for a batch.
+    if waiting <= MAX_OUTSTANDING / 2 {
+        db.originals.wake.notify_one();
+    }
+}
+
+async fn remove_part(part: &Path) {
+    if let Err(error) = tokio::fs::remove_file(part).await {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            eprintln!("Cannot remove {}: {error}", part.display());
+        }
+    }
+}
+
+/// The transfers the system still runs from an earlier launch of the app, by key.
+pub(crate) fn transfers_pending(db: &Database, keys: &[String]) {
+    let mut enqueued = db
+        .originals
+        .enqueued
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    for key in keys {
+        if let Some(parsed) = Key::parse(key) {
+            enqueued.insert(parsed.sha().to_owned(), key.clone());
+        }
+    }
+}
+
+/// Fetches in the background every original this device keeps and lacks. With a background
+/// download backend, the system downloads them, so the downloads go on while the app is suspended.
 async fn download(db: &Database, keep_all: bool) -> Result<()> {
     let keeps = if keep_all { "1" } else { KEPT };
     // In the Gallery's order, so the files it opens on come first.
@@ -1069,19 +1394,79 @@ async fn download(db: &Database, keep_all: bool) -> Result<()> {
             .filter(|(_, sha)| !failed.contains(sha))
             .collect()
     };
+    let transfers = transfers::get();
+    if let Some(transfers) = &transfers {
+        let wanted: HashSet<&str> = ids.iter().map(|(_, sha)| sha.as_str()).collect();
+        db.originals
+            .enqueued
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .retain(|sha, key| {
+                let keep = wanted.contains(sha.as_str());
+                if !keep {
+                    transfers.cancel(key);
+                }
+                keep
+            });
+    }
     let total = ids.len();
     for (done, (id, sha)) in ids.into_iter().enumerate() {
         db.originals.set_status(
             json!({"state": "downloading", "done": done, "total": total, "error": null}),
         );
-        if let Err(error) = fetch(db, &id).await {
-            eprintln!("Cannot fetch the original of {sha}: {error}");
-            db.originals
-                .failed
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .insert(sha);
+        if let Some(transfers) = &transfers {
+            // While the device is full one file is tried at a time, to find out when room returns.
+            let limit = if db.originals.disk_full.load(Ordering::Relaxed) {
+                1
+            } else {
+                MAX_OUTSTANDING
+            };
+            {
+                let enqueued = db
+                    .originals
+                    .enqueued
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner());
+                if enqueued.contains_key(&sha) {
+                    continue;
+                }
+                if enqueued.len() >= limit {
+                    break;
+                }
+            }
+            match enqueue(db, transfers.as_ref(), &sha).await {
+                Ok(true) => continue,
+                Ok(false) => {}
+                Err(error) => {
+                    eprintln!("Cannot start the download of {sha}: {error}");
+                    db.originals
+                        .failed
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .insert(sha);
+                    continue;
+                }
+            }
         }
+        match fetch(db, &id).await {
+            Ok(()) => db.originals.disk_full.store(false, Ordering::Relaxed),
+            Err(error) if is_full(&error) => {
+                eprintln!("[developer] The device has no room for the original of {sha}");
+                db.originals.disk_full.store(true, Ordering::Relaxed);
+                break;
+            }
+            Err(error) => {
+                eprintln!("Cannot fetch the original of {sha}: {error}");
+                db.originals
+                    .failed
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .insert(sha);
+            }
+        }
+    }
+    if db.originals.disk_full.load(Ordering::Relaxed) {
+        return Err(Error::Storage(FULL.into()));
     }
     Ok(())
 }
@@ -1392,12 +1777,22 @@ async fn pass(db: &Database) -> Result<()> {
     download(db, settings.keep_all).await
 }
 
+/// Whether the system is downloading originals for this device.
+fn transferring(db: &Database) -> bool {
+    !db.originals
+        .enqueued
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .is_empty()
+}
+
 /// Moves originals between this device and the sync folder and empties the trash. Runs until
 /// dropped.
 async fn move_originals(db: Database) {
     loop {
         let result = pass(&db).await;
         db.originals.set_status(match &result {
+            Ok(()) if transferring(&db) => json!({"state": "downloading", "error": null}),
             Ok(()) => json!({"state": "idle", "error": null}),
             Err(error) => {
                 eprintln!("Moving originals failed: {error}");
@@ -2627,6 +3022,168 @@ mod tests {
             .unwrap();
         let error = fetch(&b.db, &id).await.unwrap_err().to_string();
         assert!(error.contains("damaged"), "{error}");
+    }
+
+    /// A backend that records what the core hands over, like the iPhone's background session.
+    #[derive(Default)]
+    struct Recorder {
+        started: Mutex<Vec<(String, String, PathBuf)>>,
+        cancelled: Mutex<Vec<String>>,
+    }
+
+    impl Transfers for Recorder {
+        fn enqueue(&self, key: &str, url: &str, _: &[(String, String)], destination: &Path) {
+            self.started
+                .lock()
+                .unwrap()
+                .push((key.into(), url.into(), destination.into()));
+        }
+
+        fn cancel(&self, key: &str) {
+            self.cancelled.lock().unwrap().push(key.into());
+        }
+    }
+
+    /// Two files only the sync folder has, one of them damaged there, on a device that downloads
+    /// through `recorder`. Returns the device, the folder, and the good and the damaged SHA-256.
+    async fn waiting_downloads(
+        recorder: &Arc<Recorder>,
+    ) -> (Device, crate::sync::tests::Dav, String, String) {
+        let (url, dav) = serve().await;
+        let files = fixtures();
+        let a = Device::open(
+            &url,
+            &[("one.png", &files.first), ("two.png", &files.second)],
+        )
+        .await;
+        choose(&a, json!({"upload": true})).await;
+        a.sync(Trigger::Full).await;
+        pass(&a.db).await.unwrap();
+        let sha = |name: &'static str| {
+            let query = format!("SELECT sha256 FROM files WHERE path LIKE '%{name}'");
+            let a = &a;
+            async move { count(a, &query).await }
+        };
+        let (good, damaged) = (sha("one.png").await, sha("two.png").await);
+        let b = Device::open(&url, &[]).await;
+        b.sync(Trigger::Full).await;
+        pass(&b.db).await.unwrap();
+        // The folder listing shows the original, so the file record applies.
+        b.sync(Trigger::Full).await;
+        transfers::use_fake(recorder.clone());
+        pass(&b.db).await.unwrap();
+        (b, dav, good, damaged)
+    }
+
+    #[tokio::test]
+    async fn the_system_downloads_the_originals_and_the_core_checks_each_file() {
+        let recorder = Arc::new(Recorder::default());
+        let (b, dav, good, damaged) = waiting_downloads(&recorder).await;
+        let started = recorder.started.lock().unwrap().clone();
+        assert_eq!(started.len(), 2, "both files go to the system");
+        assert_eq!(
+            count(
+                &b,
+                "SELECT CAST(count(*) AS TEXT) FROM files WHERE location_type = 'LOCAL'"
+            )
+            .await,
+            "0",
+            "the core downloads nothing itself"
+        );
+        // Another pass while the system downloads does not queue them again.
+        pass(&b.db).await.unwrap();
+        assert_eq!(recorder.started.lock().unwrap().len(), 2);
+
+        for (key, url, destination) in started {
+            let (sha, name) = if key == format!("folder:{good}") {
+                (&good, "good")
+            } else {
+                assert_eq!(key, format!("folder:{damaged}"));
+                (&damaged, "damaged")
+            };
+            assert!(
+                url.ends_with(&format!("/dav/GoonCave/media/{sha}.png")),
+                "{url}"
+            );
+            let mut bytes = dav.files()[&format!("/dav/GoonCave/media/{sha}.png")]
+                .0
+                .clone();
+            if name == "damaged" {
+                bytes.truncate(10);
+            }
+            std::fs::write(&destination, bytes).unwrap();
+            transfers::finished(&b.db, &key, Outcome::Done(destination.clone())).await;
+            assert!(!destination.exists(), "the part file never stays behind");
+        }
+        let location = |sha: &str| {
+            let query = format!("SELECT location_type FROM files WHERE sha256 = '{sha}'");
+            let b = &b;
+            async move { b.value(&query).await }
+        };
+        assert_eq!(location(&good).await.as_deref(), Some("LOCAL"));
+        assert_eq!(location(&damaged).await.as_deref(), Some("REMOTE"));
+        // A file that failed is not asked again until the app restarts.
+        pass(&b.db).await.unwrap();
+        assert_eq!(recorder.started.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_download_the_system_still_runs_at_launch_is_not_started_again() {
+        let recorder = Arc::new(Recorder::default());
+        let (b, _dav, good, damaged) = waiting_downloads(&recorder).await;
+        let started = recorder.started.lock().unwrap().clone();
+        for key in started {
+            transfers::finished(&b.db, &key.0, Outcome::Cancelled).await;
+        }
+        transfers::pending(&b.db, &[format!("folder:{good}")]);
+        pass(&b.db).await.unwrap();
+        let started = recorder.started.lock().unwrap().clone();
+        assert_eq!(
+            started.len(),
+            3,
+            "only the file the system lost starts again"
+        );
+        assert_eq!(started[2].0, format!("folder:{damaged}"));
+    }
+
+    #[tokio::test]
+    async fn a_file_no_longer_kept_is_taken_from_the_system() {
+        let recorder = Arc::new(Recorder::default());
+        let (b, _dav, ..) = waiting_downloads(&recorder).await;
+        choose(&b, json!({"keepAll": false})).await;
+        pass(&b.db).await.unwrap();
+        assert_eq!(recorder.cancelled.lock().unwrap().len(), 2);
+        // The system reports the cancellation: nothing is marked failed or installed.
+        let started = recorder.started.lock().unwrap().clone();
+        for (key, ..) in started {
+            transfers::finished(&b.db, &key, Outcome::Cancelled).await;
+        }
+        assert!(b.db.originals.failed.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_full_device_stops_the_downloads_and_says_so_until_a_file_fits_again() {
+        let recorder = Arc::new(Recorder::default());
+        let (b, dav, ..) = waiting_downloads(&recorder).await;
+        let started = recorder.started.lock().unwrap().clone();
+        for (key, ..) in started {
+            transfers::finished(&b.db, &key, Outcome::Full).await;
+        }
+        // A file the device had no room for is not marked failed, and one file is tried as a probe.
+        let error = pass(&b.db).await.unwrap_err().to_string();
+        assert!(error.contains("device is full"), "{error}");
+        assert!(b.db.originals.failed.lock().unwrap().is_empty());
+        let started = recorder.started.lock().unwrap().clone();
+        assert_eq!(started.len(), 3, "a single probe after the failure");
+
+        let (probe, _, destination) = started[2].clone();
+        let sha = probe.strip_prefix("folder:").unwrap();
+        let bytes = dav.files()[&format!("/dav/GoonCave/media/{sha}.png")]
+            .0
+            .clone();
+        std::fs::write(&destination, bytes).unwrap();
+        transfers::finished(&b.db, &probe, Outcome::Done(destination)).await;
+        pass(&b.db).await.unwrap();
     }
 
     #[tokio::test]
