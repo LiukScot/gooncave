@@ -4071,9 +4071,11 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   height: 1rem;
 }
 
-.file-detail-edit-tags-button.is-active {
-  background: hsl(var(--secondary));
-  color: hsl(var(--foreground));
+/* Editing is on: the pencil is tinted with the accent, lighter than a filled chip. */
+.file-detail-edit-tags-button.is-active,
+.file-detail-edit-tags-button.is-active:hover {
+  background: hsl(var(--primary) / 0.18);
+  color: hsl(var(--primary));
 }
 
 .credential-status {
