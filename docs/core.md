@@ -541,15 +541,16 @@ Settings → Subscriptions stores searches on this device and mirrors each enabl
 FurAffinity account's watchlist. Follow and Unfollow change that remote account;
 they require a username and session cookie in Accounts. Other sites follow
 artist tags through saved searches. Search operators and compound searches stay one query; simple
-tags are batched with OR on e621 (up to 40) and Danbooru (up to two).
+tags are batched with OR on e621 (up to 40), Rule34 (up to 20) and Danbooru (up to two).
+Other sites, Gelbooru included, search one tag at a time.
 A followed pool adds the search `pool:ID` on its own site only, sent alone.
 Followed pools stay on this device: each device gives a synced site its own ID.
 
 The core refreshes on startup and every 15 minutes. These background cycles skip
 sites whose pages only GoonCave's browser can load, such as FurAffinity; opening the
 Subscribed feed refreshes every site. Each cycle reads the
-newest page and continues older pages, with at most four requests per site and
-four sites concurrently. Explicit refresh can request up to four cycles. Progress
+newest page of the next searches, up to 24 requests and stopping at the end of the
+list, then up to three pages of older posts, with four sites concurrently. Explicit refresh can request up to four cycles. Progress
 and indexed posts survive restart; closing the app cancels in-flight requests.
 Only complete pages are committed. Changing searches invalidates late responses
 and clears search-based feeds while retaining FurAffinity's indexed posts.

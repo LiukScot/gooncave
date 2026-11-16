@@ -22,7 +22,9 @@ use std::{
 const REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
 const RETENTION_DAYS: i64 = 365;
 const PAGE_SIZE: usize = 40;
-const MAX_QUERIES: usize = 4;
+/// Newest-page queries per site in one refresh: 360 one-tag searches take 15 rounds, under 4 hours.
+const MAX_HEAD_QUERIES: usize = 24;
+const BACKFILL_QUERIES: usize = 3;
 const MAX_PAGE: usize = 1000;
 type Payload = std::result::Result<Json<Value>, axum::extract::rejection::JsonRejection>;
 
@@ -739,20 +741,37 @@ fn batch(tags: &[String], start: usize, size: usize) -> (Vec<String>, usize, boo
         start + count >= tags.len(),
     )
 }
+/// How many subscribed tags one query can ask for: engines without a verified OR get one.
+fn batch_size(site: &Site) -> usize {
+    match site.engine.as_str() {
+        "e621" => 40,
+        "danbooru" => 2,
+        "gelbooru" if booru_engines::website(site) == "https://rule34.xxx" => 20,
+        _ => 1,
+    }
+}
+fn any_of(site: &Site, tags: Vec<String>) -> Vec<String> {
+    if tags.len() < 2 {
+        return tags;
+    }
+    match site.engine.as_str() {
+        "e621" | "danbooru" => tags.into_iter().map(|s| format!("~{s}")).collect(),
+        // Rule34 answers `{a ~ b}` and `~a ~b` with no posts and no error.
+        "gelbooru" => vec![format!("( {} )", tags.join(" ~ "))],
+        _ => tags,
+    }
+}
 async fn search_page(
     t: &Transport,
     site: &Site,
-    mut tags: Vec<String>,
+    tags: Vec<String>,
     page: usize,
 ) -> Result<Vec<Value>> {
-    if matches!(site.engine.as_str(), "e621" | "danbooru") && tags.len() > 1 {
-        tags = tags.into_iter().map(|s| format!("~{s}")).collect();
-    }
     booru_engines::search(
         t,
         site,
         &Search {
-            tags,
+            tags: any_of(site, tags),
             page,
             limit: PAGE_SIZE,
             ..Search::default()
@@ -777,18 +796,20 @@ async fn refresh_site(
         commit(db, site, vec![], Some(state), generation).await?;
         return Ok(());
     }
-    let size = match site.engine.as_str() {
-        "e621" => 40,
-        "danbooru" => 2,
-        _ => 1,
-    };
-    let (head, next, _) = batch(tags, state.head, size);
-    let posts = search_page(t, site, head, 1).await?;
-    state.head = next;
-    if !commit(db, site, posts, None, generation).await? {
-        return Ok(());
+    let size = batch_size(site);
+    // The newest page of every tag is read once per sweep; a round stops at the end of the list.
+    for _ in 0..MAX_HEAD_QUERIES {
+        let (head, next, wrapped) = batch(tags, state.head, size);
+        let posts = search_page(t, site, head, 1).await?;
+        state.head = next;
+        if !commit(db, site, posts, None, generation).await? {
+            return Ok(());
+        }
+        if wrapped {
+            break;
+        }
     }
-    for _ in 1..MAX_QUERIES {
+    for _ in 0..BACKFILL_QUERIES {
         if state.exhausted {
             break;
         }
@@ -968,7 +989,7 @@ mod tests {
         refresh_site(&db, &t, &site, &tags, 0).await.unwrap();
         let state = db.call(|c| store::state(c, "fixture")).await.unwrap();
         assert_eq!(state.page, 3);
-        assert_eq!(state.head, 1);
+        assert_eq!(state.head, 0);
         let queries = requests.lock().unwrap().clone();
         let decoded = queries
             .iter()
@@ -986,6 +1007,7 @@ mod tests {
             decoded,
             vec![
                 "fixture_artist score:>10",
+                "~fox ~wolf",
                 "fixture_artist score:>10",
                 "~fox ~wolf"
             ]
@@ -1067,6 +1089,29 @@ mod tests {
                 .await
                 .unwrap()
         );
+    }
+    #[test]
+    fn subscription_batches_use_each_engines_or_and_one_tag_where_none_is_verified() {
+        let site = |engine: &str, base: &str| Site {
+            id: "fixture".into(),
+            name: "Fixture".into(),
+            engine: engine.into(),
+            base: base.into(),
+            username: None,
+            key: None,
+            cookie: None,
+            enabled: true,
+            public: Value::Null,
+        };
+        let tags = || vec!["fox".to_string(), "grefina_(noirchaton4)".to_string()];
+        let rule34 = site("gelbooru", "https://api.rule34.xxx");
+        assert_eq!(batch_size(&rule34), 20);
+        assert_eq!(any_of(&rule34, tags()), ["( fox ~ grefina_(noirchaton4) )"]);
+        assert_eq!(any_of(&rule34, vec!["fox".into()]), ["fox"]);
+        let e621 = site("e621", "https://e621.net");
+        assert_eq!(any_of(&e621, tags()), ["~fox", "~grefina_(noirchaton4)"]);
+        assert_eq!(batch_size(&site("gelbooru", "https://gelbooru.com")), 1);
+        assert_eq!(batch_size(&site("moebooru", "https://yande.re")), 1);
     }
     #[test]
     fn subscription_batches_rotate_simple_tags_and_isolate_expressions() {
