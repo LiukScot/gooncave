@@ -550,15 +550,6 @@
   height: 1rem;
 }
 
-/* In a pill the logos overlap a little, so several sites take little more room than one. */
-.subscription-pill .subscription-item-origin {
-  gap: 0;
-}
-
-.subscription-pill .subscription-item-origin > * + * {
-  margin-left: -0.25rem;
-}
-
 .subscription-item-logo > img,
 .subscription-item-logo > svg {
   display: block;
