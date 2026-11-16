@@ -46,7 +46,10 @@ pub(crate) fn still_untagged(c: &Connection, ids: &[String]) -> Result<Vec<Strin
         WHERE folders.user_id=?1 AND f.location_type='LOCAL' AND NOT EXISTS(SELECT 1 FROM wd14_applied a WHERE a.file_id=f.id AND a.sha256=f.sha256 AND a.model=?2)
         AND f.id IN (SELECT value FROM json_each(?3))")?;
     let found = statement
-        .query_map(params![OWNER_ID, REVISION, serde_json::json!(ids).to_string()], |r| r.get(0))?
+        .query_map(
+            params![OWNER_ID, REVISION, serde_json::json!(ids).to_string()],
+            |r| r.get(0),
+        )?
         .collect::<rusqlite::Result<_>>()?;
     Ok(found)
 }

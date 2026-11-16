@@ -674,7 +674,11 @@ pub(crate) async fn refresh(
         // every automatic refresh would name a failure that did not happen now.
         let refreshed = sites.iter().map(|s| s.id.as_str()).collect::<HashSet<_>>();
         if let Some(errors) = result["errors"].as_array_mut() {
-            errors.retain(|e| e["siteId"].as_str().is_some_and(|id| refreshed.contains(id)));
+            errors.retain(|e| {
+                e["siteId"]
+                    .as_str()
+                    .is_some_and(|id| refreshed.contains(id))
+            });
         }
     }
     Ok(result)
