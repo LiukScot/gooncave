@@ -6,45 +6,27 @@ on:
 permissions:
   contents: read
 jobs:
-  conv:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        precision: [mixed, fp32]
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
-      - run: |
-          python3 -m pip install --quiet coremltools numpy
-          cat > conv.py <<'PY'
-          import numpy as np, coremltools as ct
-          from coremltools.converters.mil import Builder as mb
-          rng = np.random.default_rng(0)
-          def reference(x, w, s):
-              n, c, h, wd = x.shape; o, _, k, _ = w.shape
-              patches = x.reshape(n, c, h // s, s, wd // s, s)[:, :, :, :k, :, :k]
-              return np.einsum("nchiwj,ocij->nohw", patches, w)
-          def split(x, w, k):
-              # A k-by-k convolution with stride k is a 1x1 convolution over the k*k strided slices.
-              parts = [mb.slice_by_index(x=x, begin=[0, 0, i, j], end=list(x.shape), stride=[1, 1, k, k]) for i in range(k) for j in range(k)]
-              weight = np.concatenate([w[:, :, i, j] for i in range(k) for j in range(k)], axis=1)[:, :, None, None]
-              return mb.conv(x=mb.concat(values=parts, axis=1), weight=weight)
-          cases = [(128, 112, 2, "same"), (128, 112, 2, "split"), (128, 56, 2, "same"), (64, 112, 2, "same"), (128, 112, 1, "same"),
-                   (128, 112, 2, "same16"), (256, 56, 2, "split"), (512, 28, 2, "split"), (512, 28, 2, "same")]
-          for c, size, k, pad in cases:
-              x = rng.standard_normal((1, c, size, size)).astype(np.float32)
-              w = rng.standard_normal((2 * c, c, k, k)).astype(np.float32)
-              @mb.program(input_specs=[mb.TensorSpec(shape=x.shape)], opset_version=ct.target.iOS16)
-              def prog(x):
-                  if pad == "split":
-                      return split(x, w, k)
-                  return mb.conv(x=x, weight=w, strides=[k, k], pad_type="same")
-              precision = ct.precision.FLOAT16 if pad == "same16" else ct.precision.FLOAT32
-              for unit in ("CPU_ONLY", "CPU_AND_NE"):
-                  m = ct.convert(prog, convert_to="mlprogram", compute_precision=precision,
-                                 compute_units=getattr(ct.ComputeUnit, unit), minimum_deployment_target=ct.target.iOS16)
-                  out = list(m.predict({"x": x}).values())[0]
-                  ref = reference(x, w, k)
-                  err = np.abs(out - ref).max() / np.abs(ref).max()
-                  print(f"c={c} size={size} k={k} {pad} {unit}: relative error {err:.2e}", flush=True)
-          PY
-          python3 conv.py 2>&1 | grep -E 'relative error|Error|Traceback'
+      - env:
+          PRECISION: ${{ matrix.precision }}
+        run: |
+          python3 -m pip install --quiet tensorflow coremltools numpy pillow huggingface_hub
+          if [ "$PRECISION" = fp32 ]; then
+            sed -i '' 's/compute_precision=.*/compute_precision=ct.precision.FLOAT32,/' ios/wd14/convert.py
+          fi
+          python3 ios/wd14/convert.py > /dev/null 2>&1
+          curl --fail --location --silent --show-error --output selected_tags.csv \
+            https://huggingface.co/SmilingWolf/wd-v1-4-convnextv2-tagger-v2/resolve/dbd4dbe553ee51feb3bc745b614fb762080e3912/selected_tags.csv
+          shasum -a 256 WD14.mlpackage/Manifest.json WD14.mlpackage/Data/com.apple.CoreML/model.mlmodel WD14.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+          python3 -I ios/wd14/check.py WD14.mlpackage selected_tags.csv
