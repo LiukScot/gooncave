@@ -28,12 +28,9 @@ import {
 import { useErrorToast } from '@/lib/useErrorToast';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
-// Four rows of pills and half of the fifth, which fades (app.css: .subscription-pills-fold).
-const PILLS_FOLD = 'var(--subscription-pills-fold)';
-// Five rows show whole; a sixth folds the block (half a row is 1.125rem with a mouse, 1.375rem by touch).
-const PILLS_SLACK_REM = 1.5;
-// About one row of pool covers.
-const COVERS_FOLD = '17rem';
+// Rows shown whole before Show more; one row more is shown whole too.
+const PILL_ROWS = 8;
+const COVER_ROWS = 3;
 
 const HELP =
   "Searches, artists and pools are stored in GoonCave and run on every configured booru. Spaces and operators such as score:>10 are kept. A single name that is an artist is followed as one: it is also synced both ways with each FurAffinity account’s watchlist, so following or unfollowing on either side is copied to the other. Other tags are never followed on FurAffinity.";
@@ -88,20 +85,18 @@ function SubscriptionItem({
   );
 }
 
-/** Searches, artists or pools: a titled block with how many it shows, folded past `fold`. */
+/** Searches, artists or pools: a titled block with how many it shows, folded after `rows` rows. */
 function SubscriptionGroup({
   title,
   count,
-  fold,
-  slackRem,
+  rows,
   className,
   children
 }: {
   title: string;
   count: number;
   /** Any CSS length. */
-  fold: string;
-  slackRem?: number;
+  rows: number;
   className: string;
   children: ReactNode;
 }) {
@@ -111,7 +106,7 @@ function SubscriptionGroup({
       <h3 className="appearance-group-title">
         {title} · {count}
       </h3>
-      <FoldedBox maxHeight={fold} slackRem={slackRem} className="subscription-fold">
+      <FoldedBox rows={rows} className="subscription-fold">
         <div className={className}>{children}</div>
       </FoldedBox>
     </section>
@@ -359,10 +354,10 @@ function Subscriptions() {
       {tags.length || artists.length || pools.length ? (
         shownTags.length || shownArtistSearches.length || shownArtists.length || shownPools.length ? (
           <>
-            <SubscriptionGroup title="Searches" count={shownTags.length} fold={PILLS_FOLD} slackRem={PILLS_SLACK_REM} className="subscription-pills">
+            <SubscriptionGroup title="Searches" count={shownTags.length} rows={PILL_ROWS} className="subscription-pills">
               {shownTags.map(searchItem)}
             </SubscriptionGroup>
-            <SubscriptionGroup title="Artists" count={shownArtists.length + shownArtistSearches.length} fold={PILLS_FOLD} slackRem={PILLS_SLACK_REM} className="subscription-pills">
+            <SubscriptionGroup title="Artists" count={shownArtists.length + shownArtistSearches.length} rows={PILL_ROWS} className="subscription-pills">
               {shownArtistSearches.map(searchItem)}
               {shownArtists.map((artist) => (
                 <SubscriptionItem
@@ -380,7 +375,7 @@ function Subscriptions() {
                 />
               ))}
             </SubscriptionGroup>
-            <SubscriptionGroup title="Pools" count={shownPools.length} fold={COVERS_FOLD} className="subscription-covers">
+            <SubscriptionGroup title="Pools" count={shownPools.length} rows={COVER_ROWS} className="subscription-covers">
               {shownPools.map((pool) => (
                 <SubscriptionItem
                   key={`${pool.siteId}:${pool.poolId}`}

@@ -913,7 +913,7 @@ test('subscriptions are managed from Settings', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
 });
 
-test('a block of subscriptions shows five rows whole and folds from the sixth', async ({ page }) => {
+test('a block of subscriptions shows nine rows whole and folds from the tenth', async ({ page }) => {
   await page.setViewportSize({ width: 500, height: 900 });
   let tags: string[] = [];
   // Each search is wide enough to take a row of its own; the score makes it a search, not an artist.
@@ -925,15 +925,22 @@ test('a block of subscriptions shows five rows whole and folds from the sixth', 
   const group = page.getByRole('region', { name: 'Searches' });
   const rows = () => group.locator('.subscription-item').evaluateAll((items) => new Set(items.map((item) => item.getBoundingClientRect().top)).size);
 
-  tags = searches(5);
+  tags = searches(9);
   await page.goto('/app/settings/subscriptions');
-  await expect(group.locator('.subscription-item')).toHaveCount(5);
-  expect(await rows()).toBe(5);
+  await expect(group.locator('.subscription-item')).toHaveCount(9);
+  expect(await rows()).toBe(9);
   await expect(group.getByRole('button', { name: 'Show more' })).toHaveCount(0);
 
-  tags = searches(6);
+  tags = searches(10);
   await page.reload();
-  await expect(group.locator('.subscription-item')).toHaveCount(6);
-  expect(await rows()).toBe(6);
-  await expect(group.getByRole('button', { name: 'Show more' })).toBeVisible();
+  await expect(group.locator('.subscription-item')).toHaveCount(10);
+  expect(await rows()).toBe(10);
+  const more = group.getByRole('button', { name: 'Show more' });
+  await expect(more).toBeVisible();
+  // Eight rows stay whole above the cut; the ninth fades and the tenth is hidden.
+  const cut = await group.locator('.subscription-fold > div').first().boundingBox();
+  const items = await group.locator('.subscription-item').evaluateAll((list) => list.map((item) => item.getBoundingClientRect().bottom));
+  expect(items[7]).toBeLessThanOrEqual(cut!.y + cut!.height);
+  expect(items[8]).toBeGreaterThan(cut!.y + cut!.height);
+  expect((await more.boundingBox())!.height).toBeGreaterThanOrEqual(36);
 });
