@@ -304,8 +304,8 @@ The future sync protocol transfers `wd14_results`; it never transfers the
 device-only `meta` enable flag, runtime, model cache or local applied rows.
 File sources lists WD14 for tag visibility and links to Extra for activation.
 Automatic source targets and Target all include only booru sites.
-The iPhone runs the same model through Core ML in 16-bit weights, supplied by the
-shell (`wd14_inference`) and downloaded as a 195.0 MB GitHub release asset.
+The iPhone runs the same model through Core ML in 32-bit floats on the CPU, supplied by
+the shell (`wd14_inference`) and downloaded as a 389.0 MB GitHub release asset.
 Windows and other desktop targets do not have a supported tagging runtime yet.
 
 ## Verification

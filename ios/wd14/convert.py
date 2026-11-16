@@ -1,6 +1,7 @@
 """Converts the desktop WD14 model to the Core ML package the iPhone downloads.
 
-Same model and revision as core/src/wd14_model.rs, from its Keras copy, with 16-bit weights.
+Same model and revision as core/src/wd14_model.rs, from its Keras copy, in 32-bit floats:
+16-bit weights change the tags of a solid-colour picture.
 Run with Python 3.12, tensorflow and coremltools 9; on Linux hide the GPU: CUDA_VISIBLE_DEVICES="".
 Writes WD14.mlpackage; its three files are the assets of the GitHub release the app downloads.
 """
@@ -8,16 +9,12 @@ import coremltools as ct
 import coremltools.converters.mil.frontend.tensorflow2.ops  # noqa: F401  registers the TF2 converters
 import numpy as np
 from coremltools.converters.mil import Builder as mb
-from coremltools.converters.mil.mil.block import curr_block
 from coremltools.converters.mil.frontend.tensorflow.tf_op_registry import _TF_OPS_REGISTRY, register_tf_op
 from huggingface_hub import snapshot_download
 
 REVISION = "dbd4dbe553ee51feb3bc745b614fb762080e3912"
 
 convert_conv = _TF_OPS_REGISTRY["Conv2D"]
-convert_layer_norm = _TF_OPS_REGISTRY["FusedBatchNormV3"]
-# Names of the operations that compute in fp32.
-FP32 = set()
 
 
 @register_tf_op(override=True)
@@ -51,21 +48,6 @@ def Conv2D(context, node):
     context.add(node.name, mb.transpose(x=result, perm=[0, 2, 3, 1], name=node.name))
 
 
-@register_tf_op(override=True)
-def FusedBatchNormV3(context, node):
-    """Keras's layer norms: their squared deviations pass the 65504 that fp16 holds."""
-    block = curr_block()
-    before = len(block.operations)
-    convert_layer_norm(context, node)
-    operations = list(block.operations)
-    FP32.update(op.name for op in operations[before:] if op.op_type != "const")
-
-
-def in_fp16(op):
-    """The GRN layers' squared sums reach about 1.8e6 in the first block, past fp16's 65504."""
-    return op.name not in FP32 and "_grn/" not in op.name
-
-
 model = snapshot_download(
     "SmilingWolf/wd-v1-4-convnextv2-tagger-v2",
     revision=REVISION,
@@ -77,7 +59,7 @@ converted = ct.convert(
     convert_to="mlprogram",
     # BGR pixels from 0 to 255, as core/src/wd14_model.rs `prepare` makes them.
     inputs=[ct.TensorType(shape=(1, 448, 448, 3), dtype=np.float32)],
-    compute_precision=ct.transform.FP16ComputePrecision(op_selector=in_fp16),
+    compute_precision=ct.precision.FLOAT32,
     minimum_deployment_target=ct.target.iOS16,
 )
 converted.save("WD14.mlpackage")

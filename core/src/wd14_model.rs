@@ -59,31 +59,31 @@ pub(crate) const ARTIFACTS: &[Artifact] = &[
     VOCABULARY,
 ];
 
-/// The same model as the desktop's, converted to a Core ML package with 16-bit weights.
+/// The same model as the desktop's, converted to a Core ML package in 32-bit floats.
 #[cfg(target_os = "ios")]
 pub(crate) const ARTIFACTS: &[Artifact] = &[
     Artifact {
         path: "WD14.mlpackage/Manifest.json",
         size: 617,
-        sha256: "34b1c1132f6d2a5de34f1b249f2c60fd19bd6084ec551c986d5575a640a5d34c",
+        sha256: "4e0692930895495db79261e6d7c1cadca4f63b5d799ed27c33d0caaa28f9a930",
         url: Some(
-            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-2/Manifest.json",
+            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-3/Manifest.json",
         ),
     },
     Artifact {
         path: "WD14.mlpackage/Data/com.apple.CoreML/model.mlmodel",
-        size: 735_488,
-        sha256: "05befe89a5040b07c6c25745e67f0a509c0995e96accb8ad7610eb73f7a92dd1",
+        size: 676_187,
+        sha256: "f0ad8f1c48b2454f1e7df3c8a8c3c46db9d252bfdbc95365be0c134ea834a4ac",
         url: Some(
-            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-2/model.mlmodel",
+            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-3/model.mlmodel",
         ),
     },
     Artifact {
         path: "WD14.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
-        size: 194_318_902,
-        sha256: "205953ebe1c0e8653cf7fb247235eaac6ceb88975af2e423559ece388a28ea41",
+        size: 388_035_884,
+        sha256: "ea00637852b31562446d002b2322bcda6f9245c712a8d4411fee8b7518d406c4",
         url: Some(
-            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-2/weight.bin",
+            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-3/weight.bin",
         ),
     },
     VOCABULARY,

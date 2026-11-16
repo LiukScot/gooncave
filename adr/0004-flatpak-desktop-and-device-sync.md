@@ -102,8 +102,9 @@ Both test builds come from `spikes/tauri-shell` on the branch
 
 ## Phone tagger
 
-The iPhone runs the desktop's WD14 model, converted to Core ML with 16-bit
-weights (195.0 MB with its vocabulary, 186 MiB) on the Neural Engine and CPU. Tags
+The iPhone runs the desktop's WD14 model, converted to Core ML in 32-bit
+floats (389.0 MB with its vocabulary), on the CPU. 16-bit weights, and the Neural
+Engine, which computes in 16 bits, changed six tags of a solid-colour picture. Tags
 sync across devices, so every device must produce the same tags; a smaller
 model would tag the same file differently on the phone and the desktop.
 `ios/wd14/check.py` compares its scores with the desktop model's.

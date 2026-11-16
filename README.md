@@ -145,10 +145,10 @@ FurAffinity in Accounts and sign in in the window that opens; when FurAffinity
 asks to check that you are a person, a window shows the check. Subscriptions opens the
 feed where you stopped. On Linux x86-64 computers with AVX2 and on the iPhone,
 Settings → Extra offers automatic WD14 tagging. It is off by default and shows
-the model download (388.7 MB on Linux, 195.0 MB on the iPhone) before you enable
+the model download (388.7 MB on Linux, 389.0 MB on the iPhone) before you enable
 it. It tags existing and new files; Stop
 tagging keeps completed tags. Duplicate processing and device sync are not
-available yet. The iPhone runs the same model with 16-bit weights on Core ML,
+available yet. The iPhone runs the same model in 32-bit floats on Core ML,
 so every device produces the same tags
 ([ADR 0004](adr/0004-flatpak-desktop-and-device-sync.md)).
 

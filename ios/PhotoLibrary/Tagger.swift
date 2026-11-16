@@ -43,8 +43,9 @@ public func taggerLoad(
     defer { lock.unlock() }
     do {
         let configuration = MLModelConfiguration()
-        // The GPU is not available to an app that is not on screen.
-        configuration.computeUnits = .cpuAndNeuralEngine
+        // The Neural Engine computes in 16 bits, which changes some tags, and the GPU is not
+        // available to an app that is not on screen.
+        configuration.computeUnits = .cpuOnly
         let url = try compiled(URL(fileURLWithPath: String(cString: package)))
         model = try MLModel(contentsOf: url, configuration: configuration)
         return true
@@ -68,14 +69,10 @@ public func taggerRun(
             dataType: .float32, strides: [side * side * 3, side * 3, 3, 1] as [NSNumber])
         let features = try MLDictionaryFeatureProvider(dictionary: ["input_1": MLFeatureValue(multiArray: array)])
         let result = try model.prediction(from: features)
-        guard let scores = result.featureValue(for: "Identity")?.multiArrayValue, scores.count == outputCount
+        guard let scores = result.featureValue(for: "Identity")?.multiArrayValue, scores.count == outputCount,
+            scores.dataType == .float32
         else { return fail("The model returned an unexpected result.", message, capacity) }
-        // The 16-bit model answers in 16-bit floats.
-        if scores.dataType == .float32 {
-            output.update(from: scores.dataPointer.assumingMemoryBound(to: Float.self), count: outputCount)
-        } else {
-            for index in 0..<outputCount { output[index] = scores[index].floatValue }
-        }
+        output.update(from: scores.dataPointer.assumingMemoryBound(to: Float.self), count: outputCount)
         return true
     } catch {
         return fail(error.localizedDescription, message, capacity)
