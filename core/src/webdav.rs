@@ -188,6 +188,7 @@ impl Folder {
         {
             return Err(too_large());
         }
+        let expected = response.content_length();
         let mut body = Vec::new();
         while let Some(chunk) = response
             .chunk()
@@ -198,6 +199,12 @@ impl Folder {
             if body.len() as u64 > MAX_DOWNLOAD_BYTES {
                 return Err(too_large());
             }
+        }
+        if let Some(expected) = expected.filter(|&n| n != body.len() as u64) {
+            eprintln!(
+                "[developer] The WebDAV folder announced {expected} bytes for a file and sent {}",
+                body.len()
+            );
         }
         Ok(Fetched::Found(body, etag))
     }

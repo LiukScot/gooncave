@@ -2274,6 +2274,7 @@ async fn cycle(db: &Database, folder: &Folder, place: &str, trigger: Trigger) ->
                     Fetched::Found(bytes, etag) => (Some(bytes), etag),
                     _ => (None, None),
                 };
+                let received = bytes.as_ref().map_or(0, Vec::len);
                 let read = db
                     .sync_read(move |c| newer_than_stored(c, bytes.as_deref()))
                     .await?;
@@ -2284,6 +2285,10 @@ async fn cycle(db: &Database, folder: &Folder, place: &str, trigger: Trigger) ->
                     Err(Unreadable::Damaged) => {
                         eprintln!(
                             "The sync file is damaged; rebuilding it from the latest backup."
+                        );
+                        eprintln!(
+                            "[developer] The damaged sync file had {received} bytes and ETag {}",
+                            etag.as_deref().unwrap_or("none")
                         );
                         (latest_backup(db, folder).await?, true)
                     }
