@@ -252,10 +252,18 @@ async fn process(db: &Database, generation: u64) -> Result<()> {
         if *db.wd14.cancel.borrow() != generation {
             return Ok(());
         }
-        let exclusions = failed.clone();
-        let next = db
-            .call(move |c| wd14_store::pending(c, &exclusions))
+        let earlier = std::mem::take(&mut failed);
+        let next;
+        (failed, next) = db
+            .call(move |c| {
+                let failed = wd14_store::still_untagged(c, &earlier)?;
+                let next = wd14_store::pending(c, &failed)?;
+                Ok((failed, next))
+            })
             .await?;
+        if failed.is_empty() {
+            last_error = None;
+        }
         *db.wd14.progress.lock().await = json!({"state":if next.is_some(){"tagging"}else if failed.is_empty(){"ready"}else{"failed"},"downloadedBytes":wd14_model::model_bytes(),"failed":failed.len(),"error":last_error});
         let Some(file) = next else {
             let idle = *idle_since.get_or_insert_with(tokio::time::Instant::now);
