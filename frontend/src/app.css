@@ -583,11 +583,12 @@
   --subscription-pills-gap: 0.375rem;
 }
 
-/* The edit button sits beside the title, as the tags' one does in the detail view. */
+/* The edit button is the tags' one of the detail view, at the block's top right. */
 .subscription-group-head {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  justify-content: space-between;
+  gap: 0.75rem;
   margin-bottom: 0.625rem;
 }
 
