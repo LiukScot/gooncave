@@ -84,7 +84,11 @@ it('shows a tag-save error as a toast and leaves the form alone', async () => {
       </QueryClientProvider>
     );
   });
-  await waitFor(() => container.textContent?.includes('could not be synced') ?? false);
+  await waitFor(() =>
+    vi.mocked(toast.error).mock.calls.some(([message]) => String(message).includes('FurAffinity watchlist not synced'))
+  );
+  expect(container.textContent).not.toContain('watchlist');
+  vi.mocked(toast.error).mockClear();
 
   const textarea = container.querySelector('textarea');
   if (!textarea) throw new Error('Tag textarea was not rendered');

@@ -138,8 +138,15 @@ function Subscriptions() {
   const unfollowPool = usePoolSubscriptionMutation(false);
   const followArtist = useArtistSubscriptionMutation(true);
   const unfollowArtist = useArtistSubscriptionMutation(false);
-  const artistError =
-    followArtist.error?.message ?? unfollowArtist.error?.message;
+  useErrorToast(followArtist.error ?? unfollowArtist.error);
+  useErrorToast(subscriptions.error);
+  useErrorToast(poolQuery.error);
+  useErrorToast(
+    artistErrors.length
+      ? `${artistErrors.map((failure) => failure.siteName).join(', ')} watchlist not synced. Your changes are kept for the next sync.`
+      : null,
+    { action: { label: 'Accounts', onClick: () => void navigate({ to: '/app/settings/accounts' }) } }
+  );
   const [filterText, setFilterText] = useState('');
   const [hiddenSites, setHiddenSites] = useState<Set<string>>(new Set());
   const query = filterText.trim().toLowerCase();
@@ -427,28 +434,6 @@ function Subscriptions() {
           hit Subscribe at the top.
         </p>
       )}
-      {artistErrors.map((failure) => (
-        <p className="text-destructive text-sm mb-3" key={failure.siteId}>
-          The watchlist of {failure.siteName} could not be synced:{' '}
-          {failure.error} Artists you follow or unfollow here are kept and sent
-          to FurAffinity on the next sync. Check the account in{' '}
-          <Link to="/app/settings/accounts">Accounts</Link>, then reopen this
-          page.
-        </p>
-      ))}
-      {subscriptions.error ? (
-        <p className="text-destructive text-sm mb-3">
-          {subscriptions.error.message}
-        </p>
-      ) : null}
-      {poolQuery.error ? (
-        <p className="text-destructive text-sm mb-3">
-          {poolQuery.error.message}
-        </p>
-      ) : null}
-      {artistError ? (
-        <p className="text-destructive text-sm mb-3">{artistError}</p>
-      ) : null}
 
       <details className="subscription-text-editor">
         <summary className="text-sm font-medium">Edit as text</summary>
