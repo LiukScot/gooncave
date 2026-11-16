@@ -23,19 +23,28 @@ jobs:
               n, c, h, wd = x.shape; o, _, k, _ = w.shape
               patches = x.reshape(n, c, h // s, s, wd // s, s)[:, :, :, :k, :, :k]
               return np.einsum("nchiwj,ocij->nohw", patches, w)
-          for c, size, k, pad in [(3, 448, 4, "same"), (128, 112, 2, "same"), (128, 112, 2, "valid"), (16, 8, 2, "same"), (256, 56, 2, "same")]:
+          def split(x, w, k):
+              # A k-by-k convolution with stride k is a 1x1 convolution over the k*k strided slices.
+              parts = [mb.slice_by_index(x=x, begin=[0, 0, i, j], end=list(x.shape), stride=[1, 1, k, k]) for i in range(k) for j in range(k)]
+              weight = np.concatenate([w[:, :, i, j] for i in range(k) for j in range(k)], axis=1)[:, :, None, None]
+              return mb.conv(x=mb.concat(values=parts, axis=1), weight=weight)
+          cases = [(128, 112, 2, "same"), (128, 112, 2, "split"), (128, 56, 2, "same"), (64, 112, 2, "same"), (128, 112, 1, "same"),
+                   (128, 112, 2, "same16"), (256, 56, 2, "split"), (512, 28, 2, "split"), (512, 28, 2, "same")]
+          for c, size, k, pad in cases:
               x = rng.standard_normal((1, c, size, size)).astype(np.float32)
-              w = rng.standard_normal((2 * c if c > 3 else 128, c, k, k)).astype(np.float32)
+              w = rng.standard_normal((2 * c, c, k, k)).astype(np.float32)
               @mb.program(input_specs=[mb.TensorSpec(shape=x.shape)], opset_version=ct.target.iOS16)
               def prog(x):
-                  return mb.conv(x=x, weight=w, strides=[k, k], pad_type=pad)
-              for unit in ("CPU_ONLY", "ALL"):
-                  m = ct.convert(prog, convert_to="mlprogram", compute_precision=ct.precision.FLOAT32,
+                  if pad == "split":
+                      return split(x, w, k)
+                  return mb.conv(x=x, weight=w, strides=[k, k], pad_type="same")
+              precision = ct.precision.FLOAT16 if pad == "same16" else ct.precision.FLOAT32
+              for unit in ("CPU_ONLY", "CPU_AND_NE"):
+                  m = ct.convert(prog, convert_to="mlprogram", compute_precision=precision,
                                  compute_units=getattr(ct.ComputeUnit, unit), minimum_deployment_target=ct.target.iOS16)
                   out = list(m.predict({"x": x}).values())[0]
                   ref = reference(x, w, k)
                   err = np.abs(out - ref).max() / np.abs(ref).max()
-                  shifted = np.abs(out[:, :, 1:, 1:] - ref[:, :, :-1, :-1]).max() / np.abs(ref).max()
-                  print(f"c={c} size={size} k={k} {pad} {unit}: relative error {err:.2e}, against a one-pixel shift {shifted:.2e}", flush=True)
+                  print(f"c={c} size={size} k={k} {pad} {unit}: relative error {err:.2e}", flush=True)
           PY
           python3 conv.py 2>&1 | grep -E 'relative error|Error|Traceback'
