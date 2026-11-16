@@ -550,6 +550,15 @@
   height: 1rem;
 }
 
+/* In a pill the logos overlap a little, so several sites take little more room than one. */
+.subscription-pill .subscription-item-origin {
+  gap: 0;
+}
+
+.subscription-pill .subscription-item-origin > * + * {
+  margin-left: -0.25rem;
+}
+
 .subscription-item-logo > img,
 .subscription-item-logo > svg {
   display: block;
@@ -577,17 +586,36 @@
   gap: var(--subscription-pills-gap);
 }
 
-/* Pill sizes for a block of subscriptions and its Show more. */
+/* Compact pills on every screen, so a phone fits about three names in a row. */
 .subscription-fold {
-  --subscription-pill-height: 2.75rem;
+  --subscription-pill-height: 2.25rem;
   --subscription-pills-gap: 0.375rem;
 }
 
-/* The button is a text link; its padding gives it a finger-sized target without moving the text. */
-.subscription-fold > .folded-box-toggle {
-  min-height: var(--subscription-pill-height);
-  margin-left: -0.75rem;
+.subscription-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* Show more and Edit are text links; their padding gives them a finger-sized target without
+   moving the text or the block. */
+:is(.subscription-fold > .folded-box-toggle, .subscription-group-edit) {
+  min-height: 2.75rem;
   padding-inline: 0.75rem;
+}
+
+.subscription-fold > .folded-box-toggle {
+  margin-left: -0.75rem;
+}
+
+.subscription-group-edit {
+  margin: -0.875rem -0.75rem -0.875rem 0;
+}
+
+.subscription-group:not(.is-editing) .subscription-item-remove {
+  display: none;
 }
 
 .subscription-pill {
@@ -599,7 +627,12 @@
 }
 
 .subscription-pill > .subscription-item-open {
-  padding: 0.375rem 0.25rem 0.375rem 0.875rem;
+  padding: 0.25rem 0.875rem;
+  border-radius: 999px;
+}
+
+.subscription-group.is-editing .subscription-pill > .subscription-item-open {
+  padding-right: 0.25rem;
   border-radius: 999px 0 0 999px;
 }
 
@@ -608,11 +641,13 @@
   border-radius: 0 999px 999px 0;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .subscription-fold {
-    --subscription-pill-height: 2.25rem;
+@media (max-width: 767px) {
+  .subscription-group {
+    padding: 1rem;
   }
+}
 
+@media (hover: hover) and (pointer: fine) {
   .subscription-pill > .subscription-item-remove {
     width: 2rem;
   }

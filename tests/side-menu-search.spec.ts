@@ -944,3 +944,22 @@ test('a block of subscriptions shows nine rows whole and folds from the tenth', 
   expect(items[8]).toBeGreaterThan(cut!.y + cut!.height);
   expect((await more.boundingBox())!.height).toBeGreaterThanOrEqual(36);
 });
+
+test('a block of subscriptions shows its remove buttons only while editing', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.route(/\/settings\/subscriptions$/, (route) => route.request().resourceType() === 'document'
+    ? route.continue()
+    : route.fulfill({ json: { tags: ['fox', 'wolf', 'cat'], artists: [], siteHits: {}, artistErrors: [], targets: [], artistSearches: [] } }));
+  await page.route('**/settings/subscriptions/pools', (route) => route.fulfill({ json: { pools: [] } }));
+  await page.goto('/app/settings/subscriptions');
+  const group = page.getByRole('region', { name: 'Searches' });
+  await expect(group.locator('.subscription-item')).toHaveCount(3);
+  await expect(group.getByRole('button', { name: /^Unsubscribe from/ })).toHaveCount(0);
+
+  await group.getByRole('button', { name: 'Edit' }).click();
+  await expect(group.getByRole('button', { name: /^Unsubscribe from/ })).toHaveCount(3);
+  await expect(group.getByRole('button', { name: 'Unsubscribe from fox' })).toBeVisible();
+
+  await group.getByRole('button', { name: 'Done' }).click();
+  await expect(group.getByRole('button', { name: /^Unsubscribe from/ })).toHaveCount(0);
+});

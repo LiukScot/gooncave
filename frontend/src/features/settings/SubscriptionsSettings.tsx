@@ -95,17 +95,28 @@ function SubscriptionGroup({
 }: {
   title: string;
   count: number;
-  /** Any CSS length. */
   rows: number;
   className: string;
   children: ReactNode;
 }) {
+  // The remove buttons stay hidden until Edit: one per entry took half of every pill.
+  const [editing, setEditing] = useState(false);
   if (count === 0) return null;
   return (
-    <section className="appearance-group" aria-label={title}>
-      <h3 className="appearance-group-title">
-        {title} · {count}
-      </h3>
+    <section className={`appearance-group subscription-group${editing ? ' is-editing' : ''}`} aria-label={title}>
+      <div className="subscription-group-head">
+        <h3 className="appearance-group-title">
+          {title} · {count}
+        </h3>
+        <button
+          type="button"
+          className="btn btn-link btn-sm subscription-group-edit"
+          aria-pressed={editing}
+          onClick={() => setEditing((current) => !current)}
+        >
+          {editing ? 'Done' : 'Edit'}
+        </button>
+      </div>
       <FoldedBox rows={rows} className="subscription-fold">
         <div className={className}>{children}</div>
       </FoldedBox>
