@@ -10,6 +10,6 @@
     "test": "node --test *.test.js"
   },
   "devDependencies": {
-    "electron": "44.9.3"
+    "electron": "44.10.1"
   }
 }
