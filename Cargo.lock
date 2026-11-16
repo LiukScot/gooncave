@@ -1678,6 +1678,7 @@ dependencies = [
 name = "gooncave-ios"
 version = "0.0.0"
 dependencies = [
+ "base64 0.23.1",
  "block2",
  "dispatch2",
  "gooncave-core",

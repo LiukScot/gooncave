@@ -26,6 +26,7 @@ tokio = { version = "1", features = ["net", "rt-multi-thread", "sync", "time"] }
 # Tauri has no setting for the back and forward edge swipe, so the app turns it on
 # directly on the WKWebView. ImageIO and AVFoundation decode media in place of FFmpeg;
 # WebKit and UIKit run the FurAffinity browser.
+base64 = "0.23"
 block2 = "0.6"
 libloading = "0.9"
 dispatch2 = "0.3"
