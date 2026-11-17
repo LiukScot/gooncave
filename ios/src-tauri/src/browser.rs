@@ -493,6 +493,51 @@ impl Engine {
     }
 }
 
+/// The cookies WebKit holds for `origin`, by name, each marked when it ends with the app.
+/// Names only: values are sessions.
+async fn cookie_names(origin: &str) -> Result<String, String> {
+    let host = origin.strip_prefix("https://").unwrap_or(origin).to_owned();
+    main_thread_later(move |_, mtm| {
+        let (reply, answer) = oneshot::channel();
+        let reply = Cell::new(Some(reply));
+        let read = RcBlock::new(move |jar: NonNull<NSArray<NSHTTPCookie>>| {
+            // SAFETY: WebKit passes a valid array.
+            let jar = unsafe { jar.as_ref() };
+            let names: Vec<String> = jar
+                .iter()
+                .filter(|cookie| {
+                    let domain = cookie.domain().to_string();
+                    let domain = domain.trim_start_matches('.');
+                    host == domain || host.ends_with(&format!(".{domain}"))
+                })
+                .map(|cookie| {
+                    let name = cookie.name().to_string();
+                    if cookie.isSessionOnly() {
+                        format!("{name} (until the app closes)")
+                    } else {
+                        name
+                    }
+                })
+                .collect();
+            if let Some(reply) = reply.take() {
+                let _ = reply.send(Ok(if names.is_empty() {
+                    "none".to_owned()
+                } else {
+                    names.join(", ")
+                }));
+            }
+        });
+        // SAFETY: the data store is WebKit's own and lives for the app's lifetime.
+        unsafe {
+            WKWebsiteDataStore::defaultDataStore(mtm)
+                .httpCookieStore()
+                .getAllCookies(&read);
+        }
+        answer
+    })
+    .await
+}
+
 /// Which web view a script runs in.
 #[derive(Clone, Copy)]
 enum On {
@@ -556,6 +601,13 @@ async fn ready(site: &'static Site, origin: &str, force: bool) -> Result<(), Str
     }
     if !challenged().await.unwrap_or(false) {
         return Ok(());
+    }
+    match cookie_names(origin).await {
+        Ok(names) => eprintln!(
+            "[developer] {} asked GoonCave's browser for its check; the browser holds the cookies {names}",
+            site.name
+        ),
+        Err(error) => eprintln!("[developer] Cannot list the cookies of GoonCave's browser: {error}"),
     }
     let _sheet = Sheet;
     main_thread(move |engine, mtm| {
