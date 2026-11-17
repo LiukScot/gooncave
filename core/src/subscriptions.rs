@@ -599,10 +599,13 @@ pub(crate) async fn refresh(
 ) -> Result<Value> {
     let _guard = match db.subscriptions.try_lock() {
         Ok(guard) => guard,
-        Err(_) => {
+        // The running refresh covers an automatic one; one the person asked for runs after it,
+        // since an automatic refresh leaves out the browser-only sites.
+        Err(_) if background => {
             let _wait = db.subscriptions.lock().await;
             return saved_errors(db).await;
         }
+        Err(_) => db.subscriptions.lock().await,
     };
     let sites = boorus::sites(db)
         .await?
@@ -993,6 +996,29 @@ mod tests {
         let mut site = boorus::site(db, "fixture".into()).await.unwrap().unwrap();
         site.base = base;
         site
+    }
+    #[tokio::test]
+    async fn a_refresh_asked_for_during_an_automatic_one_still_reads_the_sites() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        // `.example` never answers, so a refresh that reads the site saves its error.
+        setup(&db, "https://fixture.example".into()).await;
+        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox"])))
+            .await
+            .unwrap();
+        // The automatic refresh holds the lock, and it leaves out browser-only sites.
+        let automatic = db.subscriptions.clone().lock_owned().await;
+        let asked = tokio::spawn({
+            let db = db.clone();
+            async move { refresh(&db, &Transport::default(), 1, false).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        drop(automatic);
+        let result = asked.await.unwrap().unwrap();
+        assert_eq!(
+            result["errors"][0]["siteId"], "fixture",
+            "the refresh the person asked for read the site: {result}"
+        );
     }
     #[tokio::test]
     async fn subscription_refresh_keeps_compound_searches_and_backfills_without_moving_posts() {
