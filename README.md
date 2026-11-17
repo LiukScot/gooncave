@@ -49,33 +49,8 @@ Your favorites are scattered across e621, Danbooru, Gelbooru and half a dozen ot
 
 ## Download
 
-GoonCave for Linux is a Flatpak from GoonCave's own repository. It needs a
-64-bit Intel or AMD computer and [Flatpak](https://flatpak.org/setup/).
-
-1. Run this in a terminal. It installs GoonCave and, the first time, the GNOME
-   51 runtime it runs on; Flatpak downloads the runtime from Flathub:
-
-   ```bash
-   flatpak install --user https://liukscot.github.io/gooncave/gooncave.flatpakref
-   ```
-
-2. Open GoonCave from your applications menu, or run
-   `flatpak run app.gooncave.desktop`.
-
-New releases arrive in GNOME Software, KDE Discover or `flatpak update`, like
-any other app. Your library and settings stay.
-
-If you installed a `GoonCave-linux-x86_64.flatpak` file from an earlier
-release, that copy does not update by itself. Run this once to move it to the
-updating repository; your library and settings stay:
-
-```bash
-flatpak remote-add --user --if-not-exists --from gooncave https://liukscot.github.io/gooncave/gooncave.flatpakrepo && flatpak install --user --reinstall gooncave app.gooncave.desktop
-```
-
-An iPhone app follows; see the [iOS section](ios/README.md). Devices share
-their library through a WebDAV folder; see [sync](docs/sync.md). Desktop and
-iPhone have [one release version](docs/versioning.md).
+Download GoonCave from the
+[latest release](https://github.com/LiukScot/gooncave/releases/latest).
 
 ## Development
 

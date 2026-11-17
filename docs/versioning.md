@@ -81,10 +81,12 @@ The workflow:
 1. Chooses one version from merged changes or the explicit override.
 2. Builds Flatpak and IPA from the workflow's `main` commit with that version.
 3. Waits for both builds and tests to succeed.
-4. Creates a draft titled `GoonCave <version>`, tagged `v<version>`, with the
-   IPA and empty notes, then pushes the tag at that same commit. It never
-   carries old binaries into a new release. The Flatpak stays in the run's
-   `gooncave-desktop` artifact.
+4. Signs the Flatpak and points it at the Flatpak repository
+   (`.github/scripts/flatpak-bundle.sh`), so an install made from the file
+   updates from that repository.
+5. Creates a draft titled `GoonCave <version>`, tagged `v<version>`, with the
+   IPA, the Flatpak and empty notes, then pushes the tag at that same commit.
+   It never carries old binaries into a new release.
 
 A build failure prevents the draft. No checksum or metadata files are attached.
 The Flatpak commit records the shared version, and the iPhone bundle receives
@@ -100,19 +102,22 @@ between the two tags is not a release fix. Write for app users who have never
 seen the code, without PR numbers or internal details. Reread each item before
 reporting the draft ready, as [AGENTS.md](../AGENTS.md) describes.
 
-Test the IPA attached to the draft, and the Flatpak from the run's
-`gooncave-desktop` artifact, before publishing. Only the owner publishes.
-Publishing starts the `Flatpak repository` workflow: it signs that run's
-Flatpak into a Flatpak repository on GitHub Pages
+Test the IPA and the Flatpak attached to the draft before publishing. Only the
+owner publishes. Publishing starts the `Flatpak repository` workflow: it puts
+the release's Flatpak into a signed Flatpak repository on GitHub Pages
 (`https://liukscot.github.io/gooncave/`), from which installed desktop copies
 update. The repository holds only the latest published release. To publish it
-again, run `gh workflow run flatpak-repo.yml --ref main`; this fails once the
-run's artifact has expired (90 days by default).
+again, run `gh workflow run flatpak-repo.yml --ref main`.
 
-The workflow needs GitHub Pages with the source set to GitHub Actions, and the
-`FLATPAK_GPG_PRIVATE_KEY` secret holding an ASCII-armored signing key without a
-passphrase. Keep that key: installed copies trust only it, and a new key makes
-them stop updating until each user adds the repository again.
+Both workflows need the `FLATPAK_GPG_PRIVATE_KEY` secret holding an
+ASCII-armored signing key without a passphrase, and the repository workflow
+needs GitHub Pages with the source set to GitHub Actions. The public half is
+`desktop/flatpak/gooncave-repo.gpg`; each signed `.flatpak` file carries it,
+and both workflows stop if the secret holds another key. Keep that key:
+installed copies trust only it, and a new key makes them stop updating until
+each user installs again. To replace it, export the new public key with
+`gpg --export <fingerprint> > desktop/flatpak/gooncave-repo.gpg` in the same
+change that updates the secret.
 
 To reject a draft, the owner deletes the draft and its `v<version>`
 tag together, so the next run does not skip those changes.

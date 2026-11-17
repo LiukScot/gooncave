@@ -1,9 +1,8 @@
 name: Flatpak repository
 
-# Publishes the Flatpak of the latest published release to GitHub Pages, so
-# installed copies update from the software center. Drafts are never published.
-# The Flatpak is the gooncave-desktop artifact of the Weekly release run that
-# built the release's commit; releases attach no .flatpak file.
+# Publishes the Flatpak attached to the latest published release to GitHub
+# Pages, so installed copies update from the software center. Drafts are never
+# published.
 on:
   release:
     types: [published]
@@ -39,7 +38,6 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      actions: read
     env:
       GH_TOKEN: ${{ github.token }}
       SIGNING_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
@@ -53,18 +51,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y flatpak ostree
 
-      # Artifacts expire after the repository's retention period (90 days by default).
       - name: Download the Flatpak of the latest release
         run: |
           tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
-          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)
-          run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow weekly-release.yml --commit "$sha" \
-            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
-          if [[ -z "$run" ]]; then
-            echo "::error::No successful Weekly release run built $tag ($sha); its Flatpak cannot be published."
+          if ! gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+            --pattern GoonCave-linux-x86_64.flatpak --dir release; then
+            echo "::error::Release $tag has no GoonCave-linux-x86_64.flatpak; its Flatpak cannot be published."
             exit 1
           fi
-          gh run download "$run" --repo "$GITHUB_REPOSITORY" --name gooncave-desktop --dir release
 
       - name: Import the signing key
         run: |
