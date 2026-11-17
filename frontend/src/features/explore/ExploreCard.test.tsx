@@ -117,7 +117,7 @@ it('combines the Explore upvote and score without exposing a downvote', async ()
   expect(relations?.closest('.explore-card-bottom-left')).not.toBeNull();
   expect(upvote?.closest('.explore-card-actions')).not.toBeNull();
   expect(upvote?.nextElementSibling?.getAttribute('aria-label'))
-    .toBe('Favorite and save');
+    .toBe('Favorite');
 
   await act(async () => upvote?.click());
   expect(onVote).toHaveBeenCalledWith(post, 1);

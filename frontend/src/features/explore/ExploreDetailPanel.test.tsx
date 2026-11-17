@@ -247,7 +247,7 @@ it('keeps an optimistic favorite visibly active while the request is pending', a
   });
 
   const button = document.body.querySelector<HTMLButtonElement>(
-    'button[aria-label="Remove from favorites"]'
+    'button[aria-label="Unfavorite"]'
   );
   expect(button?.classList.contains('is-on')).toBe(true);
   expect(button?.disabled).toBe(false);

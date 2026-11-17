@@ -395,8 +395,8 @@ test('a parent post favorited from its child still shows the favorite after leav
   };
   await openChild();
   const actions = page.getByRole('group', { name: 'Post actions' });
-  await actions.getByRole('button', { name: 'Favorite and save' }).click();
-  await expect(actions.getByRole('button', { name: 'Remove from favorites' })).toBeVisible();
+  await actions.getByRole('button', { name: 'Favorite', exact: true }).click();
+  await expect(actions.getByRole('button', { name: 'Unfavorite', exact: true })).toBeVisible();
 
   // Explore unmounts, and its results and the related strip come back from what was kept.
   // The related post replaced the child's entry, so one step closes the post.
@@ -408,5 +408,5 @@ test('a parent post favorited from its child still shows the favorite after leav
   await page.goBack();
   await expect(page).toHaveURL(/\/app\/explore/);
   await openChild();
-  await expect(actions.getByRole('button', { name: 'Remove from favorites' })).toBeVisible();
+  await expect(actions.getByRole('button', { name: 'Unfavorite', exact: true })).toBeVisible();
 });

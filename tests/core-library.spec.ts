@@ -560,12 +560,12 @@ test('a post the person unfavorites is not favorited again as a matched copy', a
   await page.getByRole('button', { name: 'Open post 1 from Fixture', exact: false }).click();
   // Scoped: the heart on the grid's card has the same name, and it is the only match until the post opens.
   const actions = page.getByRole('group', { name: 'Post actions' });
-  await actions.getByRole('button', { name: 'Remove from favorites' }).click();
+  await actions.getByRole('button', { name: 'Unfavorite', exact: true }).click();
   await expect.poll(() => unfavorites.length).toBe(1);
   // Long enough for an automatic favorite to go out, were one queued.
   await page.waitForTimeout(2_000);
   expect(favorites).toEqual([]);
-  await expect(actions.getByRole('button', { name: 'Favorite and save' })).toBeVisible();
+  await expect(actions.getByRole('button', { name: 'Favorite', exact: true })).toBeVisible();
 });
 
 test('double-clicking the picture opens fullscreen without selecting it', async ({ page }) => {
