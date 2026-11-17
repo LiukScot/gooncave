@@ -92,8 +92,12 @@ fn matches_search(entry: &str, post_tags: &HashSet<String>) -> bool {
     }
     positive && all && (any || !optional)
 }
-/// The ids of the enabled sites where each saved search and artist has results, read from the
-/// saved feed without any request. FurAffinity sites count an artist from the watchlist snapshot.
+/// Newest saved posts per site that `site_hits` reads: the feed keeps a year of posts, and the
+/// settings page waits for this scan.
+const SITE_HITS_POSTS: i64 = 2000;
+/// The ids of the enabled sites where each saved search and artist has results among the newest
+/// `SITE_HITS_POSTS` saved posts, read without any request. FurAffinity sites count an artist from
+/// the watchlist snapshot.
 fn site_hits(
     c: &rusqlite::Connection,
     sites: &[Site],
@@ -107,9 +111,10 @@ fn site_hits(
             found.extend(entries.iter().filter(|e| seen.contains(**e)));
         } else {
             let mut statement = c.prepare(
-                "SELECT post_json FROM subscription_feed_items WHERE user_id=?1 AND site_id=?2",
+                "SELECT post_json FROM subscription_feed_items WHERE user_id=?1 AND site_id=?2
+                    ORDER BY sort_at DESC, discovered_at DESC LIMIT ?3",
             )?;
-            let mut rows = statement.query(params![OWNER_ID, site.id])?;
+            let mut rows = statement.query(params![OWNER_ID, site.id, SITE_HITS_POSTS])?;
             while let Some(row) = rows.next()? {
                 let post: Value = serde_json::from_str(&row.get::<_, String>(0)?)
                     .map_err(|e| Error::Storage(format!("Invalid saved subscription post: {e}")))?;
@@ -1517,6 +1522,34 @@ mod tests {
             .unwrap();
         assert_eq!(hits["wolf score:>5"], ["fixture"]);
         assert!(!hits.contains_key("fox"));
+    }
+    #[tokio::test]
+    async fn site_hits_reads_only_the_newest_saved_posts() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let sites = db
+            .call(|c| {
+                c.execute("INSERT INTO user_booru_sites(id,user_id,name,engine,base_url,is_preset,enabled,sort_order,created_at,updated_at)
+                    VALUES ('fixture',?1,'Fixture','e621','https://fixture.example',0,1,0,'2026-10-12','2026-10-12')",[OWNER_ID])?;
+                let post = |id: i64, tag: &str, at: &str| {
+                    json!({"remoteId":id.to_string(),"createdAt":at,"tags":[{"tag":tag,"category":"general"}],
+                        "previewUrl":null,"sampleUrl":null,"fileUrl":null})
+                };
+                let mut posts = vec![post(0, "cat", "2020-01-01T00:00:00.000Z")];
+                posts.extend((1..=SITE_HITS_POSTS).map(|id| post(id, "wolf", "2026-10-12T00:00:00.000Z")));
+                store::insert(c, "fixture", &posts)?;
+                Ok(())
+            })
+            .await
+            .and(boorus::sites(&db).await)
+            .unwrap();
+        let (wolf, cat) = ("wolf".to_owned(), "cat".to_owned());
+        let hits = db
+            .call(move |c| site_hits(c, &sites, &[&wolf, &cat]))
+            .await
+            .unwrap();
+        assert_eq!(hits["wolf"], ["fixture"]);
+        assert!(!hits.contains_key("cat"));
     }
     #[tokio::test]
     async fn watching_a_new_artist_keeps_the_saved_furaffinity_feed() {
