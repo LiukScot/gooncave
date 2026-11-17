@@ -648,16 +648,24 @@ async fn fetch(url: &str, cookie: Option<&str>) -> Result<Page, String> {
             eprintln!("Browser script returned no page: {error}");
             UNREACHABLE.to_owned()
         })?;
-        if value["challenged"].as_bool() == Some(true) && !force {
+        let challenged = value["challenged"].as_bool() == Some(true);
+        if challenged && !force {
             // The clearance expired since the worker's page loaded; get a new one.
             force = true;
             continue;
         }
+        let status = value["status"]
+            .as_u64()
+            .and_then(|status| u16::try_from(status).ok())
+            .ok_or_else(|| UNREACHABLE.to_owned())?;
+        if status >= 400 {
+            let cookies = cookie_names(origin)
+                .await
+                .unwrap_or_else(|error| format!("unknown ({error})"));
+            eprintln!("[developer] {origin} answered {status} to GoonCave's browser (cf-mitigated: {challenged}, after a new check: {force}); the browser holds the cookies {cookies}");
+        }
         return Ok(Page {
-            status: value["status"]
-                .as_u64()
-                .and_then(|status| u16::try_from(status).ok())
-                .ok_or_else(|| UNREACHABLE.to_owned())?,
+            status,
             body: value["body"].as_str().unwrap_or_default().to_owned(),
         });
     }
