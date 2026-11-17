@@ -8,11 +8,7 @@ set -euo pipefail
 bundle=$1
 site=$2
 url=${3%/}
-key=$(gpg --batch --list-secret-keys --with-colons | awk -F: '/^fpr/ { print $10; exit }')
-if [[ -z "$key" ]]; then
-  echo '::error::No signing key: set the FLATPAK_GPG_PRIVATE_KEY secret.'
-  exit 1
-fi
+key=$(bash "$(dirname "$0")/flatpak-key.sh")
 
 rm -rf "$site"
 mkdir -p "$site"

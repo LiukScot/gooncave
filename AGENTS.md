@@ -1,4 +1,4 @@
-version: 31
+version: 32
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -225,9 +225,10 @@ issues and PRs from being smaller than that cost.
 - Start a release only when the owner asks, or through the owner's weekly
   scheduled agent: `gh workflow run weekly-release.yml --ref main`.
   To choose one shared version, add `-f version=1.3.0`.
-- Attach `GoonCave-iphone.ipa` built by that run. Linux users get the same
-  run's Flatpak from the Flatpak repository once the owner publishes the
-  release; no `.flatpak` file is attached. Package filenames omit the version.
+- Attach `GoonCave-iphone.ipa` and `GoonCave-linux-x86_64.flatpak` built by
+  that run. The `.flatpak` file is signed and names the Flatpak repository, so
+  an install made from it updates from there once the owner publishes a
+  release. Package filenames omit the version.
   Attach no checksum or metadata files. Future platforms join the same version
   when approved.
 - After the draft is ready, write `**New**` and `**Fixed**` lists; omit an
