@@ -224,7 +224,9 @@ async fn sync_artists(db: &Database, t: &Transport, sites: &[Site]) -> Result<Ve
                 "{} artists left the list at once, so they were added back instead of unwatched on FurAffinity. Unfollow them one at a time.",
                 plan.unwatch.len()
             ))));
-            plan = store::reconcile(&watched, None, &local);
+            // Only the lost artists come back: the rest of the plan stays, so an artist unwatched
+            // on FurAffinity since the last sync is not watched again.
+            plan.local.append(&mut plan.unwatch);
         }
         if plan.local.len() > store::MAX_ARTISTS {
             // Saving it would leave a list GoonCave refuses to read back.
@@ -1560,6 +1562,29 @@ mod tests {
         db.call(move |c| store::save_seen_artists(c, "fixture", &watched.map(str::to_owned)))
             .await
             .unwrap();
+        let errors = sync_artists(&db, &t, &[site]).await.unwrap();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(watching(&fa), watched);
+        let (local, seen) = local_and_seen(&db).await;
+        assert_eq!(local, watched);
+        assert_eq!(seen.unwrap(), watched);
+        task.abort();
+    }
+    #[tokio::test]
+    async fn a_list_emptied_at_once_keeps_an_artist_unwatched_on_furaffinity_unwatched() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let watched = ["a", "b", "c", "d"];
+        let (site, fa, task) = fake_fa(&watched, &["a", "b", "c", "d", "x"], None).await;
+        let t = Transport {
+            allow_loopback: true,
+        };
+        db.call(|c| {
+            store::save_seen_artists(c, "fixture", &["a", "b", "c", "d", "x"].map(str::to_owned))
+        })
+        .await
+        .unwrap();
+        save_local(&db, &["x"]).await;
         let errors = sync_artists(&db, &t, &[site]).await.unwrap();
         assert_eq!(errors.len(), 1);
         assert_eq!(watching(&fa), watched);
