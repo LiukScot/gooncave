@@ -49,12 +49,11 @@ Your favorites are scattered across e621, Danbooru, Gelbooru and half a dozen ot
 
 ## Download
 
-GoonCave for Linux is a Flatpak. It needs a 64-bit Intel or AMD computer and
-[Flatpak](https://flatpak.org/setup/) with Flathub, which most Linux
-distributions include.
+GoonCave for Linux is a Flatpak from GoonCave's own repository. It needs a
+64-bit Intel or AMD computer and [Flatpak](https://flatpak.org/setup/).
 
 1. Run this in a terminal. It installs GoonCave and, the first time, the GNOME
-   51 runtime from Flathub:
+   51 runtime it runs on; Flatpak downloads the runtime from Flathub:
 
    ```bash
    flatpak install --user https://liukscot.github.io/gooncave/gooncave.flatpakref
@@ -74,27 +73,9 @@ updating repository; your library and settings stay:
 flatpak remote-add --user --if-not-exists --from gooncave https://liukscot.github.io/gooncave/gooncave.flatpakrepo && flatpak install --user --reinstall gooncave app.gooncave.desktop
 ```
 
-Closing the window quits GoonCave, so syncing and tagging stop with it.
-
 An iPhone app follows; see the [iOS section](ios/README.md). Devices share
 their library through a WebDAV folder; see [sync](docs/sync.md). Desktop and
 iPhone have [one release version](docs/versioning.md).
-
-## Rule34 account
-
-In **Settings → Accounts**, use `https://api.rule34.xxx` as the Base URL,
-with your Rule34 User ID and API key. The Rule34 suggestion fills this URL.
-Existing accounts keep their saved Base URL.
-
-The User ID and API key are on rule34.xxx under My Account → Options →
-API Access Credentials; tick "Generate New Key?" and save if it is empty.
-
-Adding or removing remote favorites uses the `rule34.xxx` website, which puts a
-browser check in front of its pages. In the desktop and iPhone apps, press
-**Sign in to Rule34** on the site's card: GoonCave opens the site in its own
-browser, which passes the check, and keeps the session. Without the apps, paste
-the Cookie header of a browser logged in to `rule34.xxx` instead; the website
-may then refuse it with a CAPTCHA even when Explore searches through the API work.
 
 ## Development
 
