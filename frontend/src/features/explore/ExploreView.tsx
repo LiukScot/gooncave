@@ -848,7 +848,7 @@ export function ExploreCard({
       <button
         type="button"
         className={`explore-action-btn${isFavorited ? ' is-active' : ''}`}
-        aria-label={isFavorited ? 'Remove from favorites' : 'Favorite and save'}
+        aria-label={isFavorited ? 'Unfavorite' : 'Favorite'}
         aria-pressed={isFavorited}
         aria-busy={currentFavoriteBusy}
         disabled={!favoriteAllowed}

@@ -22,7 +22,7 @@ use tokio::sync::{watch, Notify};
 use crate::favorite_library::{import, remove_local};
 /// How far a sync reads each site's favorites.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Mode {
+pub(crate) enum Mode {
     /// Every page; with `delete_missing`, also removes copies the site no longer lists.
     Full { delete_missing: bool },
     /// Stops at the first page whose posts are all already in the library.
@@ -88,6 +88,8 @@ pub(crate) struct Job {
     state: Mutex<Value>,
     pending: Mutex<Option<(Vec<Site>, Mode)>>,
     ready: Notify,
+    /// Notified when the person starts a sync, not when an automatic one does.
+    pub(crate) started: Notify,
     cancel: watch::Sender<bool>,
     pub(crate) changes: Mutex<HashMap<(String, String), bool>>,
     pub(crate) writes: tokio::sync::Mutex<()>,
@@ -100,6 +102,7 @@ impl Default for Job {
             ),
             pending: Mutex::new(None),
             ready: Notify::new(),
+            started: Notify::new(),
             cancel: watch::channel(false).0,
             changes: Mutex::new(HashMap::new()),
             writes: tokio::sync::Mutex::new(()),
@@ -215,13 +218,17 @@ async fn start(
     for site in &sites {
         remote::require(site, false)?;
     }
-    Ok(Json(begin(
+    let begun = begin(
         &db,
         sites,
         Mode::Full {
             delete_missing: v["deleteMissing"].as_bool().unwrap_or(false),
         },
-    )?))
+    )?;
+    if begun["status"] == "started" {
+        db.favorites.started.notify_one();
+    }
+    Ok(Json(begun))
 }
 fn begin(db: &Database, sites: Vec<Site>, mode: Mode) -> Result<Value> {
     let mut pending = db
@@ -243,11 +250,16 @@ fn begin(db: &Database, sites: Vec<Site>, mode: Mode) -> Result<Value> {
     db.favorites.ready.notify_one();
     Ok(json!({"status":"started","state":db.favorites.state()?}))
 }
-async fn cancel(State(db): State<Database>) -> Result<Json<Value>> {
+/// Asks a running sync to stop; whether one was running.
+pub(crate) fn cancel_running(db: &Database) -> Result<bool> {
     let running = db.favorites.state()?["status"] == "running";
     if running {
         db.favorites.cancel.send_replace(true);
     }
+    Ok(running)
+}
+async fn cancel(State(db): State<Database>) -> Result<Json<Value>> {
+    let running = cancel_running(&db)?;
     Ok(Json(
         json!({"status":if running {"cancelling"}else{"idle"},"state":db.favorites.state()?}),
     ))
@@ -327,7 +339,7 @@ pub(crate) async fn sync_now(db: &Database) -> Result<()> {
     Ok(())
 }
 /// Starts `mode` for the sites with automatic sync on; a sync already running makes it skip this turn.
-async fn sync_automatic(db: &Database, mode: Mode) -> Result<()> {
+pub(crate) async fn sync_automatic(db: &Database, mode: Mode) -> Result<()> {
     let sites = boorus::sites(db)
         .await?
         .into_iter()

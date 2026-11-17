@@ -20,6 +20,8 @@ use tokio::{
 };
 
 #[cfg(target_os = "ios")]
+mod background;
+#[cfg(target_os = "ios")]
 mod browser;
 #[cfg(target_os = "ios")]
 mod media;
@@ -27,6 +29,10 @@ mod media;
 mod motion;
 mod photos;
 mod share;
+#[cfg(target_os = "ios")]
+mod tagger;
+#[cfg(target_os = "ios")]
+mod transfers;
 
 const WINDOW: &str = "main";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(1);
@@ -97,6 +103,10 @@ impl Core {
             *database = Some(Database::open(&self.data, &library).map_err(|e| e.to_string())?);
         }
         let database = database.clone().expect("opened above");
+        #[cfg(target_os = "ios")]
+        background::attach(&database);
+        #[cfg(target_os = "ios")]
+        transfers::attach(&database);
         let assets: AssetLoader = Arc::new(frontend_asset);
         let server = self
             .runtime
@@ -355,6 +365,9 @@ fn open_window(app: &tauri::App, core: &Arc<Core>) -> Result<(), Box<dyn std::er
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // iOS throws if a background task is registered after launch has finished.
+    #[cfg(target_os = "ios")]
+    background::register();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![retry, haptic])
@@ -366,6 +379,10 @@ pub fn run() {
             gooncave_core::app_log::start(&data);
             #[cfg(target_os = "ios")]
             photos::start();
+            #[cfg(target_os = "ios")]
+            tagger::start();
+            #[cfg(target_os = "ios")]
+            transfers::start();
             let core = Arc::new(Core {
                 runtime: tokio::runtime::Runtime::new()?,
                 data,

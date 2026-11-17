@@ -151,14 +151,46 @@ pub(crate) fn cannot_save(error: &Error) -> bool {
         if [UNAVAILABLE, NO_FILE, NO_EXTENSION, NOT_MEDIA].iter().any(|m| message.starts_with(m)))
 }
 
-/// Downloads the favorite's file from the site into the library.
-pub(crate) async fn download(
+const MISMATCH: &str = "The downloaded favorite does not contain the expected media. Retry after checking the original post.";
+
+/// Where a favorite's file comes from and where it goes in the library.
+pub(crate) struct Plan {
+    post: Value,
+    raw: String,
+    pub url: reqwest::Url,
+    pub extension: String,
+    kind: media::MediaKind,
+    root: std::path::PathBuf,
+    pub target: std::path::PathBuf,
+}
+
+/// The kind and library paths of a favorite's file with `extension`.
+fn placement(
+    db: &Database,
+    site: &Site,
+    id: &str,
+    extension: &str,
+) -> Result<(media::MediaKind, std::path::PathBuf, std::path::PathBuf)> {
+    let kind = media::detect_kind(Path::new(&format!("file.{extension}"))).ok_or_else(|| {
+        Error::Remote(format!(
+            "{NOT_MEDIA} (.{extension}), so GoonCave does not save it."
+        ))
+    })?;
+    let name = format!("favorite-{}-{id}.{extension}", site_hash(site));
+    let root = db.library().resolve_folder(&db.library().root)?;
+    let target = db.library().resolve_file(&root, &root.join(name))?;
+    Ok((kind, root, target))
+}
+
+/// Looks up the favorite's post, unless `post` already has its file address, and decides where
+/// its file goes.
+pub(crate) async fn plan(
     db: &Database,
     t: &Transport,
     site: &Site,
     id: &str,
     post: Option<Value>,
-) -> Result<(String, bool)> {
+) -> Result<Plan> {
     let post = match post.filter(|p| p["fileUrl"].is_string()) {
         Some(p) => p,
         None => engines::single(t, site, id)
@@ -167,22 +199,69 @@ pub(crate) async fn download(
     };
     let raw = post["fileUrl"]
         .as_str()
-        .ok_or_else(|| Error::Remote(NO_FILE.into()))?;
-    let url = t.media_url(raw)?;
+        .ok_or_else(|| Error::Remote(NO_FILE.into()))?
+        .to_owned();
+    let url = t.media_url(&raw)?;
     let extension = Path::new(url.path())
         .extension()
         .and_then(|s| s.to_str())
         .map(str::to_ascii_lowercase)
         .ok_or_else(|| Error::Remote(NO_EXTENSION.into()))?;
-    let kind = media::detect_kind(Path::new(&format!("file.{extension}"))).ok_or_else(|| {
-        Error::Remote(format!(
-            "{NOT_MEDIA} (.{extension}), so GoonCave does not save it."
-        ))
-    })?;
+    let (kind, root, target) = placement(db, site, id, &extension)?;
+    Ok(Plan {
+        post,
+        raw,
+        url,
+        extension,
+        kind,
+        root,
+        target,
+    })
+}
+
+/// Saves a favorite's file that was downloaded to `part` apart from this process, then records the
+/// favorite like [`download`]. `part` is moved into the library; the caller removes it on failure.
+pub(crate) async fn adopt(
+    db: &Database,
+    t: &Transport,
+    site: &Site,
+    id: &str,
+    part: &Path,
+) -> Result<(String, bool)> {
+    let extension = part
+        .extension()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| Error::Remote(NO_EXTENSION.into()))?;
+    let (kind, _, target) = placement(db, site, id, extension)?;
+    if tokio::fs::try_exists(&target).await? {
+        tokio::fs::remove_file(part).await?;
+    } else {
+        if !media::content_matches(part, kind).await {
+            return Err(Error::Remote(MISMATCH.into()));
+        }
+        tokio::fs::rename(part, &target).await?;
+    }
+    download(db, t, site, id, None).await
+}
+
+/// Downloads the favorite's file from the site into the library.
+pub(crate) async fn download(
+    db: &Database,
+    t: &Transport,
+    site: &Site,
+    id: &str,
+    post: Option<Value>,
+) -> Result<(String, bool)> {
+    let Plan {
+        post,
+        raw,
+        url,
+        kind,
+        root,
+        target,
+        ..
+    } = plan(db, t, site, id, post).await?;
     let provider = remote::provider(site);
-    let name = format!("favorite-{}-{id}.{extension}", site_hash(site));
-    let root = db.library().resolve_folder(&db.library().root)?;
-    let target = db.library().resolve_file(&root, &root.join(name))?;
     if !tokio::fs::try_exists(&target).await? {
         let tmp = tempfile::Builder::new()
             .prefix(".favorite-")
@@ -210,7 +289,7 @@ pub(crate) async fn download(
         file.sync_all().await?;
         drop(file);
         if !media::content_matches(tmp.path(), kind).await {
-            return Err(Error::Remote("The downloaded favorite does not contain the expected media. Retry after checking the original post.".into()));
+            return Err(Error::Remote(MISMATCH.into()));
         }
         tmp.persist_noclobber(&target)
             .map_err(|e| Error::Io(e.error))?;

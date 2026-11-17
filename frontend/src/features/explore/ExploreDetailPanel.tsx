@@ -468,7 +468,7 @@ export function ExploreDetailPanel({
       icon={Heart}
       on={favorited}
       busy={favoriteBusy}
-      label={favorited ? 'Remove from favorites' : 'Favorite and save'}
+      label={favorited ? 'Unfavorite' : 'Favorite'}
       title={
         !canFavorite
           ? `Favorites are unavailable for ${post.siteName}. Check supported features and credentials in Settings → Accounts.`

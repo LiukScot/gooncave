@@ -51,7 +51,7 @@ pub(crate) async fn status(State(db): State<Database>) -> Result<Json<Value>> {
         .await?;
     let progress = db.wd14.progress.lock().await.clone();
     Ok(Json(
-        json!({"available":wd14_model::available(),"enabled":enabled,"modelBytes":ARTIFACTS.iter().map(|a|a.1).sum::<u64>(),"model":wd14_model::REPOSITORY,
+        json!({"available":wd14_model::available(),"enabled":enabled,"modelBytes":wd14_model::model_bytes(),"model":wd14_model::REPOSITORY,
         "total":total,"completed":completed,"state":progress["state"],"downloadedBytes":progress["downloadedBytes"],"failed":progress["failed"],"error":progress["error"]}),
     ))
 }
@@ -64,7 +64,7 @@ async fn toggle(State(db): State<Database>, Json(body): Json<Value>) -> Result<J
         .and_then(Value::as_bool)
         .ok_or_else(|| Error::Invalid("Choose whether to enable automatic tagging.".into()))?;
     if enabled && !wd14_model::available() {
-        return Err(Error::Unavailable("Automatic tagging currently requires an AVX2-capable Linux computer. You can still add tags by hand."));
+        return Err(Error::Unavailable(wd14_model::UNAVAILABLE));
     }
     {
         let _guard = db.wd14.control.lock().await;
@@ -87,6 +87,14 @@ fn permitted_download(url: &reqwest::Url) -> bool {
                 || host == "hf.co"
                 || host.ends_with(".huggingface.co")
                 || host.ends_with(".hf.co")
+                // The iPhone model is a GitHub release asset, served from these hosts.
+                || cfg!(target_os = "ios")
+                    && matches!(
+                        host,
+                        "github.com"
+                            | "release-assets.githubusercontent.com"
+                            | "objects.githubusercontent.com"
+                    )
         })
 }
 
@@ -105,8 +113,12 @@ async fn download(db: &Database, directory: &Path) -> Result<()> {
         .build()
         .map_err(|e| Error::Remote(format!("Cannot start the WD14 download: {e}")))?;
     let mut downloaded = 0u64;
-    for (name, size, expected) in ARTIFACTS {
-        let destination = directory.join(name);
+    for artifact in ARTIFACTS {
+        let (size, expected) = (artifact.size, artifact.sha256);
+        let destination = directory.join(artifact.path);
+        if let Some(parent) = destination.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
         let check = destination.clone();
         let valid = tokio::task::spawn_blocking(move || wd14_model::verify(&check, size, expected))
             .await
@@ -118,11 +130,7 @@ async fn download(db: &Database, directory: &Path) -> Result<()> {
         }
         let temporary = tempfile::NamedTempFile::new_in(directory)?;
         let mut file = tokio::fs::File::from_std(temporary.reopen()?);
-        let url = format!(
-            "https://huggingface.co/{}/resolve/{REVISION}/{name}",
-            wd14_model::REPOSITORY
-        );
-        let response = client.get(url).send().await.and_then(reqwest::Response::error_for_status)
+        let response = client.get(artifact.url()).send().await.and_then(reqwest::Response::error_for_status)
             .map_err(|e|Error::Remote(format!("WD14 could not download. Check your connection and enable tagging to retry. {e}")))?;
         if response.content_length().is_some_and(|n| n != size) {
             return Err(Error::Remote(
@@ -244,11 +252,19 @@ async fn process(db: &Database, generation: u64) -> Result<()> {
         if *db.wd14.cancel.borrow() != generation {
             return Ok(());
         }
-        let exclusions = failed.clone();
-        let next = db
-            .call(move |c| wd14_store::pending(c, &exclusions))
+        let earlier = std::mem::take(&mut failed);
+        let next;
+        (failed, next) = db
+            .call(move |c| {
+                let failed = wd14_store::still_untagged(c, &earlier)?;
+                let next = wd14_store::pending(c, &failed)?;
+                Ok((failed, next))
+            })
             .await?;
-        *db.wd14.progress.lock().await = json!({"state":if next.is_some(){"tagging"}else if failed.is_empty(){"ready"}else{"failed"},"downloadedBytes":ARTIFACTS.iter().map(|a|a.1).sum::<u64>(),"failed":failed.len(),"error":last_error});
+        if failed.is_empty() {
+            last_error = None;
+        }
+        *db.wd14.progress.lock().await = json!({"state":if next.is_some(){"tagging"}else if failed.is_empty(){"ready"}else{"failed"},"downloadedBytes":wd14_model::model_bytes(),"failed":failed.len(),"error":last_error});
         let Some(file) = next else {
             let idle = *idle_since.get_or_insert_with(tokio::time::Instant::now);
             if idle.elapsed() >= MODEL_IDLE && model.take().is_some() {
@@ -269,7 +285,7 @@ async fn process(db: &Database, generation: u64) -> Result<()> {
                 let loaded = match &model {
                     Some(loaded) => loaded.clone(),
                     None => {
-                        *db.wd14.progress.lock().await = json!({"state":"loading","downloadedBytes":ARTIFACTS.iter().map(|a|a.1).sum::<u64>(),"failed":failed.len(),"error":last_error});
+                        *db.wd14.progress.lock().await = json!({"state":"loading","downloadedBytes":wd14_model::model_bytes(),"failed":failed.len(),"error":last_error});
                         let directory = directory.clone();
                         let loaded = tokio::task::spawn_blocking(move || Model::load(&directory))
                             .await
@@ -371,12 +387,21 @@ mod tests {
         ] {
             assert!(permitted_download(&url.parse().unwrap()));
         }
+        #[cfg(target_os = "ios")]
+        for url in [
+            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-3/weight.bin",
+            "https://release-assets.githubusercontent.com/blob",
+            "https://objects.githubusercontent.com/blob",
+        ] {
+            assert!(permitted_download(&url.parse().unwrap()));
+        }
         for url in [
             "http://huggingface.co/model",
             "https://huggingface.co.evil.example/model",
             "https://127.0.0.1/model",
             "https://user@huggingface.co/model",
             "https://hf.co:444/model",
+            "https://githubusercontent.com/model",
         ] {
             assert!(!permitted_download(&url.parse().unwrap()));
         }

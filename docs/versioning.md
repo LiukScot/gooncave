@@ -8,7 +8,7 @@ iPhone run the shared Rust core without a server
 
 | Platform | Release file | Status |
 | --- | --- | --- |
-| Desktop | `GoonCave-linux-x86_64.flatpak` | Linux supported; Windows installer planned |
+| Desktop | none: the [Flatpak repository](https://liukscot.github.io/gooncave/) | Linux supported; Windows installer planned |
 | iPhone | `GoonCave-iphone.ipa` | Unsigned IPA; the owner signs it with KravaSign |
 | Android | None | No release target is approved |
 
@@ -81,9 +81,10 @@ The workflow:
 1. Chooses one version from merged changes or the explicit override.
 2. Builds Flatpak and IPA from the workflow's `main` commit with that version.
 3. Waits for both builds and tests to succeed.
-4. Creates a draft titled `GoonCave <version>`, tagged `v<version>`, with both
-   files and empty notes, then pushes the tag at that same commit. It never
-   carries old binaries into a new release.
+4. Creates a draft titled `GoonCave <version>`, tagged `v<version>`, with the
+   IPA and empty notes, then pushes the tag at that same commit. It never
+   carries old binaries into a new release. The Flatpak stays in the run's
+   `gooncave-desktop` artifact.
 
 A build failure prevents the draft. No checksum or metadata files are attached.
 The Flatpak commit records the shared version, and the iPhone bundle receives
@@ -99,8 +100,21 @@ between the two tags is not a release fix. Write for app users who have never
 seen the code, without PR numbers or internal details. Reread each item before
 reporting the draft ready, as [AGENTS.md](../AGENTS.md) describes.
 
-Test the files attached to the draft before publishing. Only the owner
-publishes. To reject a draft, the owner deletes the draft and its `v<version>`
+Test the IPA attached to the draft, and the Flatpak from the run's
+`gooncave-desktop` artifact, before publishing. Only the owner publishes.
+Publishing starts the `Flatpak repository` workflow: it signs that run's
+Flatpak into a Flatpak repository on GitHub Pages
+(`https://liukscot.github.io/gooncave/`), from which installed desktop copies
+update. The repository holds only the latest published release. To publish it
+again, run `gh workflow run flatpak-repo.yml --ref main`; this fails once the
+run's artifact has expired (90 days by default).
+
+The workflow needs GitHub Pages with the source set to GitHub Actions, and the
+`FLATPAK_GPG_PRIVATE_KEY` secret holding an ASCII-armored signing key without a
+passphrase. Keep that key: installed copies trust only it, and a new key makes
+them stop updating until each user adds the repository again.
+
+To reject a draft, the owner deletes the draft and its `v<version>`
 tag together, so the next run does not skip those changes.
 
 ## Issues

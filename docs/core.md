@@ -25,7 +25,7 @@ Gelbooru/Rule34, FurAffinity and Szurubooru. Remote votes work on e621/e926,
 Danbooru and Szurubooru. Subscriptions collect followed searches and
 FurAffinity's watchlist in a persistent feed. File source matching uses Fluffle
 and SauceNAO and refreshes tags from configured booru sites. Optional WD14
-tagging runs on Linux x86-64 computers with AVX2. The gallery stacks visual
+tagging runs on Linux x86-64 computers with AVX2 and on the iPhone. The gallery stacks visual
 copies into one tile, and a confirmed duplicate policy resolves them. Device
 sync through a WebDAV folder shares tags, votes, favorites, read marks,
 sources and settings; media files are not copied yet.
@@ -215,7 +215,7 @@ allowlist is enabled.
 | `POST/DELETE /settings/subscriptions/artists` | Follow/unfollow an artist (`artist`) in GoonCave's list, then sync it to each enabled FurAffinity account (watch/unwatch, confirmed by rereading the artist page); returns the full settings response. Artists also run as searches on the other sites. The sync runs on `GET /settings/subscriptions`, on these calls and in every refresh: a change on FurAffinity since the last sync is copied into the list, a change in GoonCave is copied to FurAffinity, and the first sync only imports. A failed account keeps the change and retries on the next sync. An artist FurAffinity does not know (HTTP 400, "This user cannot be found.") moves from the artists to the saved searches, so the boorus keep searching it; it is no sync error |
 | `GET/POST/DELETE /settings/subscriptions/pools` | Followed pools of existing sites: `siteId`, `siteName`, `poolId`, `name`, `postCount`, `coverUrl`. POST/DELETE take `siteId` and `poolId`; POST reads the name, page count and first-page preview from the site (e621 and Danbooru only); up to 500 pools. Synced between devices |
 | `GET /explore/subscriptions` | Cached posts in descending upload/discovery order, `sites`, opaque `cursor`, `limit` 1–100; without a cursor it starts at the newest post |
-| `POST /explore/subscriptions/refresh` | Refresh and backfill enabled sites, `rounds` 1–4; returns per-site errors |
+| `POST /explore/subscriptions/refresh` | Refresh and backfill enabled sites, `rounds` 1–4, optional `sites` list of site ids (up to 200) to refresh only those; returns the errors of the refreshed sites |
 | `POST /duplicates/scan/start`, `GET /duplicates/scan/status`, `POST /duplicates/scan/cancel` | Background scan for visual copies. Files of one media type whose shapes are within 3% are compared; copies at different resolutions use the site-preview tolerance, and the duplicate policy keeps the largest. Optional `mediaType`, `pixelThreshold` (0–1, default 0.0005; mean difference, and no single sample may differ by more than 10 of 255 levels), `sampleSize` (8–256), `videoFrames` (1–8), `maxComparisons` (1–100000). A running scan answers `busy` |
 | `GET /duplicates/favorites/recheck` | `{running, percent}`: whether the one-time repair of favorite links is running and how many of the files it must settle are settled (0 to 100, kept in `favorite_link_checks`, so it survives a restart). The core starts it at launch until it has run to the end (recorded in `meta` as `favorite_links.checked`). For each library image linked from more than one post it downloads every post's preview and removes the links whose picture is not the file's (same test as `/explore/gallery-matches`). Only posts of the file's exact width and height are judged; others stay, and a file where no linked post matches keeps all its links. Posts a site would not show are tried again after 30 minutes; after 4 rounds the repair is recorded as done anyway. A stop part way resumes on the next launch, skipping settled files. It starts a file only after the app has made no request for 3 seconds, so screens the person opens are not queued behind its downloads. After each round a full favorites sync starts, so posts that lost their link are downloaded again. Posts of sites read through the browser engine (FurAffinity, Gelbooru) and GIF or video posts are left alone. A picture counts as the same when its sample matches the file with no sharp difference. Migrations `0029` and `0030` clear earlier checks so the repair runs again. |
 | `GET/PUT /duplicates/settings` | Saved policy; PUT accepts only `{ "enabled": false }` |
@@ -264,7 +264,7 @@ a 1 GiB limit. An oversized or malformed source fails the refresh.
 
 ## Automatic tagging
 
-Settings → Extra shows the 388,733,784-byte download before enabling WD14.
+Settings → Extra shows the download (388,733,784 bytes on Linux, 194,991,463 on the iPhone) before enabling WD14.
 It is off by default. The model and vocabulary come from
 `SmilingWolf/wd-v1-4-convnextv2-tagger-v2`, revision
 `dbd4dbe553ee51feb3bc745b614fb762080e3912`; both sizes and SHA-256 hashes
@@ -304,7 +304,8 @@ The future sync protocol transfers `wd14_results`; it never transfers the
 device-only `meta` enable flag, runtime, model cache or local applied rows.
 File sources lists WD14 for tag visibility and links to Extra for activation.
 Automatic source targets and Target all include only booru sites.
-Phone tagging remains unavailable until ADR 0004's model-size decision;
+The iPhone runs the same model through Core ML in 32-bit floats on the CPU, supplied by
+the shell (`wd14_inference`) and downloaded as a 389.0 MB GitHub release asset.
 Windows and other desktop targets do not have a supported tagging runtime yet.
 
 ## Verification

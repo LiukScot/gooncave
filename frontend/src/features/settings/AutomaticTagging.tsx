@@ -39,7 +39,7 @@ export function AutomaticTagging() {
       </div>
       {value && !value.available ? (
         <p className="text-muted-foreground text-sm mt-2">
-          This device cannot run the tagging model yet. <Link to="/app/gallery" search={{ fileId: undefined, fs: undefined }}>Open Gallery to add tags by hand</Link>.
+          This device cannot run the tagging model. It needs the iPhone app or a Linux computer with AVX2. <Link to="/app/gallery" search={{ fileId: undefined, fs: undefined }}>Open Gallery to add tags by hand</Link>.
         </p>
       ) : value ? (
         <div className="text-muted-foreground text-xs mt-2" role="status" aria-live="polite">

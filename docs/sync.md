@@ -15,7 +15,9 @@ recorded in [ADR 0004](../adr/0004-flatpak-desktop-and-device-sync.md).
 
 - On every start, the app reads the remote copy and merges new data into its
   own database.
-- After each change, the app waits a few seconds, then uploads.
+- After each change, the app waits a few seconds, then uploads. Each upload
+  rewrites the whole sync file, so uploads are at least 2 minutes apart; Sync
+  now and leaving the app upload at once.
 - When the app closes, it uploads again. On the desktop the window closes at
   once and the upload finishes in the background, for at most 15 seconds;
   opening GoonCave meanwhile shows the window again.
@@ -138,6 +140,9 @@ opposite ways. Custom sites in its preferred list travel by address.
     favorite always has one: the booru. Any other file needs a copy in the
     sync folder. A file opened in the last 24 hours stays, unless opening it
     downloaded it: that original leaves when the detail view closes.
+- On iPhone the downloads of originals go on while the app is suspended or
+  locked: the system downloads them and wakes the app to add each file. When
+  the iPhone is full they stop with a message until a file fits again.
 - The detail view of a file has **Keep on this device**. It downloads the
   original and keeps it whatever the setting says.
 - An original that is not on the device loads when it is opened: from the sync

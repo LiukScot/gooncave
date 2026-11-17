@@ -42,6 +42,10 @@ const MAX_SNAPSHOT_BYTES: u64 = 1 << 30;
 const QUIET: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_secs(1);
 const RETRY: Duration = Duration::from_secs(60);
+/// Each cycle reads and writes the whole snapshot, tens of megabytes for a large library, so
+/// automatic changes (a favorites sync, tagging) upload at most this often. Leaving the app and
+/// Sync now still upload at once.
+const CHANGE_GAP: Duration = Duration::from_secs(120);
 const ATTEMPTS: usize = 3;
 /// How long closing the app waits for the last upload.
 pub(crate) const CLOSE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -2274,6 +2278,7 @@ async fn cycle(db: &Database, folder: &Folder, place: &str, trigger: Trigger) ->
                     Fetched::Found(bytes, etag) => (Some(bytes), etag),
                     _ => (None, None),
                 };
+                let received = bytes.as_ref().map_or(0, Vec::len);
                 let read = db
                     .sync_read(move |c| newer_than_stored(c, bytes.as_deref()))
                     .await?;
@@ -2284,6 +2289,10 @@ async fn cycle(db: &Database, folder: &Folder, place: &str, trigger: Trigger) ->
                     Err(Unreadable::Damaged) => {
                         eprintln!(
                             "The sync file is damaged; rebuilding it from the latest backup."
+                        );
+                        eprintln!(
+                            "[developer] The damaged sync file had {received} bytes and ETag {}",
+                            etag.as_deref().unwrap_or("none")
                         );
                         (latest_backup(db, folder).await?, true)
                     }
@@ -2393,8 +2402,9 @@ async fn prune(folder: &Folder) -> Result<()> {
     Ok(())
 }
 
-/// Runs one cycle if a folder is connected and records the outcome in the status.
-async fn run(db: &Database, trigger: Trigger) -> Result<()> {
+/// Runs one cycle if a folder is connected and records the outcome in the status. Waits for a
+/// cycle already running.
+pub(crate) async fn run(db: &Database, trigger: Trigger) -> Result<()> {
     let _running = db.sync.running.lock().await;
     let Some(saved) = db.call(|c| connection(c)).await? else {
         // Imported records still wait for their files without a folder.
@@ -2432,19 +2442,26 @@ async fn run(db: &Database, trigger: Trigger) -> Result<()> {
     result
 }
 
-/// Reads the folder on start, then uploads a few seconds after each change. Runs until dropped.
+/// Reads the folder on start, then uploads a few seconds after a change, at most once per
+/// [`CHANGE_GAP`]. Runs until dropped.
 pub(crate) async fn watch(db: Database) {
     let mut trigger = Some(Trigger::Full);
     let mut retry_at: Option<Instant> = None;
+    let mut last_run: Option<Instant> = None;
     loop {
         // After a failure, local changes wait for the retry instead of failing again at once.
-        if trigger.is_none() && retry_at.is_none() && db.sync.due() {
+        if trigger.is_none()
+            && retry_at.is_none()
+            && last_run.is_none_or(|at| at.elapsed() >= CHANGE_GAP)
+            && db.sync.due()
+        {
             trigger = Some(Trigger::Change);
         }
         if trigger.is_none() && retry_at.is_some_and(|at| Instant::now() >= at) {
             trigger = Some(Trigger::Full);
         }
         if let Some(current) = trigger.take() {
+            last_run = Some(Instant::now());
             retry_at = run(&db, current)
                 .await
                 .err()

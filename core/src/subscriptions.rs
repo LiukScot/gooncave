@@ -564,8 +564,23 @@ async fn refresh_route(State(db): State<Database>, p: Payload) -> Result<Json<Va
             .filter(|n| (1..=4).contains(n))
             .ok_or_else(|| Error::Invalid("rounds must be from 1 through 4.".into()))?,
     };
+    let sites = match v.get("sites") {
+        None => None,
+        Some(ids) => Some(
+            ids.as_array()
+                .filter(|ids| ids.len() <= 200)
+                .and_then(|ids| {
+                    ids.iter()
+                        .map(|id| id.as_str().map(str::to_owned))
+                        .collect::<Option<HashSet<_>>>()
+                })
+                .ok_or_else(|| {
+                    Error::Invalid("sites must be a list of at most 200 site ids.".into())
+                })?,
+        ),
+    };
     Ok(Json(
-        refresh(&db, &Transport::default(), rounds, false).await?,
+        refresh(&db, &Transport::default(), rounds, false, sites.as_ref()).await?,
     ))
 }
 pub(crate) async fn watch(db: Database) {
@@ -573,10 +588,14 @@ pub(crate) async fn watch(db: Database) {
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         interval.tick().await;
-        match refresh(&db, &Transport::default(), 1, true).await {
+        match refresh(&db, &Transport::default(), 1, true, None).await {
             Ok(result) => {
-                if result["errors"].as_array().is_some_and(|a| !a.is_empty()) {
-                    eprintln!("Subscription refresh failed: {result}");
+                for error in result["errors"].as_array().into_iter().flatten() {
+                    eprintln!(
+                        "[developer] The subscriptions of {} did not refresh: {}",
+                        error["siteName"].as_str().unwrap_or("a site"),
+                        error["error"].as_str().unwrap_or("no reason given")
+                    );
                 }
             }
             Err(e) => eprintln!("Subscription refresh could not run: {e}"),
@@ -593,19 +612,33 @@ async fn saved_errors(db: &Database) -> Result<Value> {
     }).await
 }
 /// `background` leaves out sites whose pages only GoonCave's browser can load: each refresh
-/// would start a browser process, and the feed refreshes them when it opens.
-async fn refresh(db: &Database, t: &Transport, rounds: u64, background: bool) -> Result<Value> {
+/// would start a browser process, and the feed refreshes them when it opens. `only` limits the
+/// refresh to those site ids. Either way the result names only the errors of the sites refreshed.
+pub(crate) async fn refresh(
+    db: &Database,
+    t: &Transport,
+    rounds: u64,
+    background: bool,
+    only: Option<&HashSet<String>>,
+) -> Result<Value> {
     let _guard = match db.subscriptions.try_lock() {
         Ok(guard) => guard,
-        Err(_) => {
+        // The running refresh covers an automatic one; one the person asked for runs after it,
+        // since an automatic refresh leaves out the browser-only sites.
+        Err(_) if background => {
             let _wait = db.subscriptions.lock().await;
             return saved_errors(db).await;
         }
+        Err(_) => db.subscriptions.lock().await,
     };
     let sites = boorus::sites(db)
         .await?
         .into_iter()
-        .filter(|s| s.enabled && !(background && crate::browser::site(&s.base).is_some()))
+        .filter(|s| {
+            s.enabled
+                && !(background && crate::browser::site(&s.base).is_some())
+                && only.is_none_or(|ids| ids.contains(&s.id))
+        })
         .collect::<Vec<_>>();
     for error in sync_artists(db, t, &sites).await? {
         eprintln!("[developer] FurAffinity watchlist sync failed: {error}");
@@ -627,7 +660,7 @@ async fn refresh(db: &Database, t: &Transport, rounds: u64, background: bool) ->
             ))
         })
         .await?;
-    for _ in 0..rounds {
+    for round in 0..rounds {
         let mut queued = sites.iter();
         let mut pending = tokio::task::JoinSet::new();
         loop {
@@ -639,7 +672,7 @@ async fn refresh(db: &Database, t: &Transport, rounds: u64, background: bool) ->
                 let t = t.clone();
                 let tags = site_searches(&tags, &artists, &pools, &site);
                 pending.spawn(async move {
-                    let result = refresh_site(&db, &t, &site, &tags, generation).await;
+                    let result = refresh_site(&db, &t, &site, &tags, generation, round == 0).await;
                     (site, result)
                 });
             }
@@ -666,7 +699,20 @@ async fn refresh(db: &Database, t: &Transport, rounds: u64, background: bool) ->
             }
         }
     }
-    saved_errors(db).await
+    let mut result = saved_errors(db).await?;
+    if background || only.is_some() {
+        // A site left out keeps the error of its last refresh in the feed; reporting it again
+        // would name a failure that did not happen now.
+        let refreshed = sites.iter().map(|s| s.id.as_str()).collect::<HashSet<_>>();
+        if let Some(errors) = result["errors"].as_array_mut() {
+            errors.retain(|e| {
+                e["siteId"]
+                    .as_str()
+                    .is_some_and(|id| refreshed.contains(id))
+            });
+        }
+    }
+    Ok(result)
 }
 fn site_current(c: &rusqlite::Connection, site: &Site) -> Result<bool> {
     let updated: Option<String> = c
@@ -792,11 +838,12 @@ async fn refresh_site(
     site: &Site,
     tags: &[String],
     generation: u64,
+    first_round: bool,
 ) -> Result<()> {
     let id = site.id.clone();
     let mut state = db.call(move |c| store::state(c, &id)).await?;
     if site.engine == "furaffinity" {
-        return refresh_fa(db, t, site, state, generation).await;
+        return refresh_fa(db, t, site, state, generation, first_round).await;
     }
     if tags.is_empty() {
         state.exhausted = true;
@@ -851,56 +898,70 @@ async fn known(db: &Database, site: &Site, posts: Option<Vec<Value>>) -> Result<
     db.call(move |c| store::has_posts(c, &id, posts.as_deref()))
         .await
 }
+/// `first_round` reads the newest page and catches up to the saved feed; every round then reads
+/// up to `BACKFILL_QUERIES` older pages. A later round of the same refresh skips the newest page,
+/// since each FurAffinity page is a browser request on iPhone.
 async fn refresh_fa(
     db: &Database,
     t: &Transport,
     site: &Site,
     mut state: SyncState,
     generation: u64,
+    first_round: bool,
 ) -> Result<()> {
-    let had_posts = known(db, site, None).await?;
-    let (posts, next) = remote::page(t, site, None).await?;
-    let reached = known(db, site, Some(posts.clone())).await?;
-    eprintln!(
-        "[developer] FurAffinity feed: {} posts on the newest page, {}; older pages {}",
-        posts.len(),
-        if !had_posts {
-            "first read"
-        } else if reached {
-            "joins the saved feed"
-        } else {
-            "a gap to the saved feed"
-        },
-        if state.feed_exhausted {
-            "all read"
-        } else {
-            "still to read"
-        }
-    );
-    if !commit(db, site, posts, None, generation).await? {
-        return Ok(());
-    }
-    if state.head_cursor.is_none() && had_posts && !reached {
-        state.head_cursor = next.clone();
-    }
-    let mut visited = HashSet::new();
-    for _ in 0..2 {
-        let Some(cursor) = state.head_cursor.clone() else {
-            break;
-        };
-        if !visited.insert(cursor.clone()) {
-            return Err(crate::booru_http::remote(
-                "FurAffinity repeated its feed cursor. Try again later.",
-            ));
-        }
-        let (posts, next) = remote::page(t, site, Some(&cursor)).await?;
+    let backfill_start = state.cursor.is_none() && !state.feed_exhausted;
+    if first_round || backfill_start {
+        let had_posts = known(db, site, None).await?;
+        let (posts, next) = remote::page(t, site, None).await?;
         let reached = known(db, site, Some(posts.clone())).await?;
-        state.head_cursor = if reached { None } else { next };
-        if !commit(db, site, posts, Some(state.clone()), generation).await? {
+        eprintln!(
+            "[developer] FurAffinity feed: {} posts on the newest page, {}; older pages {}",
+            posts.len(),
+            if !had_posts {
+                "first read"
+            } else if reached {
+                "joins the saved feed"
+            } else {
+                "a gap to the saved feed"
+            },
+            if state.feed_exhausted {
+                "all read"
+            } else {
+                "still to read"
+            }
+        );
+        if !commit(db, site, posts, None, generation).await? {
             return Ok(());
         }
+        if state.head_cursor.is_none() && had_posts && !reached {
+            state.head_cursor = next.clone();
+        }
+        if backfill_start {
+            state.cursor = next;
+            state.feed_exhausted = state.cursor.is_none();
+        }
+        let mut visited = HashSet::new();
+        for _ in 0..2 {
+            let Some(cursor) = state.head_cursor.clone() else {
+                break;
+            };
+            if !visited.insert(cursor.clone()) {
+                return Err(crate::booru_http::remote(
+                    "FurAffinity repeated its feed cursor. Try again later.",
+                ));
+            }
+            let (posts, next) = remote::page(t, site, Some(&cursor)).await?;
+            let reached = known(db, site, Some(posts.clone())).await?;
+            state.head_cursor = if reached { None } else { next };
+            if !commit(db, site, posts, Some(state.clone()), generation).await? {
+                return Ok(());
+            }
+        }
     }
-    if let Some(cursor) = state.cursor.clone().filter(|_| !state.feed_exhausted) {
+    for _ in 0..BACKFILL_QUERIES {
+        let Some(cursor) = state.cursor.clone().filter(|_| !state.feed_exhausted) else {
+            break;
+        };
         if state.page > MAX_PAGE {
             return Err(crate::booru_http::remote("The FurAffinity feed reached its pagination limit. Open older submissions on the original site."));
         }
@@ -908,14 +969,11 @@ async fn refresh_fa(
         state.cursor = next;
         state.feed_exhausted = state.cursor.is_none();
         state.page += 1;
-        commit(db, site, posts, Some(state), generation).await?;
-    } else {
-        if !state.feed_exhausted {
-            state.cursor = next;
-            state.feed_exhausted = state.cursor.is_none();
+        if !commit(db, site, posts, Some(state.clone()), generation).await? {
+            return Ok(());
         }
-        commit(db, site, vec![], Some(state), generation).await?;
     }
+    commit(db, site, vec![], Some(state), generation).await?;
     Ok(())
 }
 
@@ -980,6 +1038,55 @@ mod tests {
         site
     }
     #[tokio::test]
+    async fn a_refresh_asked_for_during_an_automatic_one_still_reads_the_sites() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        // `.example` never answers, so a refresh that reads the site saves its error.
+        setup(&db, "https://fixture.example".into()).await;
+        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox"])))
+            .await
+            .unwrap();
+        // The automatic refresh holds the lock, and it leaves out browser-only sites.
+        let automatic = db.subscriptions.clone().lock_owned().await;
+        let asked = tokio::spawn({
+            let db = db.clone();
+            async move { refresh(&db, &Transport::default(), 1, false, None).await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        drop(automatic);
+        let result = asked.await.unwrap().unwrap();
+        assert_eq!(
+            result["errors"][0]["siteId"], "fixture",
+            "the refresh the person asked for read the site: {result}"
+        );
+    }
+    #[tokio::test]
+    async fn a_refresh_for_some_sites_leaves_the_others_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        // `.example` never answers, so a refresh that reads the site saves its error.
+        setup(&db, "https://fixture.example".into()).await;
+        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox"])))
+            .await
+            .unwrap();
+        let other = HashSet::from(["another-site".to_owned()]);
+        let result = refresh(&db, &Transport::default(), 1, false, Some(&other))
+            .await
+            .unwrap();
+        assert_eq!(result["errors"], json!([]), "{result}");
+        let read: i64 = db
+            .call(|c| {
+                Ok(c.query_row(
+                    "SELECT count(*) FROM subscription_feed_sync_state WHERE site_id='fixture'",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(read, 0, "the site left out was not read");
+    }
+    #[tokio::test]
     async fn subscription_refresh_keeps_compound_searches_and_backfills_without_moving_posts() {
         let (base, requests, task) = fixture().await;
         let dir = tempfile::tempdir().unwrap();
@@ -993,7 +1100,7 @@ mod tests {
             "fox".into(),
             "wolf".into(),
         ];
-        refresh_site(&db, &t, &site, &tags, 0).await.unwrap();
+        refresh_site(&db, &t, &site, &tags, 0, true).await.unwrap();
         let state = db.call(|c| store::state(c, "fixture")).await.unwrap();
         assert_eq!(state.page, 3);
         assert_eq!(state.head, 0);
@@ -1025,7 +1132,7 @@ mod tests {
             .unwrap();
         assert_eq!(first.items.len(), 2);
         let cursor = first.next.clone();
-        refresh_site(&db, &t, &site, &tags, 0).await.unwrap();
+        refresh_site(&db, &t, &site, &tags, 0, true).await.unwrap();
         let state = db.call(|c| store::state(c, "fixture")).await.unwrap();
         assert!(state.exhausted);
         let second = db
@@ -1145,36 +1252,60 @@ mod tests {
         assert_eq!(batch(&operators, 1, 40), (vec!["-photo".into()], 2, false));
         assert_eq!(batch(&operators, 2, 40), (vec!["~wolf".into()], 3, false));
     }
-    #[tokio::test]
-    async fn subscription_fa_backfill_recovers_after_an_interrupted_first_page_or_initial_error() {
-        let app=Router::new().fallback(any(|| async {
-            axum::response::Html("<div id='messagecenter-submissions'><figure id='sid-7'><img src='https://t.furaffinity.net/7-1791763200.jpg'></figure><a class='more' href='/msg/submissions/new~7@48/'>Next</a></div>")
+    /// A three-page FurAffinity inbox: 9 and 8 on the newest page's chain, 7 on the last page.
+    async fn fa_inbox(
+        db: &Database,
+    ) -> (Site, Arc<Mutex<Vec<String>>>, tokio::task::JoinHandle<()>) {
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let seen = requests.clone();
+        let app = Router::new().fallback(any(move |uri: axum::http::Uri| {
+            let seen = seen.clone();
+            async move {
+                seen.lock().unwrap().push(uri.path().to_owned());
+                let (id, next) = match uri.path() {
+                    "/msg/submissions/" => ("9", Some("/msg/submissions/new~8@48/")),
+                    "/msg/submissions/new~8@48/" => ("8", Some("/msg/submissions/new~7@48/")),
+                    _ => ("7", None),
+                };
+                let more = next.map(|n| format!("<a class='more' href='{n}'>Next</a>")).unwrap_or_default();
+                axum::response::Html(format!("<div id='messagecenter-submissions'><figure id='sid-{id}'><img src='https://t.furaffinity.net/{id}-179176320{id}.jpg'></figure>{more}</div>"))
+            }
         }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let task = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
+        setup(db, base.clone()).await;
+        db.call(|c| {c.execute("UPDATE user_booru_sites SET engine='furaffinity',username='fixture-owner',session_cookie='a=fake;b=fake' WHERE id='fixture'",[])?;Ok(())}).await.unwrap();
+        let mut site = boorus::site(db, "fixture".into()).await.unwrap().unwrap();
+        site.base = base;
+        (site, requests, task)
+    }
+    async fn saved_ids(db: &Database) -> Vec<String> {
+        db.call(|c| {
+            let mut s =
+                c.prepare("SELECT remote_id FROM subscription_feed_items ORDER BY remote_id")?;
+            let ids = s
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<Vec<String>>>()?;
+            Ok(ids)
+        })
+        .await
+        .unwrap()
+    }
+    #[tokio::test]
+    async fn subscription_fa_backfill_recovers_after_an_interrupted_first_page_or_initial_error() {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        setup(&db, base.clone()).await;
-        db.call(|c| {c.execute("UPDATE user_booru_sites SET engine='furaffinity',username='fixture-owner',session_cookie='a=fake;b=fake' WHERE id='fixture'",[])?;Ok(())}).await.unwrap();
-        let mut site = boorus::site(&db, "fixture".into()).await.unwrap().unwrap();
-        site.base = base;
+        let (site, _, task) = fa_inbox(&db).await;
         let t = Transport {
             allow_loopback: true,
         };
         let (posts, _) = remote::page(&t, &site, None).await.unwrap();
         assert!(commit(&db, &site, posts, None, 0).await.unwrap());
-        refresh_site(&db, &t, &site, &[], 0).await.unwrap();
-        assert_eq!(
-            db.call(|c| store::state(c, "fixture"))
-                .await
-                .unwrap()
-                .cursor
-                .as_deref(),
-            Some("/msg/submissions/new~7@48/")
-        );
+        refresh_site(&db, &t, &site, &[], 0, true).await.unwrap();
+        assert_eq!(saved_ids(&db).await, ["7", "8", "9"]);
         db.call(|c| {
             let tx = c.transaction()?;
             store::reset(&tx, None, false)?;
@@ -1189,14 +1320,33 @@ mod tests {
         })
         .await
         .unwrap();
-        refresh_site(&db, &t, &site, &[], 1).await.unwrap();
+        refresh_site(&db, &t, &site, &[], 1, true).await.unwrap();
+        assert_eq!(saved_ids(&db).await, ["7", "8", "9"]);
+        task.abort();
+    }
+    #[tokio::test]
+    async fn a_furaffinity_refresh_reads_older_pages_without_reading_the_newest_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let (site, requests, task) = fa_inbox(&db).await;
+        let t = Transport {
+            allow_loopback: true,
+        };
+        refresh_site(&db, &t, &site, &[], 0, true).await.unwrap();
+        assert_eq!(saved_ids(&db).await, ["7", "8", "9"]);
         assert_eq!(
-            db.call(|c| store::state(c, "fixture"))
-                .await
-                .unwrap()
-                .cursor
-                .as_deref(),
-            Some("/msg/submissions/new~7@48/")
+            *requests.lock().unwrap(),
+            [
+                "/msg/submissions/",
+                "/msg/submissions/new~8@48/",
+                "/msg/submissions/new~7@48/"
+            ]
+        );
+        refresh_site(&db, &t, &site, &[], 0, false).await.unwrap();
+        assert_eq!(
+            requests.lock().unwrap().len(),
+            3,
+            "a later round reads nothing once the feed is read"
         );
         task.abort();
     }

@@ -1,0 +1,101 @@
+name: Flatpak repository
+
+# Publishes the Flatpak of the latest published release to GitHub Pages, so
+# installed copies update from the software center. Drafts are never published.
+# The Flatpak is the gooncave-desktop artifact of the Weekly release run that
+# built the release's commit; releases attach no .flatpak file.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flatpak-repo
+  cancel-in-progress: false
+
+jobs:
+  # A release event runs on its tag, and the github-pages environment accepts
+  # only main, so the event starts this workflow again on main.
+  dispatch:
+    name: Start the publication on main
+    # A prerelease, such as the WD14 model's, is not an app release.
+    if: github.event_name == 'release' && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - run: gh workflow run flatpak-repo.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+  build:
+    name: Build the repository
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SIGNING_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Flatpak tools
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak ostree
+
+      # Artifacts expire after the repository's retention period (90 days by default).
+      - name: Download the Flatpak of the latest release
+        run: |
+          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)
+          run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow weekly-release.yml --commit "$sha" \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [[ -z "$run" ]]; then
+            echo "::error::No successful Weekly release run built $tag ($sha); its Flatpak cannot be published."
+            exit 1
+          fi
+          gh run download "$run" --repo "$GITHUB_REPOSITORY" --name gooncave-desktop --dir release
+
+      - name: Import the signing key
+        run: |
+          if [[ -z "$SIGNING_KEY" ]]; then
+            echo '::error::Add the FLATPAK_GPG_PRIVATE_KEY secret: see docs/versioning.md.'
+            exit 1
+          fi
+          gpg --batch --import <<< "$SIGNING_KEY"
+
+      - name: Build the site
+        run: |
+          url="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}"
+          bash .github/scripts/flatpak-repo.sh release/GoonCave-linux-x86_64.flatpak site "$url"
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+  deploy:
+    name: Publish the repository
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -430,7 +430,7 @@ test.describe('phone media controls', () => {
     await page.waitForFunction(() => document.querySelector('.more-actions-menu')?.getAnimations().length === 0);
     expect(await onTop((await menu.boundingBox())!, '.more-actions-menu')).toBe(true);
     // The favorite joins the menu as a row of its own: as wide as the others, never over them.
-    await expect(menu.getByRole('button', { name: 'Favorite and save' })).toBeVisible();
+    await expect(menu.getByRole('button', { name: 'Favorite', exact: true })).toBeVisible();
     const rows = await menu.getByRole('button').evaluateAll((buttons) =>
       buttons.map((button) => button.getBoundingClientRect().toJSON() as DOMRect).sort((a, b) => a.y - b.y));
     expect(rows.length).toBeGreaterThan(2);
@@ -488,7 +488,7 @@ test.describe('phone media controls', () => {
     await page.goto('/app/gallery');
     await openExplore(page);
     const corner = page.locator('.phone-actions');
-    await expect(corner.getByRole('button', { name: 'Favorite and save' })).toBeVisible();
+    await expect(corner.getByRole('button', { name: 'Favorite', exact: true })).toBeVisible();
     await expect(corner.getByRole('button', { name: 'Vote up' })).toHaveCount(0);
     const scrolled = await page.evaluate(() => window.scrollY);
     await corner.getByRole('button', { name: 'More actions' }).click();
@@ -522,10 +522,10 @@ test.describe('phone media controls', () => {
     await openExplore(page);
     const corner = page.locator('.phone-actions');
     await expect(corner.getByRole('button', { name: 'Share' })).toBeVisible();
-    await expect(corner.getByRole('button', { name: 'Favorite and save' })).toHaveCount(0);
+    await expect(corner.getByRole('button', { name: 'Favorite', exact: true })).toHaveCount(0);
     await corner.getByRole('button', { name: 'More actions' }).click();
     const panel = page.getByRole('dialog', { name: 'Actions for this post' });
-    await expect(panel.getByRole('button', { name: 'Favorite and save' })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Favorite', exact: true })).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Share' })).toHaveCount(0);
     await page.keyboard.press('Escape');
 

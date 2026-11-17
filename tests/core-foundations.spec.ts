@@ -21,6 +21,7 @@ test('Subscribed shows posts the background refresh found when the feed was empt
   await page.setViewportSize({ width: 390, height: 844 });
   await page.request.put('/settings/subscriptions/tags', { data: { tags: ['fixture_artist'] } });
   let refreshed = false;
+  let refreshedSites: unknown = null;
   const posts: ExplorePost[] = ['7', '8'].map((id) => ({
     remoteId: id, siteId: 'fixture', siteName: 'Fixture', engine: 'moebooru',
     previewUrl: '/favicon.png', sampleUrl: '/favicon.png', fileUrl: '/favicon.png',
@@ -40,6 +41,7 @@ test('Subscribed shows posts the background refresh found when the feed was empt
   } }));
   await page.route('**/explore/subscriptions/refresh', (route) => {
     refreshed = true;
+    refreshedSites = route.request().postDataJSON().sites;
     return route.fulfill({ json: { errors: [] } });
   });
   await page.route(/\/explore\/post(?:-tags|-text|-relations|-pools)?\?/, (route) => route.fulfill({ json: {
@@ -51,6 +53,8 @@ test('Subscribed shows posts the background refresh found when the feed was empt
     await page.getByRole('link', { name: 'Subscriptions', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Subscriptions', exact: true })).toBeVisible();
     await expect(page.locator('[data-test-id="explore-card"]')).toHaveCount(2);
+    // Only the sites on screen are refreshed; refreshing every site kept the feed loading.
+    expect(refreshedSites).toEqual(['fixture']);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   } finally {
     await page.request.put('/settings/subscriptions/tags', { data: { tags: [] } });

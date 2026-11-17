@@ -493,6 +493,51 @@ impl Engine {
     }
 }
 
+/// The cookies WebKit holds for `origin`, by name, each marked when it ends with the app.
+/// Names only: values are sessions.
+async fn cookie_names(origin: &str) -> Result<String, String> {
+    let host = origin.strip_prefix("https://").unwrap_or(origin).to_owned();
+    main_thread_later(move |_, mtm| {
+        let (reply, answer) = oneshot::channel();
+        let reply = Cell::new(Some(reply));
+        let read = RcBlock::new(move |jar: NonNull<NSArray<NSHTTPCookie>>| {
+            // SAFETY: WebKit passes a valid array.
+            let jar = unsafe { jar.as_ref() };
+            let names: Vec<String> = jar
+                .iter()
+                .filter(|cookie| {
+                    let domain = cookie.domain().to_string();
+                    let domain = domain.trim_start_matches('.');
+                    host == domain || host.ends_with(&format!(".{domain}"))
+                })
+                .map(|cookie| {
+                    let name = cookie.name().to_string();
+                    if cookie.isSessionOnly() {
+                        format!("{name} (until the app closes)")
+                    } else {
+                        name
+                    }
+                })
+                .collect();
+            if let Some(reply) = reply.take() {
+                let _ = reply.send(Ok(if names.is_empty() {
+                    "none".to_owned()
+                } else {
+                    names.join(", ")
+                }));
+            }
+        });
+        // SAFETY: the data store is WebKit's own and lives for the app's lifetime.
+        unsafe {
+            WKWebsiteDataStore::defaultDataStore(mtm)
+                .httpCookieStore()
+                .getAllCookies(&read);
+        }
+        answer
+    })
+    .await
+}
+
 /// Which web view a script runs in.
 #[derive(Clone, Copy)]
 enum On {
@@ -557,6 +602,13 @@ async fn ready(site: &'static Site, origin: &str, force: bool) -> Result<(), Str
     if !challenged().await.unwrap_or(false) {
         return Ok(());
     }
+    match cookie_names(origin).await {
+        Ok(names) => eprintln!(
+            "[developer] {} asked GoonCave's browser for its check; the browser holds the cookies {names}",
+            site.name
+        ),
+        Err(error) => eprintln!("[developer] Cannot list the cookies of GoonCave's browser: {error}"),
+    }
     let _sheet = Sheet;
     main_thread(move |engine, mtm| {
         engine.present(
@@ -596,16 +648,24 @@ async fn fetch(url: &str, cookie: Option<&str>) -> Result<Page, String> {
             eprintln!("Browser script returned no page: {error}");
             UNREACHABLE.to_owned()
         })?;
-        if value["challenged"].as_bool() == Some(true) && !force {
+        let challenged = value["challenged"].as_bool() == Some(true);
+        if challenged && !force {
             // The clearance expired since the worker's page loaded; get a new one.
             force = true;
             continue;
         }
+        let status = value["status"]
+            .as_u64()
+            .and_then(|status| u16::try_from(status).ok())
+            .ok_or_else(|| UNREACHABLE.to_owned())?;
+        if status >= 400 {
+            let cookies = cookie_names(origin)
+                .await
+                .unwrap_or_else(|error| format!("unknown ({error})"));
+            eprintln!("[developer] {origin} answered {status} to GoonCave's browser (cf-mitigated: {challenged}, after a new check: {force}); the browser holds the cookies {cookies}");
+        }
         return Ok(Page {
-            status: value["status"]
-                .as_u64()
-                .and_then(|status| u16::try_from(status).ok())
-                .ok_or_else(|| UNREACHABLE.to_owned())?,
+            status,
             body: value["body"].as_str().unwrap_or_default().to_owned(),
         });
     }

@@ -49,19 +49,30 @@ Your favorites are scattered across e621, Danbooru, Gelbooru and half a dozen ot
 
 ## Download
 
-GoonCave for Linux is a `.flatpak` file on the
-[latest release](https://github.com/LiukScot/gooncave/releases/latest). It
-needs a 64-bit Intel or AMD computer and [Flatpak](https://flatpak.org/setup/)
-with Flathub, which most Linux distributions include.
+GoonCave for Linux is a Flatpak. It needs a 64-bit Intel or AMD computer and
+[Flatpak](https://flatpak.org/setup/) with Flathub, which most Linux
+distributions include.
 
-1. Download `GoonCave-linux-x86_64.flatpak` from the release.
-2. Open a terminal in the folder where you saved it and run
-   `flatpak install --user GoonCave-linux-x86_64.flatpak`. The first install
-   also downloads the GNOME 51 runtime from Flathub.
-3. Open GoonCave from your applications menu, or run
+1. Run this in a terminal. It installs GoonCave and, the first time, the GNOME
+   51 runtime from Flathub:
+
+   ```bash
+   flatpak install --user https://liukscot.github.io/gooncave/gooncave.flatpakref
+   ```
+
+2. Open GoonCave from your applications menu, or run
    `flatpak run app.gooncave.desktop`.
 
-To update, install the newer file the same way. Your library and settings stay.
+New releases arrive in GNOME Software, KDE Discover or `flatpak update`, like
+any other app. Your library and settings stay.
+
+If you installed a `GoonCave-linux-x86_64.flatpak` file from an earlier
+release, that copy does not update by itself. Run this once to move it to the
+updating repository; your library and settings stay:
+
+```bash
+flatpak remote-add --user --if-not-exists --from gooncave https://liukscot.github.io/gooncave/gooncave.flatpakrepo && flatpak install --user --reinstall gooncave app.gooncave.desktop
+```
 
 Closing the window quits GoonCave, so syncing and tagging stop with it.
 
@@ -132,12 +143,14 @@ also add and remove favorites on those sites. Settings → Subscriptions saves
 searches and manages FurAffinity's watchlist. For FurAffinity, press Sign in to
 FurAffinity in Accounts and sign in in the window that opens; when FurAffinity
 asks to check that you are a person, a window shows the check. Subscriptions opens the
-feed where you stopped. On Linux x86-64 computers with AVX2, Settings → Extra
-offers automatic WD14 tagging. It is off by default and shows the 388.7 MB
-model download before you enable it. It tags existing and new files; Stop
+feed where you stopped. On Linux x86-64 computers with AVX2 and on the iPhone,
+Settings → Extra offers automatic WD14 tagging. It is off by default and shows
+the model download (388.7 MB on Linux, 389.0 MB on the iPhone) before you enable
+it. It tags existing and new files; Stop
 tagging keeps completed tags. Duplicate processing and device sync are not
-available yet. Phone tagging awaits the model-size decision in
-[ADR 0004](adr/0004-flatpak-desktop-and-device-sync.md).
+available yet. The iPhone runs the same model in 32-bit floats on Core ML,
+so every device produces the same tags
+([ADR 0004](adr/0004-flatpak-desktop-and-device-sync.md)).
 
 New features go into `core/`. See
 [core architecture, API and verification](docs/core.md).

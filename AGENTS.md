@@ -1,4 +1,4 @@
-version: 30
+version: 31
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -167,7 +167,6 @@ issues and PRs from being smaller than that cost.
 - Fix a defect found in the flow you are working on in the same branch and
   list it under `Fixed` in the PR, even if the code comes from an earlier PR.
 - Open a separate issue or PR only when the work:
-  - touches a different module or flow;
   - needs a product decision that belongs to the owner;
   - changes authentication, permissions, or sessions.
 - A migration goes in the feature PR, in its own commit, and is named in the
@@ -184,8 +183,7 @@ issues and PRs from being smaller than that cost.
 - Label every pull request before it merges: `enhancement` when a user gains
   something new, `bug` when something that was wrong is fixed. Use
   `documentation` or no label for work users do not notice.
-- Keep one user-visible outcome per pull request, together with the fixes to
-  the same flow. Write its title for the user.
+- Write the pull request title for the user.
 - Say in the description what changes for the user, under two headings:
   `New` for what a user could not do before, `Fixed` for what was wrong.
   Write each fix as the problem the user had ("Tiles moved while the gallery
@@ -227,9 +225,11 @@ issues and PRs from being smaller than that cost.
 - Start a release only when the owner asks, or through the owner's weekly
   scheduled agent: `gh workflow run weekly-release.yml --ref main`.
   To choose one shared version, add `-f version=1.3.0`.
-- Attach `GoonCave-linux-x86_64.flatpak` and `GoonCave-iphone.ipa` built by
-  that run. Package filenames omit the version. Attach no checksum
-  or metadata files. Future platforms join the same version when approved.
+- Attach `GoonCave-iphone.ipa` built by that run. Linux users get the same
+  run's Flatpak from the Flatpak repository once the owner publishes the
+  release; no `.flatpak` file is attached. Package filenames omit the version.
+  Attach no checksum or metadata files. Future platforms join the same version
+  when approved.
 - After the draft is ready, write `**New**` and `**Fixed**` lists; omit an
   empty list. Mention the platform only when a change is platform-specific.
   `.github/scripts/release-prs.sh <previous tag> <commit>` lists shipped PRs;

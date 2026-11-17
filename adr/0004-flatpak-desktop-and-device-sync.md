@@ -34,8 +34,9 @@ local apps matched it.
   interface the core serves on loopback (see the shell test results). iPhone
   is Tauri. Windows is Tauri on WebView2, which is Chromium and has no GTK,
   when Windows is supported.
-- **Desktop app:** Linux ships as a `.flatpak` file attached to the GitHub
-  Release; Flathub is not a target yet. Windows ships as a Tauri `.exe`
+- **Desktop app:** Linux ships through a signed Flatpak repository on GitHub
+  Pages, so installed copies update from the software center; releases attach
+  no `.flatpak` file. Flathub is not a target yet. Windows ships as a Tauri `.exe`
   installer when it is supported.
 - **iPhone app:** standalone only, on the Rust core. The server client is
   removed. iPhone builds run on hosted macOS in CI and produce an unsigned
@@ -99,7 +100,15 @@ Both test builds come from `spikes/tauri-shell` on the branch
 - Sync replaces export/restore and server transfer as the way data moves
   between devices.
 
+## Phone tagger
+
+The iPhone runs the desktop's WD14 model, converted to Core ML in 32-bit
+floats (389.0 MB with its vocabulary), on the CPU. 16-bit weights, and the Neural
+Engine, which computes in 16 bits, changed six tags of a solid-colour picture. Tags
+sync across devices, so every device must produce the same tags; a smaller
+model would tag the same file differently on the phone and the desktop.
+`ios/wd14/check.py` compares its scores with the desktop model's.
+
 ## Open decisions
 
-- [ ] Choose the phone tagger model size.
 - [ ] Approve an Android release target.

@@ -188,6 +188,7 @@ impl Folder {
         {
             return Err(too_large());
         }
+        let expected = response.content_length();
         let mut body = Vec::new();
         while let Some(chunk) = response
             .chunk()
@@ -198,6 +199,12 @@ impl Folder {
             if body.len() as u64 > MAX_DOWNLOAD_BYTES {
                 return Err(too_large());
             }
+        }
+        if let Some(expected) = expected.filter(|&n| n != body.len() as u64) {
+            eprintln!(
+                "[developer] The WebDAV folder announced {expected} bytes for a file and sent {}",
+                body.len()
+            );
         }
         Ok(Fetched::Found(body, etag))
     }
@@ -254,6 +261,22 @@ impl Folder {
             status if status.is_success() || status == StatusCode::PRECONDITION_FAILED => Ok(()),
             status => Err(refused(status, &url)),
         }
+    }
+
+    /// The address of `path` and the headers to send with a GET of it, for a download the system
+    /// makes while the app is suspended.
+    pub(crate) fn download_request(&self, path: &str) -> Result<(String, Vec<(String, String)>)> {
+        let url = self.url(path)?;
+        let request = self
+            .authorized(self.transfers.get(url.clone()))
+            .build()
+            .map_err(|error| Error::Storage(error.to_string()))?;
+        let headers = request
+            .headers()
+            .iter()
+            .filter_map(|(name, value)| Some((name.to_string(), value.to_str().ok()?.to_owned())))
+            .collect();
+        Ok((url.into(), headers))
     }
 
     /// Streams the file at `path` into `target` and returns its SHA-256, or `None` when the
@@ -436,6 +459,22 @@ fn hrefs(xml: &str) -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_background_download_carries_the_folders_login() {
+        let folder = Folder::new("https://dav.example.com/files", "ann", "secret").unwrap();
+        let (url, headers) = folder.download_request("GoonCave/media/a.png").unwrap();
+        assert_eq!(url, "https://dav.example.com/files/GoonCave/media/a.png");
+        assert_eq!(
+            headers,
+            [(
+                "authorization".to_owned(),
+                "Basic YW5uOnNlY3JldA==".to_owned()
+            )]
+        );
+        let open = Folder::new("https://dav.example.com/files", "", "").unwrap();
+        assert!(open.download_request("a").unwrap().1.is_empty());
+    }
 
     #[test]
     fn listings_with_any_namespace_prefix_give_their_hrefs() {

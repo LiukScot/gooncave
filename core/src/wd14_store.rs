@@ -39,6 +39,21 @@ pub(crate) fn pending(c: &Connection, excluded: &[String]) -> Result<Option<File
         .map(Option::flatten)
 }
 
+/// The files of `ids` that still wait for tags. A file that left this device or was tagged since
+/// no longer counts as a failure.
+pub(crate) fn still_untagged(c: &Connection, ids: &[String]) -> Result<Vec<String>> {
+    let mut statement = c.prepare("SELECT f.id FROM files f JOIN library_folders folders ON folders.id=f.folder_id
+        WHERE folders.user_id=?1 AND f.location_type='LOCAL' AND NOT EXISTS(SELECT 1 FROM wd14_applied a WHERE a.file_id=f.id AND a.sha256=f.sha256 AND a.model=?2)
+        AND f.id IN (SELECT value FROM json_each(?3))")?;
+    let found = statement
+        .query_map(
+            params![OWNER_ID, REVISION, serde_json::json!(ids).to_string()],
+            |r| r.get(0),
+        )?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(found)
+}
+
 pub(crate) fn counts(c: &Connection) -> Result<(i64, i64)> {
     Ok(c.query_row("SELECT count(*),coalesce(sum(EXISTS(SELECT 1 FROM wd14_applied a WHERE a.file_id=f.id AND a.sha256=f.sha256 AND a.model=?2)),0)
         FROM files f JOIN library_folders folders ON folders.id=f.folder_id WHERE folders.user_id=?1 AND f.location_type='LOCAL'",params![OWNER_ID,REVISION],|r|Ok((r.get(0)?,r.get(1)?)))?)
@@ -156,6 +171,10 @@ mod tests {
             assert!(!apply(c,&one,&[])?);
             assert_eq!(pending(c,&[])?.unwrap().id,"one");
             assert_eq!(counts(c)?,(2,1));
+            let ids=["one".to_owned(),"two".to_owned()];
+            assert_eq!(still_untagged(c,&ids)?,["one"]);
+            c.execute("UPDATE files SET location_type='REMOTE' WHERE id='one'",[])?;
+            assert!(still_untagged(c,&ids)?.is_empty(),"a file that left the device is no failure");
             Ok(())
         }).await.unwrap();
     }

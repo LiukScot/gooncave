@@ -1,6 +1,9 @@
-// The model only runs on x86_64 Linux; elsewhere `Model` is a stub and its helpers go unused.
+// The model only runs on x86_64 Linux and on iOS; elsewhere `Model` is a stub and its helpers go unused.
 #![cfg_attr(
-    not(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu")),
+    not(any(
+        all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+        target_os = "ios"
+    )),
     allow(dead_code)
 )]
 
@@ -14,25 +17,98 @@ pub(crate) const REPOSITORY: &str = "SmilingWolf/wd-v1-4-convnextv2-tagger-v2";
 pub(crate) const SIDE: u32 = 448;
 pub(crate) const OUTPUTS: usize = 9083;
 pub(crate) const MAX_IMAGE_BYTES: usize = 25 * 1024 * 1024;
-pub(crate) const ARTIFACTS: [(&str, u64, &str); 2] = [
-    (
-        "model.onnx",
-        388_479_878,
-        "e91daa19cd9e8725125b7d70702d1560855fb687f8d8c4218eddaa821f41834a",
-    ),
-    (
-        "selected_tags.csv",
-        253_906,
-        "8c8750600db36233a1b274ac88bd46289e588b338218c2e4c62bbc9f2b516368",
-    ),
+
+/// A file of the model, stored under the model directory at `path`.
+pub(crate) struct Artifact {
+    pub path: &'static str,
+    pub size: u64,
+    pub sha256: &'static str,
+    /// Where it is downloaded from; the pinned Hugging Face revision when `None`.
+    url: Option<&'static str>,
+}
+
+impl Artifact {
+    pub fn url(&self) -> String {
+        self.url.map_or_else(
+            || {
+                format!(
+                    "https://huggingface.co/{REPOSITORY}/resolve/{REVISION}/{}",
+                    self.path
+                )
+            },
+            str::to_owned,
+        )
+    }
+}
+
+const VOCABULARY: Artifact = Artifact {
+    path: "selected_tags.csv",
+    size: 253_906,
+    sha256: "8c8750600db36233a1b274ac88bd46289e588b338218c2e4c62bbc9f2b516368",
+    url: None,
+};
+
+#[cfg(not(target_os = "ios"))]
+pub(crate) const ARTIFACTS: &[Artifact] = &[
+    Artifact {
+        path: "model.onnx",
+        size: 388_479_878,
+        sha256: "e91daa19cd9e8725125b7d70702d1560855fb687f8d8c4218eddaa821f41834a",
+        url: None,
+    },
+    VOCABULARY,
 ];
+
+/// The same model as the desktop's, converted to a Core ML package in 32-bit floats.
+#[cfg(target_os = "ios")]
+pub(crate) const ARTIFACTS: &[Artifact] = &[
+    Artifact {
+        path: "WD14.mlpackage/Manifest.json",
+        size: 617,
+        sha256: "4e0692930895495db79261e6d7c1cadca4f63b5d799ed27c33d0caaa28f9a930",
+        url: Some(
+            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-3/Manifest.json",
+        ),
+    },
+    Artifact {
+        path: "WD14.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+        size: 676_187,
+        sha256: "f0ad8f1c48b2454f1e7df3c8a8c3c46db9d252bfdbc95365be0c134ea834a4ac",
+        url: Some(
+            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-3/model.mlmodel",
+        ),
+    },
+    Artifact {
+        path: "WD14.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+        size: 388_035_884,
+        sha256: "ea00637852b31562446d002b2322bcda6f9245c712a8d4411fee8b7518d406c4",
+        url: Some(
+            "https://github.com/LiukScot/gooncave/releases/download/wd14-coreml-3/weight.bin",
+        ),
+    },
+    VOCABULARY,
+];
+
+pub(crate) const UNAVAILABLE: &str =
+    "Automatic tagging needs the iPhone app or a Linux computer with AVX2. You can still add tags by hand.";
+
+pub(crate) fn model_bytes() -> u64 {
+    ARTIFACTS.iter().map(|a| a.size).sum()
+}
 
 pub(crate) fn available() -> bool {
     #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
     {
         std::is_x86_feature_detected!("avx2")
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu")))]
+    #[cfg(target_os = "ios")]
+    {
+        crate::wd14_inference::get().is_some()
+    }
+    #[cfg(not(any(
+        all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+        target_os = "ios"
+    )))]
     {
         false
     }
@@ -231,12 +307,14 @@ fn install_runtime(directory: &Path) -> Result<std::path::PathBuf> {
 impl Model {
     pub fn load(directory: &Path) -> Result<Self> {
         if !available() {
-            return Err(Error::Unavailable(
-                "WD14 requires an AVX2-capable Linux computer.",
-            ));
+            return Err(Error::Unavailable(UNAVAILABLE));
         }
-        for (name, size, hash) in ARTIFACTS {
-            verify(&directory.join(name), size, hash)?;
+        for artifact in ARTIFACTS {
+            verify(
+                &directory.join(artifact.path),
+                artifact.size,
+                artifact.sha256,
+            )?;
         }
         static ENVIRONMENT: std::sync::OnceLock<
             std::result::Result<ort::environment::Environment, String>,
@@ -288,15 +366,72 @@ impl Model {
     }
 }
 
-#[cfg(not(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu")))]
+/// Which load the backend's single model comes from, so dropping an older `Model` keeps a newer one.
+#[cfg(target_os = "ios")]
+static LOADS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+#[cfg(target_os = "ios")]
+pub(crate) struct Model {
+    backend: &'static dyn crate::wd14_inference::Inference,
+    vocabulary: Vec<(String, &'static str)>,
+    load: u64,
+}
+
+#[cfg(target_os = "ios")]
+impl Model {
+    pub fn load(directory: &Path) -> Result<Self> {
+        let backend = crate::wd14_inference::get().ok_or(Error::Unavailable(UNAVAILABLE))?;
+        for artifact in ARTIFACTS {
+            verify(
+                &directory.join(artifact.path),
+                artifact.size,
+                artifact.sha256,
+            )?;
+        }
+        let vocabulary = vocabulary(&directory.join(VOCABULARY.path))?;
+        backend
+            .load(&directory.join("WD14.mlpackage"))
+            .map_err(|e| Error::Storage(format!("Cannot load WD14: {e}")))?;
+        Ok(Self {
+            backend,
+            vocabulary,
+            load: LOADS.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1,
+        })
+    }
+
+    pub fn tag(&mut self, bytes: &[u8]) -> Result<Vec<Tag>> {
+        let scores = self
+            .backend
+            .run(&prepare(bytes)?, OUTPUTS)
+            .map_err(|e| Error::Storage(format!("WD14 could not tag this image: {e}")))?;
+        select(&self.vocabulary, &scores)
+    }
+}
+
+#[cfg(target_os = "ios")]
+impl Drop for Model {
+    fn drop(&mut self) {
+        if LOADS.load(std::sync::atomic::Ordering::SeqCst) == self.load {
+            self.backend.unload();
+        }
+    }
+}
+
+#[cfg(not(any(
+    all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+    target_os = "ios"
+)))]
 pub(crate) struct Model;
-#[cfg(not(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu")))]
+#[cfg(not(any(
+    all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"),
+    target_os = "ios"
+)))]
 impl Model {
     pub fn load(_: &Path) -> Result<Self> {
-        Err(Error::Unavailable("WD14 is currently available on AVX2-capable Linux computers. Phone model size is not decided yet."))
+        Err(Error::Unavailable(UNAVAILABLE))
     }
     pub fn tag(&mut self, _: &[u8]) -> Result<Vec<Tag>> {
-        Err(Error::Unavailable("WD14 is not available on this device."))
+        Err(Error::Unavailable(UNAVAILABLE))
     }
 }
 
