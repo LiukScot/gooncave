@@ -26,7 +26,7 @@ pub async fn refresh(db: &Database) {
         }
     };
     let subscriptions = async {
-        if let Err(error) = subscriptions::refresh(db, &Transport::default(), 1, true).await {
+        if let Err(error) = subscriptions::refresh(db, &Transport::default(), 1, true, None).await {
             eprintln!("[developer] The background subscriptions refresh failed: {error}");
         }
     };

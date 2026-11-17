@@ -597,7 +597,11 @@ export function useExploreController({
         target: PAGE_SIZE,
         minPosts: MIN_POSTS_PER_LOAD,
         signal: controller.signal,
-        refresh: api.refreshExploreSubscriptions,
+        refresh: () =>
+          api.refreshExploreSubscriptions({
+            siteIds: activeSiteIds,
+            signal: controller.signal
+          }),
         fetchPage: (cursor) =>
           api.exploreSubscriptions({
             siteIds: activeSiteIds,
@@ -627,7 +631,10 @@ export function useExploreController({
       setLoading(false);
       if (first.refreshed === null && first.refreshError === null) {
         void api
-          .refreshExploreSubscriptions()
+          .refreshExploreSubscriptions({
+            siteIds: activeSiteIds,
+            signal: controller.signal
+          })
           .then(async (result) => {
             if (controller.signal.aborted) return;
             setSiteErrors(result.errors);
@@ -885,10 +892,11 @@ export function useExploreController({
           minPosts: MIN_POSTS_PER_LOAD,
           signal: controller.signal,
           refresh: () =>
-            api.refreshExploreSubscriptions(
-              SUBSCRIPTION_BACKFILL_ROUNDS,
-              controller.signal
-            ),
+            api.refreshExploreSubscriptions({
+              rounds: SUBSCRIPTION_BACKFILL_ROUNDS,
+              siteIds: activeSiteIds,
+              signal: controller.signal
+            }),
           fetchPage: (cursor) =>
             api.exploreSubscriptions({
               siteIds: activeSiteIds,

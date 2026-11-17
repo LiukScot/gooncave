@@ -1384,11 +1384,16 @@ export const api = {
     });
     return handle<{ keys: string[] }>(res);
   },
-  refreshExploreSubscriptions: async (rounds = 1, signal?: AbortSignal) => {
+  /** Without `siteIds` every enabled site is refreshed. */
+  refreshExploreSubscriptions: async ({
+    rounds = 1,
+    siteIds,
+    signal
+  }: { rounds?: number; siteIds?: string[]; signal?: AbortSignal } = {}) => {
     const res = await apiFetch(`${API_BASE}/explore/subscriptions/refresh`, {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({ rounds }),
+      body: JSON.stringify({ rounds, sites: siteIds }),
       signal
     });
     return handle<{ errors: ExploreSiteError[] }>(res);

@@ -557,8 +557,23 @@ async fn refresh_route(State(db): State<Database>, p: Payload) -> Result<Json<Va
             .filter(|n| (1..=4).contains(n))
             .ok_or_else(|| Error::Invalid("rounds must be from 1 through 4.".into()))?,
     };
+    let sites = match v.get("sites") {
+        None => None,
+        Some(ids) => Some(
+            ids.as_array()
+                .filter(|ids| ids.len() <= 200)
+                .and_then(|ids| {
+                    ids.iter()
+                        .map(|id| id.as_str().map(str::to_owned))
+                        .collect::<Option<HashSet<_>>>()
+                })
+                .ok_or_else(|| {
+                    Error::Invalid("sites must be a list of at most 200 site ids.".into())
+                })?,
+        ),
+    };
     Ok(Json(
-        refresh(&db, &Transport::default(), rounds, false).await?,
+        refresh(&db, &Transport::default(), rounds, false, sites.as_ref()).await?,
     ))
 }
 pub(crate) async fn watch(db: Database) {
@@ -566,7 +581,7 @@ pub(crate) async fn watch(db: Database) {
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         interval.tick().await;
-        match refresh(&db, &Transport::default(), 1, true).await {
+        match refresh(&db, &Transport::default(), 1, true, None).await {
             Ok(result) => {
                 for error in result["errors"].as_array().into_iter().flatten() {
                     eprintln!(
@@ -590,12 +605,14 @@ async fn saved_errors(db: &Database) -> Result<Value> {
     }).await
 }
 /// `background` leaves out sites whose pages only GoonCave's browser can load: each refresh
-/// would start a browser process, and the feed refreshes them when it opens.
+/// would start a browser process, and the feed refreshes them when it opens. `only` limits the
+/// refresh to those site ids. Either way the result names only the errors of the sites refreshed.
 pub(crate) async fn refresh(
     db: &Database,
     t: &Transport,
     rounds: u64,
     background: bool,
+    only: Option<&HashSet<String>>,
 ) -> Result<Value> {
     let _guard = match db.subscriptions.try_lock() {
         Ok(guard) => guard,
@@ -610,7 +627,11 @@ pub(crate) async fn refresh(
     let sites = boorus::sites(db)
         .await?
         .into_iter()
-        .filter(|s| s.enabled && !(background && crate::browser::site(&s.base).is_some()))
+        .filter(|s| {
+            s.enabled
+                && !(background && crate::browser::site(&s.base).is_some())
+                && only.is_none_or(|ids| ids.contains(&s.id))
+        })
         .collect::<Vec<_>>();
     for error in sync_artists(db, t, &sites).await? {
         eprintln!("[developer] FurAffinity watchlist sync failed: {error}");
@@ -672,9 +693,9 @@ pub(crate) async fn refresh(
         }
     }
     let mut result = saved_errors(db).await?;
-    if background {
-        // A site left out keeps the error of its last refresh in the feed; reporting it again on
-        // every automatic refresh would name a failure that did not happen now.
+    if background || only.is_some() {
+        // A site left out keeps the error of its last refresh in the feed; reporting it again
+        // would name a failure that did not happen now.
         let refreshed = sites.iter().map(|s| s.id.as_str()).collect::<HashSet<_>>();
         if let Some(errors) = result["errors"].as_array_mut() {
             errors.retain(|e| {
@@ -1010,7 +1031,7 @@ mod tests {
         let automatic = db.subscriptions.clone().lock_owned().await;
         let asked = tokio::spawn({
             let db = db.clone();
-            async move { refresh(&db, &Transport::default(), 1, false).await }
+            async move { refresh(&db, &Transport::default(), 1, false, None).await }
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
         drop(automatic);
@@ -1019,6 +1040,32 @@ mod tests {
             result["errors"][0]["siteId"], "fixture",
             "the refresh the person asked for read the site: {result}"
         );
+    }
+    #[tokio::test]
+    async fn a_refresh_for_some_sites_leaves_the_others_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        // `.example` never answers, so a refresh that reads the site saves its error.
+        setup(&db, "https://fixture.example".into()).await;
+        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox"])))
+            .await
+            .unwrap();
+        let other = HashSet::from(["another-site".to_owned()]);
+        let result = refresh(&db, &Transport::default(), 1, false, Some(&other))
+            .await
+            .unwrap();
+        assert_eq!(result["errors"], json!([]), "{result}");
+        let read: i64 = db
+            .call(|c| {
+                Ok(c.query_row(
+                    "SELECT count(*) FROM subscription_feed_sync_state WHERE site_id='fixture'",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(read, 0, "the site left out was not read");
     }
     #[tokio::test]
     async fn subscription_refresh_keeps_compound_searches_and_backfills_without_moving_posts() {
