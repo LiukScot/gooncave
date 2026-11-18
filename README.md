@@ -59,8 +59,8 @@ Install [Node.js](https://nodejs.org/) 24 and
 Rust toolchain automatically. Install [FFmpeg](https://ffmpeg.org/download.html)
 (`ffmpeg` and `ffprobe` on your `PATH`): the core uses it to read pictures and
 videos and to make thumbnails.
-The first Linux x86-64 build downloads Microsoft's 11.3 MB ONNX Runtime
-1.30 SDK and verifies its pinned SHA-256. The runtime is bundled in the app;
+The first Linux x86-64 build downloads Microsoft's 157.2 MB ONNX Runtime
+1.30 package from nuget.org and verifies its pinned SHA-256. The runtime is bundled in the app;
 Python is not required. Model weights download only after tagging is enabled.
 
 ```bash

@@ -46,7 +46,7 @@ modules:
   - name: gooncave
     buildsystem: simple
     build-options:
-      # Cargo downloads crates and the build script downloads the pinned ONNX Runtime SDK.
+      # Cargo downloads crates and the build script downloads the pinned ONNX Runtime package.
       build-args:
         - --share=network
         # Survives between builds, so a rebuild compiles only GoonCave's own crates.

@@ -272,13 +272,13 @@ are verified before loading. Downloads stream into temporary files and
 replace cached files only after verification. Closing the app or stopping
 tagging removes incomplete downloads. Finished downloads are reused.
 
-The first Linux x86-64 build fetches Microsoft's ONNX Runtime 1.30 SDK from
-its official GitHub release, checks the archive and library hashes and embeds
-the library and license notices. It unpacks the bundled runtime when tagging
-is enabled. No Python service or separate runtime installation is needed.
+The first Linux x86-64 build fetches Microsoft's ONNX Runtime 1.30 NuGet
+package (`Microsoft.ML.OnnxRuntime`) from nuget.org, checks the package and
+library hashes and embeds the Linux library and license notices. It unpacks
+the bundled runtime when tagging is enabled. No Python service or separate runtime installation is needed.
 The published Rust binding uses its API-30 feature with this runtime;
 ONNX Runtime 1.31 changes scores on the reference images. Building needs the
-11.3 MB SDK; a user consents to the separate 388.7 MB weights in Extra.
+157.2 MB package; a user consents to the separate 388.7 MB weights in Extra.
 
 Files are prepared with EXIF rotation and fit within 2048 pixels. WD14 resizes
 them to 448×448, with horizontal-first bicubic filtering and an 8-bit
