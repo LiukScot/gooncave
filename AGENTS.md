@@ -1,4 +1,4 @@
-version: 32
+version: 33
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -20,6 +20,11 @@ flagged or rejected with a reference to the rule it breaks.
 - Before changing files for a platform, read the relevant platform roadmap,
   architecture, build, and validation documentation in this repository. Resolve
   any documented decision gate before implementing one of its alternatives.
+- Before removing or replacing a feature, a background job or a stored data
+  model, read the ADRs in `adr/` and the pull request that added it
+  (`git log -S`, `gh pr view --comments`). Tell the owner what it protects
+  against and what the replacement costs before writing code. A replacement
+  gets an ADR in the same change, with the alternatives rejected and why.
 - Read what already exists. Find a sibling file solving a similar
   problem and copy its structure, naming, and patterns.
 - Match the prefix conventions of nearby code. If components are
