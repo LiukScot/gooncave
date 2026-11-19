@@ -935,10 +935,11 @@ export function useExploreController({
   }, [applySearch, rememberSearch, tagInput]);
   const searchNow = useCallback(
     (value: string) => {
+      rememberSearch(value);
       setTagInput(value);
       applySearch(value);
     },
-    [applySearch]
+    [applySearch, rememberSearch]
   );
 
   // Remote search is costlier than the local gallery query, but it should

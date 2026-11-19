@@ -82,8 +82,22 @@ function CacheLimit() {
     queryKey: queryKeys.settings.cacheUsage(),
     queryFn: () => api.getCacheUsage()
   });
-  const position = Math.max(0, CACHE_LIMITS_GB.indexOf(settings.cacheLimitGb));
+  // Saved when the thumb is let go: every position passed on the way would trim the cache.
+  const [draft, setDraft] = useState<number | null>(null);
+  const position = draft ?? Math.max(0, CACHE_LIMITS_GB.indexOf(settings.cacheLimitGb));
+  const shown = CACHE_LIMITS_GB[position];
   const last = CACHE_LIMITS_GB.length - 1;
+  const commit = () => {
+    if (draft === null) return;
+    setDraft(null);
+    const gb = CACHE_LIMITS_GB[draft];
+    if (gb === settings.cacheLimitGb) return;
+    updateSettings.mutate(
+      { cacheLimitGb: gb },
+      // A smaller limit frees space at once.
+      { onSuccess: () => void usage.refetch() }
+    );
+  };
   const used = usage.data
     ? `${formatBytes(usage.data.bytes)} used.`
     : usage.isError
@@ -96,7 +110,7 @@ function CacheLimit() {
           Cache size
         </label>
         <output htmlFor="extra-cacheLimitGb" className="text-sm tabular-nums">
-          {cacheLimitLabel(settings.cacheLimitGb)}
+          {cacheLimitLabel(shown)}
         </output>
       </span>
       <span className="block text-muted-foreground text-xs">
@@ -113,16 +127,12 @@ function CacheLimit() {
         max={last}
         step={1}
         value={position}
-        aria-valuetext={cacheLimitLabel(settings.cacheLimitGb)}
+        aria-valuetext={cacheLimitLabel(shown)}
         style={{ '--progress': `${(position / last) * 100}%` } as React.CSSProperties}
-        onChange={(event) => {
-          const gb = CACHE_LIMITS_GB[Number(event.target.value)];
-          updateSettings.mutate(
-            { cacheLimitGb: gb },
-            // A smaller limit frees space at once.
-            { onSuccess: () => void usage.refetch() }
-          );
-        }}
+        onChange={(event) => setDraft(Number(event.target.value))}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={commit}
       />
     </div>
   );

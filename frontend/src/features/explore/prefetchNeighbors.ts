@@ -26,13 +26,16 @@ export function prefetchNeighbors(
     if (post.description === undefined) {
       void queryClient.prefetchQuery({
         queryKey: queryKeys.explorePostText(post.siteId, post.remoteId),
-        queryFn: () => api.explorePostText(post.siteId, post.remoteId)
+        queryFn: () => api.explorePostText(post.siteId, post.remoteId),
+        // Asks only for what is not loaded; the open post's own query decides when to refresh.
+        staleTime: Infinity
       });
     }
     if (post.parentId || post.hasChildren) {
       void queryClient.prefetchQuery({
         queryKey: queryKeys.explorePostRelations(post.siteId, post.remoteId),
-        queryFn: async ({ signal }) => (await api.exploreRelations(post, signal)).posts
+        queryFn: async ({ signal }) => (await api.exploreRelations(post, signal)).posts,
+        staleTime: Infinity
       });
     }
   }

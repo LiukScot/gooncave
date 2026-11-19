@@ -128,13 +128,16 @@ export function ExploreView({
   const navigate = useNavigate();
   const { siteErrors } = ctl;
   const online = useOnline();
+  // Read rather than depended on: reconnecting must not show again the errors of an offline search.
+  const onlineRef = useRef(online);
+  onlineRef.current = online;
   const retrySearch = useRef(ctl.retrySearch);
   retrySearch.current = ctl.retrySearch;
   // A site that failed is named rather than silently dropped: an expired API key looks
   // exactly like "no results" otherwise.
   useEffect(() => {
     // Offline every site fails: the heading already says Offline, and saved results still show.
-    if (!online) return;
+    if (!onlineRef.current) return;
     const now = Date.now();
     const shown = siteErrors.filter((siteError) => {
       if (siteError.code !== 'SITE_OFFLINE') return true;
@@ -159,7 +162,7 @@ export function ExploreView({
       return id;
     });
     return () => ids.forEach((id) => toast.dismiss(id));
-  }, [siteErrors, navigate, online]);
+  }, [siteErrors, navigate]);
   const currentSearch = normalizeSubscriptionSearch(ctl.tagInput);
   // Subscriptions and History are feeds of their own; a search does not apply to them.
   const isFeed = ctl.sort === 'subscribed' || ctl.sort === 'history';

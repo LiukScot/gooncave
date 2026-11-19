@@ -47,6 +47,8 @@ export function TagSearchInput({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
   const [highlighted, setHighlighted] = useState(0);
+  // Recent searches start with none highlighted, so Enter in an empty box still submits it.
+  const [browsed, setBrowsed] = useState(false);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [open, setOpen] = useState(false);
@@ -109,7 +111,7 @@ export function TagSearchInput({
     ? recent.map((search) => ({ label: search, files: 0 }))
     : suggestions.map((suggestion) => ({ label: suggestion.tag, files: suggestion.files }));
   const visible = open && options.length > 0;
-  const active = Math.min(highlighted, options.length - 1);
+  const active = showingRecent && !browsed ? -1 : Math.min(highlighted, options.length - 1);
   const choose = (index: number) => {
     if (!showingRecent) {
       apply(options[index].label);
@@ -120,7 +122,7 @@ export function TagSearchInput({
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!visible) {
+    if (!visible || (active < 0 && event.key === 'Enter')) {
       if (event.key === 'Enter' && onSubmit) {
         event.preventDefault();
         onSubmit();
@@ -129,10 +131,12 @@ export function TagSearchInput({
     }
     if (event.key === 'ArrowDown') {
       event.preventDefault();
+      setBrowsed(true);
       setHighlighted((active + 1) % options.length);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      setHighlighted((active - 1 + options.length) % options.length);
+      setBrowsed(true);
+      setHighlighted(active < 0 ? options.length - 1 : (active - 1 + options.length) % options.length);
     } else if (event.key === 'Enter') {
       event.preventDefault();
       choose(active);
@@ -159,11 +163,12 @@ export function TagSearchInput({
         aria-expanded={visible}
         aria-autocomplete="list"
         aria-controls={visible ? `${id}-suggestions` : undefined}
-        aria-activedescendant={visible ? `${id}-suggestion-${active}` : undefined}
+        aria-activedescendant={visible && active >= 0 ? `${id}-suggestion-${active}` : undefined}
         autoComplete="off"
         onChange={(event) => {
           onChange(event.target.value);
           syncCaret(event.target);
+          setBrowsed(false);
           setOpen(true);
         }}
         onKeyUp={(event) => syncCaret(event.currentTarget)}
@@ -175,6 +180,7 @@ export function TagSearchInput({
             window.clearTimeout(blurTimerRef.current);
             blurTimerRef.current = null;
           }
+          setBrowsed(false);
           setOpen(true);
         }}
         onBlur={() => {
@@ -229,7 +235,10 @@ export function TagSearchInput({
                 className={`gallery-tag-suggestion${
                   index === active ? ' is-highlighted' : ''
                 }`}
-                onMouseEnter={() => setHighlighted(index)}
+                onMouseEnter={() => {
+                  setBrowsed(true);
+                  setHighlighted(index);
+                }}
                 onClick={() => choose(index)}
               >
                 <span className="gallery-tag-suggestion-name">

@@ -1,6 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { QueryClient } from '@tanstack/react-query';
+import { describe, expect, it, vi } from 'vitest';
 
-import { RECENT_SEARCH_LIMIT, withRecentSearch } from './recentSearches';
+import { RECENT_SEARCH_LIMIT, rememberSearchIn, withRecentSearch } from './recentSearches';
+
+import { api } from '@/api';
+
+describe('rememberSearchIn', () => {
+  it('adds to the saved list when a search comes before the list has loaded', async () => {
+    vi.spyOn(api, 'getRecentSearches').mockResolvedValue(['fox', 'wolf']);
+    const saved: string[][] = [];
+    await rememberSearchIn(new QueryClient(), 'cat', (list) => saved.push(list));
+    expect(saved).toEqual([['cat', 'fox', 'wolf']]);
+  });
+});
 
 describe('withRecentSearch', () => {
   it('moves a repeated search to the front instead of listing it twice', () => {

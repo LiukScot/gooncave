@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 
 import { api } from '@/api';
@@ -23,22 +23,42 @@ export function useRecentSearches(): string[] {
   return data ?? [];
 }
 
+/**
+ * Puts `search` at the top of the recent searches and hands the new list to `save`. The list is
+ * read from the core first when it has not loaded yet: saving a list built on nothing would
+ * replace the one shared between devices.
+ */
+export async function rememberSearchIn(
+  queryClient: QueryClient,
+  search: string,
+  save: (list: string[]) => void
+): Promise<void> {
+  const key = queryKeys.settings.recentSearches();
+  const loaded = await queryClient.ensureQueryData({ queryKey: key, queryFn: () => api.getRecentSearches() });
+  // Another search may have been added while the list loaded.
+  const current = queryClient.getQueryData<string[]>(key) ?? loaded;
+  const next = withRecentSearch(current, search);
+  if (next[0] === current[0] && next.length === current.length) return;
+  queryClient.setQueryData(key, next);
+  save(next);
+}
+
 /** Puts a search at the top of the recent searches. */
 export function useRememberSearch(): (search: string) => void {
   const queryClient = useQueryClient();
   const { mutate } = useMutation({
     mutationFn: (list: string[]) => api.setRecentSearches(list),
-    onSuccess: (list) => queryClient.setQueryData(queryKeys.settings.recentSearches(), list),
-    onError: (error) => console.error('[developer] Explore could not save a recent search:', error)
+    // The new list is already shown; an answer arriving late must not put an older one back.
+    onError: (error) => {
+      console.error('[developer] Explore could not save a recent search:', error);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.settings.recentSearches() });
+    }
   });
   return useCallback(
     (search: string) => {
-      const key = queryKeys.settings.recentSearches();
-      const current = queryClient.getQueryData<string[]>(key) ?? [];
-      const next = withRecentSearch(current, search);
-      if (next[0] === current[0] && next.length === current.length) return;
-      queryClient.setQueryData(key, next);
-      mutate(next);
+      rememberSearchIn(queryClient, search, mutate).catch((error: unknown) => {
+        console.error('[developer] Explore could not read the recent searches, so this one was not saved:', error);
+      });
     },
     [mutate, queryClient]
   );

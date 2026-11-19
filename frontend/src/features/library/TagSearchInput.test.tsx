@@ -48,7 +48,35 @@ it('offers recent searches in an empty box and runs the whole search picked with
   act(() => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   });
-  expect(onPick).toHaveBeenCalledWith('fox');
+  expect(onPick).toHaveBeenCalledWith('wolf rating:s');
+});
+
+it('submits an empty box on Enter instead of running a recent search', () => {
+  const onPick = vi.fn();
+  const onSubmit = vi.fn();
+  const host = document.createElement('div');
+  document.body.append(host);
+  root = createRoot(host);
+  act(() =>
+    root?.render(
+      <TagSearchInput
+        value=""
+        onChange={() => undefined}
+        onPick={onPick}
+        onSubmit={onSubmit}
+        recent={['wolf rating:s']}
+        placeholder="tags"
+      />
+    )
+  );
+  const input = host.querySelector('input');
+  if (!input) throw new Error('no input');
+  act(() => input.focus());
+  act(() => {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  });
+  expect(onSubmit).toHaveBeenCalled();
+  expect(onPick).not.toHaveBeenCalled();
 });
 
 it('hides recent searches once the box holds a search', () => {
