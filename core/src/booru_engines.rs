@@ -412,6 +412,23 @@ pub(crate) fn normalize(site: &Site, p: &Value) -> Result<Value> {
         children,
         pools,
     ) = match e {
+        "e621" if p["files"].is_object() => (
+            &p["files"]["preview"]["jpg"],
+            &p["files"]["sample"]["jpg"],
+            &p["files"]["original"]["url"],
+            &p["files"]["original"]["width"],
+            &p["files"]["original"]["height"],
+            &p["stats"]["score"]["total"],
+            &p["files"]["meta"]["md5"],
+            &p["created_at"],
+            &p["uploader_name"],
+            &p["stats"]["fav_count"],
+            &p["files"]["meta"]["size"],
+            &p["files"]["meta"]["ext"],
+            &p["relationships"]["parent_id"],
+            &p["has"]["children"],
+            &p["pools"],
+        ),
         "e621" => (
             &p["preview"]["url"],
             &p["sample"]["url"],
@@ -553,7 +570,7 @@ pub(crate) fn normalize(site: &Site, p: &Value) -> Result<Value> {
     let mut post = json!({"remoteId":remote_id,"previewUrl":preview,"sampleUrl":media(site,sample)?,"fileUrl":file,"width":number(width),"height":number(height),"score":number(score),
  "rating":if e=="philomena"{Value::Null}else{fallback(&p["rating"],&p["safety"]).clone()},"md5":md5,"createdAt":timestamp(created),"uploader":uploader,"tags":tags(e,p)?,"sourceUrls":sources,
  "favCount":number(favs),"fileSize":number(size),"fileExt":if ext.is_null(){extension(&file)}else{ext.clone()},"parentId":parent(par)?,"hasChildren":boolean(children),"poolIds":pools,
- "favorited":fallback(&p["is_favorited"],&p["ownFavorite"]).as_bool(),"voted":fallback(&p["vote"],&p["ownScore"]).as_i64().filter(|v|(-1..=1).contains(v))});
+ "favorited":fallback(fallback(&p["is_favorited"],&p["stats"]["is_favorited"]),&p["ownFavorite"]).as_bool(),"voted":fallback(fallback(&p["vote"],&p["stats"]["vote"]),&p["ownScore"]).as_i64().filter(|v|(-1..=1).contains(v))});
     // Only where a search answer has the text: elsewhere its absence tells the app to ask for it.
     match e {
         "e621" => {
@@ -561,7 +578,8 @@ pub(crate) fn normalize(site: &Site, p: &Value) -> Result<Value> {
                 p["description"].as_str(),
                 &site.base
             ));
-            post["commentCount"] = p["comment_count"].clone();
+            post["commentCount"] =
+                fallback(&p["comment_count"], &p["stats"]["comment_count"]).clone();
         }
         "philomena" => post["description"] = p["description"].clone(),
         _ => {}
@@ -571,7 +589,8 @@ pub(crate) fn normalize(site: &Site, p: &Value) -> Result<Value> {
 fn entries<'a>(site: &Site, v: &'a Value) -> Result<Vec<&'a Value>> {
     let e = site.engine.as_str();
     let value = match e {
-        "e621" => &v["posts"],
+        // e621's API v1 wraps the list; v2 sends it bare, and instances update at their own pace.
+        "e621" if v.get("posts").is_some() => &v["posts"],
         "moebooru" if v.get("posts").is_some() => &v["posts"],
         "philomena" => &v["images"],
         "szurubooru" => &v["results"],
@@ -806,6 +825,10 @@ pub(crate) async fn search(t: &Transport, site: &Site, s: &Search) -> Result<Vec
         tags.push(format!("id:<{id}"));
     }
     let mut url = endpoint(site, path)?;
+    if site.engine == "e621" {
+        // API v2 sends tags without their categories unless asked.
+        url.query_pairs_mut().append_pair("mode", "extended");
+    }
     if site.engine == "moebooru" {
         url.query_pairs_mut()
             .append_pair("api_version", "2")
@@ -1005,11 +1028,14 @@ pub(crate) async fn e621_post(t: &Transport, site: &Site, safe: &str) -> Result<
     };
     let answer = read
         .get_or_init(|| async {
-            let url = endpoint(site, &format!("/posts/{safe}.json"))?;
+            let mut url = endpoint(site, &format!("/posts/{safe}.json"))?;
+            url.query_pairs_mut().append_pair("mode", "extended");
             match t.json(url, headers(site, false)?).await {
-                Ok(v) => match v.get("post").filter(|post| post.is_object()) {
-                    Some(post) => Ok(Some(post.clone())),
-                    None => Err(booru_http::remote(
+                // API v1 wraps the post; v2 sends it bare.
+                Ok(v) => match v.get("post") {
+                    Some(post) if post.is_object() => Ok(Some(post.clone())),
+                    None if v.get("id").is_some() => Ok(Some(v)),
+                    _ => Err(booru_http::remote(
                         "e621 sent an unexpected answer. Try again.",
                     )),
                 },
@@ -1565,6 +1591,69 @@ mod tests {
         let key = (site.id.clone(), site.base.clone(), "1".to_owned());
         assert!(!E621_READS.get().unwrap().lock().unwrap().contains_key(&key));
         server.abort();
+    }
+    #[tokio::test]
+    async fn e621_reads_the_post_format_of_its_api_v2() {
+        let post = json!({"id":7,
+            "files":{"meta":{"md5":"abc","ext":"webm","size":10},"original":{"width":640,"height":480,"url":"https://cdn.example.com/file.webm"},
+                "preview":{"jpg":"https://cdn.example.com/thumb.jpg"},"sample":{"jpg":"https://cdn.example.com/sample.jpg"}},
+            "stats":{"score":{"total":22},"fav_count":5,"is_favorited":true,"vote":-1,"comment_count":2},
+            "flags":{"deleted":false},"has":{"children":true},"relationships":{"parent_id":4,"children":[9]},"pools":[3],
+            "tags":{"artist":["test_artist"],"species":["canine"]}});
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let check = |p: &Value| {
+            assert_eq!(p["fileUrl"], "https://cdn.example.com/file.webm");
+            assert_eq!(p["previewUrl"], "https://cdn.example.com/thumb.jpg");
+            assert_eq!(
+                (p["width"].clone(), p["height"].clone()),
+                (json!(640.0), json!(480.0))
+            );
+            assert_eq!(
+                (p["score"].clone(), p["favCount"].clone()),
+                (json!(22.0), json!(5.0))
+            );
+            assert_eq!(
+                (
+                    p["md5"].clone(),
+                    p["fileExt"].clone(),
+                    p["fileSize"].clone()
+                ),
+                (json!("abc"), json!("webm"), json!(10.0))
+            );
+            assert_eq!(
+                (p["parentId"].clone(), p["hasChildren"].clone()),
+                (json!("4"), json!(true))
+            );
+            assert_eq!(p["poolIds"], json!(["3"]));
+            assert_eq!(
+                (p["favorited"].clone(), p["voted"].clone()),
+                (json!(true), json!(-1))
+            );
+            assert_eq!(p["commentCount"], 2);
+            assert!(p["tags"]
+                .as_array()
+                .unwrap()
+                .contains(&json!({"tag":"test_artist","category":"artist"})));
+        };
+        let list = fixture(json!([post]).to_string(), "application/json").await;
+        let posts = search(&t, &site("e621", &list.base), &Search::default())
+            .await
+            .unwrap();
+        check(&posts[0]);
+        let one = fixture(post.to_string(), "application/json").await;
+        check(
+            &single(&t, &site("e621", &one.base), "7")
+                .await
+                .unwrap()
+                .unwrap(),
+        );
+        let mut requests = list.requests.lock().unwrap().clone();
+        requests.extend(one.requests.lock().unwrap().iter().cloned());
+        for (path, _) in requests {
+            assert!(path.contains("mode=extended"), "{path}");
+        }
     }
     #[test]
     fn only_sites_whose_search_has_the_text_say_what_it_is() {
