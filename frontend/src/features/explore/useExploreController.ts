@@ -131,6 +131,14 @@ const credentialsReady = (site: BooruSite): boolean => {
 
 export { explorePostKey };
 
+/** The detail view's way back: to the pool it was opened from, or to the page it was opened on. */
+export function exploreBackLabel(sort: ExploreSort, inPool: boolean): string {
+  if (inPool) return 'Back to pool';
+  if (sort === 'subscribed') return 'Back to subscriptions';
+  if (sort === 'history') return 'Back to history';
+  return 'Back to explore';
+}
+
 export function useExploreController({
   feed
 }: {
@@ -1589,8 +1597,7 @@ export function useExploreController({
   const hasNext =
     excursionNav?.hasNext ??
     (anchorIndex >= 0 && (anchorIndex < navKeys.length - 1 || hasMore));
-  const backLabel = excursionNav?.backLabel ??
-    (poolContext ? 'Back to pool' : 'Back to explore');
+  const backLabel = excursionNav?.backLabel ?? exploreBackLabel(sort, Boolean(poolContext));
 
   // The header owns Back and Prev/Next for the gallery; explore publishes the
   // same controls here so both pages get them from one place.
