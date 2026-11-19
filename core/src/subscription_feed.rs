@@ -16,7 +16,7 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use rusqlite::{params, params_from_iter, Connection};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -96,7 +96,7 @@ async fn prepare(db: &Database, t: &Transport, sites: &[Site]) -> Result<Vec<Row
                     [&site],
                     |r| r.get(0),
                 )
-                .ok();
+                .optional()?;
             if saved.as_deref() != Some(of.as_str()) {
                 tx.execute("DELETE FROM subscription_posts WHERE site_id=?1", [&site])?;
                 tx.execute(
@@ -408,10 +408,18 @@ async fn sync_sites(
     let cutoff = now() - RETENTION_DAYS * 86_400;
     if let Err(e) = db
         .call(move |c| {
-            c.execute(
+            let tx = c.transaction()?;
+            tx.execute(
                 "DELETE FROM subscription_posts WHERE sort_at < ?1",
                 [cutoff],
             )?;
+            // The feed ends where the kept posts end: reading on would show posts the next sync
+            // deletes, and leave a gap where it already did.
+            tx.execute(
+                "UPDATE subscription_searches SET done=1 WHERE tail_at < ?1",
+                [cutoff],
+            )?;
+            tx.commit()?;
             Ok(())
         })
         .await
@@ -673,7 +681,7 @@ async fn page(db: &Database, t: &Transport, sites: Vec<Site>, q: FeedQuery) -> R
         let (posts, floor) = db
             .call(move |c| saved_page(c, &ids, &key, limit, unread))
             .await?;
-        if posts.len() > q.limit || floor.is_none() || Instant::now() >= deadline {
+        if posts.len() >= q.limit || floor.is_none() || Instant::now() >= deadline {
             break (posts, floor);
         }
         // Not a page yet: read the searches whose oldest saved post is the newest.
@@ -697,7 +705,28 @@ async fn page(db: &Database, t: &Transport, sites: Vec<Site>, q: FeedQuery) -> R
     let has_more = posts.len() > q.limit || floor.is_some();
     let posts = posts.into_iter().take(q.limit).collect::<Vec<_>>();
     let next = posts.last().map(|(k, _)| k.clone()).unwrap_or(key);
-    let newest = posts.first().map(|(k, _)| k.at);
+    let newest = match posts.first() {
+        Some((k, _)) => Some(k.at),
+        // An empty feed still counts what a sync saves after it.
+        None if q.cursor.is_none() && !sites.is_empty() => {
+            let ids = sites.iter().map(|s| s.id.clone()).collect::<Vec<_>>();
+            Some(
+                db.call(move |c| {
+                    Ok(c.query_row(
+                        &format!(
+                            "SELECT coalesce(max(sort_at), 0) FROM subscription_posts
+                             WHERE site_id IN ({})",
+                            placeholders(ids.len())
+                        ),
+                        params_from_iter(&ids),
+                        |r| r.get::<_, i64>(0),
+                    )?)
+                })
+                .await?,
+            )
+        }
+        None => None,
+    };
     let media = explore::media_key(db).await?;
     let mut grouped = HashMap::<String, Vec<Value>>::new();
     for (k, post) in &posts {
@@ -1062,9 +1091,22 @@ mod tests {
             }
             Ok(())
         }).await.unwrap();
-        let (shown, _) = read_feed(&db, &[site], 40, true).await;
+        let (shown, _) = read_feed(&db, std::slice::from_ref(&site), 40, true).await;
         assert_eq!(shown, ids(1..=10));
         assert_eq!(requests.lock().unwrap().len(), asked);
+        // Everything read: the empty feed still counts posts saved above the newest one.
+        db.call(|c| {
+            for id in 1..=10 {
+                c.execute("INSERT INTO read_marks(scope,item_key,user_id,read_at) VALUES ('post',?1,?2,'2026-11-19')",
+                    params![format!("fixture:{id}"), OWNER_ID])?;
+            }
+            Ok(())
+        }).await.unwrap();
+        let empty = page(&db, &t(), vec![site], options(None, 40, true))
+            .await
+            .unwrap();
+        assert_eq!(empty["posts"], json!([]));
+        assert_eq!(empty["newestAt"], 1_800_000_060);
         task.abort();
     }
     #[tokio::test]
@@ -1136,7 +1178,8 @@ mod tests {
         setup(&db, "e621", "https://fixture.example").await;
         let shown = db
             .call(|c| {
-                let post = |at: &str, score: i64| json!({"remoteId":"7","createdAt":at,"score":score});
+                let post =
+                    |at: &str, score: i64| json!({"remoteId":"7","createdAt":at,"score":score});
                 save_posts(c, "fixture", &[(100, post("1970-01-01T00:01:40Z", 1))])?;
                 // A second search dates the same post by a later edit.
                 save_posts(c, "fixture", &[(200, post("1970-01-01T00:03:20Z", 2))])?;
@@ -1144,12 +1187,52 @@ mod tests {
                     "SELECT sort_at, json_extract(post,'$.createdAt'), json_extract(post,'$.score')
                      FROM subscription_posts",
                     [],
-                    |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?)),
+                    |r| {
+                        Ok((
+                            r.get::<_, i64>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, i64>(2)?,
+                        ))
+                    },
                 )?)
             })
             .await
             .unwrap();
         assert_eq!(shown, (100, "1970-01-01T00:01:40Z".to_owned(), 2));
+    }
+    #[tokio::test]
+    async fn the_saved_posts_record_where_each_search_has_results() {
+        let (base, _, task) = booru(Arc::new(Mutex::new(vec![(1, "wolf", 1_800_000_000)]))).await;
+        let (_dir, db) = open();
+        let site = setup(&db, "e621", &base).await;
+        subscribe(&db, json!(["wolf score:>5", "fox"])).await;
+        read_feed(&db, &[site], 40, false).await;
+        let hits = db.call(|c| store::site_hits(c)).await.unwrap();
+        assert_eq!(hits["wolf score:>5"], ["fixture"]);
+        assert!(!hits.contains_key("fox"));
+        task.abort();
+    }
+    #[tokio::test]
+    async fn posts_past_a_year_are_deleted_and_the_feed_ends_there() {
+        let (base, _, task) = booru(Arc::new(Mutex::new(
+            (1..=50)
+                .map(|id| (id, "fox", now() - 400 * 86_400 + id as i64))
+                .collect(),
+        )))
+        .await;
+        let (_dir, db) = open();
+        let site = setup(&db, "e621", &base).await;
+        subscribe(&db, json!(["fox"])).await;
+        let first = page(&db, &t(), vec![site.clone()], options(None, 40, false))
+            .await
+            .unwrap();
+        assert_eq!(first["posts"].as_array().unwrap().len(), 40);
+        let _guard = db.subscription_feed.lock().await;
+        sync_sites(&db, &t(), std::slice::from_ref(&site), false).await;
+        drop(_guard);
+        let (shown, _) = read_feed(&db, &[site], 40, false).await;
+        assert!(shown.is_empty(), "{shown:?}");
+        task.abort();
     }
     #[tokio::test]
     async fn a_favorite_set_from_the_feed_stays_on_the_saved_post() {

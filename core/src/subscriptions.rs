@@ -752,9 +752,15 @@ pub(crate) async fn read(
             skipped,
         });
     }
-    Err(crate::booru_http::remote(
-        "The site kept repeating posts already read. Try again later.",
-    ))
+    // Pages that moved since the search was read: carry on after them, so the next read starts
+    // further down instead of reading the same pages again.
+    Ok(Read {
+        posts: vec![],
+        more: true,
+        page: page.clone(),
+        next: page,
+        skipped: 0,
+    })
 }
 /// Seconds since 1970 of `createdAt`, or None when the post has no readable date.
 pub(crate) fn posted(post: &Value) -> Option<i64> {
@@ -946,6 +952,55 @@ mod tests {
     }
     fn dated(id: &str, at: &str) -> Value {
         json!({"remoteId":id,"createdAt":at})
+    }
+    #[tokio::test]
+    async fn pages_that_moved_since_the_last_read_are_passed_not_read_forever() {
+        // A number-paged site where new posts pushed every page down: each holds posts read already.
+        let app = Router::new().fallback(any(|| async {
+            Json(json!((1000..1040)
+                .rev()
+                .map(|id| json!({"id":id,"file_url":"https://cdn.example.com/f.jpg","tags":"fox"}))
+                .collect::<Vec<_>>()))
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let site = Site {
+            id: "fixture".into(),
+            name: "Fixture".into(),
+            engine: "moebooru".into(),
+            base,
+            username: None,
+            key: None,
+            cookie: None,
+            enabled: true,
+            public: Value::Null,
+        };
+        let at = Position {
+            page: Some("2".into()),
+            below: Some(10),
+            ..Position::default()
+        };
+        let read = read(
+            &Transport {
+                allow_loopback: true,
+            },
+            &site,
+            &["fox".into()],
+            &at,
+        )
+        .await
+        .unwrap();
+        task.abort();
+        assert!(read.posts.is_empty());
+        assert_eq!(
+            read.after(&at),
+            Position {
+                page: Some("6".into()),
+                below: Some(10),
+                ..Position::default()
+            }
+        );
     }
     #[test]
     fn a_page_of_ids_that_are_not_numbers_carries_on_by_counting_the_posts_read() {
