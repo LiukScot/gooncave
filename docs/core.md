@@ -607,7 +607,10 @@ reloaded. Opening the feed first syncs the FurAffinity watchlists. Search
 paging stops at 1,000 pages with recovery guidance. Rule34 and other Gelbooru
 forks send no upload time in JSON, only the time of the last edit, so each
 search also reads the same page as XML for its `created_at`; without it an old
-post tagged or flagged today would sort among today's.
+post tagged or flagged today would sort among today's. FurAffinity's inbox has
+no upload time either; the time in each thumbnail's name changes when the file
+is replaced. So a post never shows a date later than the post above it from the
+same search, also across Show more: it takes that date.
 
 The Subscriptions page always opens at the newest posts. Show more reads up to
 three feed pages, and more while every post read so far is hidden as read, so it

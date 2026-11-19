@@ -471,6 +471,9 @@ struct Position {
     skip: usize,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     done: bool,
+    /// The date of the last post shown, in seconds since 1970: no later post goes above it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    dated: Option<i64>,
 }
 fn is_zero(n: &usize) -> bool {
     *n == 0
@@ -1000,10 +1003,15 @@ fn posted(post: &Value) -> Option<i64> {
         .map(|d| d.unix_timestamp())
 }
 /// One search's dates, never rising, so each search stays a run in the merge: a post dated
-/// after the one above it takes that date, and a post without a date takes the date above it,
-/// or below it at the top of the page. A page without any date sorts first.
-fn run_dates(posts: &[Value]) -> Vec<i64> {
-    let first = posts.iter().find_map(posted).unwrap_or(i64::MAX);
+/// after the one above it, or after `above` (the last post shown from the search), takes that
+/// date, and a post without a date takes the date above it, or below it at the top of the page.
+/// A page without any date sorts first. Some sites date a post by its last edit (Rule34's
+/// `change`, FurAffinity's thumbnail), which a later post ID shows to be too late.
+fn run_dates(posts: &[Value], above: Option<i64>) -> Vec<i64> {
+    let first = posts
+        .iter()
+        .find_map(posted)
+        .map_or(above.unwrap_or(i64::MAX), |d| above.map_or(d, |a| d.min(a)));
     let mut last = first;
     posts
         .iter()
@@ -1026,7 +1034,11 @@ fn merge(streams: &[Stream], reads: Vec<Result<Read>>, limit: usize) -> FeedPage
     let ok = |stream: &Stream| !failed.iter().any(|(site, _)| *site == stream.site);
     let dates = reads
         .iter()
-        .map(|read| read.as_ref().map_or(vec![], |read| run_dates(&read.posts)))
+        .zip(streams)
+        .map(|(read, stream)| {
+            read.as_ref()
+                .map_or(vec![], |read| run_dates(&read.posts, stream.at.dated))
+        })
         .collect::<Vec<_>>();
     let floor = streams
         .iter()
@@ -1067,14 +1079,29 @@ fn merge(streams: &[Stream], reads: Vec<Result<Read>>, limit: usize) -> FeedPage
             site,
             post["remoteId"].as_str().unwrap_or_default().to_owned(),
         )) {
-            posts.push((site, post.clone()));
+            let mut post = post.clone();
+            // Shown with the date it sorted by, so it never reads newer than a post above it.
+            let date = dates[index][position];
+            if posted(&post).is_some_and(|d| d > date) {
+                if let Some(at) = time::OffsetDateTime::from_unix_timestamp(date)
+                    .ok()
+                    .and_then(|d| {
+                        d.format(&time::format_description::well_known::Rfc3339)
+                            .ok()
+                    })
+                {
+                    post["createdAt"] = json!(at);
+                }
+            }
+            posts.push((site, post));
         }
     }
     let positions = streams
         .iter()
         .zip(&reads)
         .zip(taken)
-        .map(|((stream, read), taken)| {
+        .zip(&dates)
+        .map(|(((stream, read), taken), dates)| {
             let Ok(read) = read else {
                 return Position {
                     done: true,
@@ -1092,6 +1119,11 @@ fn merge(streams: &[Stream], reads: Vec<Result<Read>>, limit: usize) -> FeedPage
                     0
                 },
                 done: false,
+                dated: taken
+                    .checked_sub(1)
+                    .map(|i| dates[i])
+                    .filter(|d| *d != i64::MAX)
+                    .or(stream.at.dated),
             };
             if taken == read.posts.len() {
                 match &read.next {
@@ -1396,6 +1428,39 @@ mod tests {
         task.abort();
     }
     #[tokio::test]
+    async fn a_post_dated_by_a_later_edit_never_reads_newer_than_the_post_above_it() {
+        // Post 2 was uploaded before post 3, but the site dates it by an edit an hour later.
+        let at = 1_800_000_000;
+        let (base, _, task) = booru(vec![
+            (3, "fox", at),
+            (2, "fox", at + 3600),
+            (1, "fox", at - 3600),
+        ])
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let site = setup(&db, base).await;
+        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox"])))
+            .await
+            .unwrap();
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let (mut shown, mut cursor) = (vec![], None);
+        loop {
+            let page = feed_page(&db, &t, vec![site.clone()], cursor, 1)
+                .await
+                .unwrap();
+            shown.extend(page["posts"].as_array().unwrap().iter().map(posted));
+            let Some(next) = page["nextCursor"].as_str() else {
+                break;
+            };
+            cursor = Some(decode_cursor(next).unwrap());
+        }
+        task.abort();
+        assert_eq!(shown, [Some(at), Some(at), Some(at - 3600)]);
+    }
+    #[tokio::test]
     async fn danbooru_skips_the_tags_it_has_no_posts_for_on_every_page() {
         let requests = Arc::new(Mutex::new(Vec::<String>::new()));
         let captured = requests.clone();
@@ -1593,6 +1658,8 @@ mod tests {
             page.positions,
             [Position {
                 skip: 2,
+                // 2026-10-12T00:00:00Z
+                dated: Some(1_791_763_200),
                 ..Position::default()
             }]
         );
@@ -1606,8 +1673,8 @@ mod tests {
             dated("0", "2026-10-13T00:00:00Z"),
         ];
         let day = 1_791_763_200;
-        assert_eq!(run_dates(&posts), [day, day, day, day]);
-        assert_eq!(run_dates(&[json!({"remoteId":"1"})]), [i64::MAX]);
+        assert_eq!(run_dates(&posts, None), [day, day, day, day]);
+        assert_eq!(run_dates(&[json!({"remoteId":"1"})], None), [i64::MAX]);
     }
     #[test]
     fn a_cursor_belongs_to_one_address_and_engine() {
