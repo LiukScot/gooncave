@@ -1166,9 +1166,7 @@ mod tests {
     }
     #[test]
     fn saved_posts_go_when_a_search_or_the_site_changes() {
-        let of = |base: &str, searches: &[&str]| {
-            json!({"engine": "e621", "base": base, "searches": searches})
-        };
+        let of = |base: &str, searches: &[&str]| json!({"engine": "e621", "base": base, "searches": searches});
         let saved = of("https://e621.net", &["fox", "wolf"]);
         let keeps = |now: Value| keeps_posts(Some(&saved), &now);
         assert!(keeps(of("https://e621.net", &["wolf", "fox", "cat"])));
