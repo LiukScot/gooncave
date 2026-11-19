@@ -477,13 +477,6 @@ pub(crate) struct Position {
 fn is_zero(n: &usize) -> bool {
     *n == 0
 }
-/// Identifies one site's address, engine and searches: the saved feed of a site whose
-/// fingerprint changed is read again.
-pub(crate) fn fingerprint(site: &Site, searches: &[Vec<String>]) -> String {
-    use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(json!([site.engine, site.base, searches]).to_string());
-    digest[..8].iter().map(|b| format!("{b:02x}")).collect()
-}
 /// The searches the feed of `site` reads: one per batch of [`site_searches`], or one for the
 /// FurAffinity inbox, which holds the watched artists' posts.
 pub(crate) fn site_queries(searches: &[String], absent: &[usize], site: &Site) -> Vec<Vec<String>> {
@@ -1033,29 +1026,6 @@ mod tests {
         let day = 1_791_763_200;
         assert_eq!(run_dates(&posts, None), [day, day, day, day]);
         assert_eq!(run_dates(&[json!({"remoteId":"1"})], None), [i64::MAX]);
-    }
-    #[test]
-    fn a_cursor_belongs_to_one_address_and_engine() {
-        let site = |base: &str| Site {
-            id: "fixture".into(),
-            name: "Fixture".into(),
-            engine: "e621".into(),
-            base: base.into(),
-            username: None,
-            key: None,
-            cookie: None,
-            enabled: true,
-            public: Value::Null,
-        };
-        let searches = [vec!["fox".to_owned()]];
-        assert_eq!(
-            fingerprint(&site("https://e621.net"), &searches),
-            fingerprint(&site("https://e621.net"), &searches)
-        );
-        assert_ne!(
-            fingerprint(&site("https://e621.net"), &searches),
-            fingerprint(&site("https://e926.net"), &searches)
-        );
     }
     #[tokio::test]
     async fn site_hits_count_a_furaffinity_artist_from_the_watchlist() {

@@ -79,12 +79,13 @@ async fn prepare(db: &Database, t: &Transport, sites: &[Site]) -> Result<Vec<Row
         let absent = subs::absent_searches(db, t, site, &searches).await;
         let queries = subs::site_queries(&searches, &absent, site);
         // The inbox does not depend on the searches.
-        let basis = if site.engine == "furaffinity" {
+        let searches = if site.engine == "furaffinity" {
             vec![]
         } else {
-            vec![searches]
+            searches
         };
-        plans.push((site.id.clone(), subs::fingerprint(site, &basis), queries));
+        let of = json!({"engine": site.engine, "base": site.base, "searches": searches});
+        plans.push((site.id.clone(), of, queries));
     }
     db.call(move |c| {
         let tx = c.transaction()?;
@@ -97,12 +98,16 @@ async fn prepare(db: &Database, t: &Transport, sites: &[Site]) -> Result<Vec<Row
                     |r| r.get(0),
                 )
                 .optional()?;
-            if saved.as_deref() != Some(of.as_str()) {
-                tx.execute("DELETE FROM subscription_posts WHERE site_id=?1", [&site])?;
-                tx.execute(
-                    "DELETE FROM subscription_searches WHERE site_id=?1",
-                    [&site],
-                )?;
+            let saved = saved.and_then(|s| serde_json::from_str::<Value>(&s).ok());
+            if saved.as_ref() != Some(&of) {
+                if !keeps_posts(saved.as_ref(), &of) {
+                    tx.execute("DELETE FROM subscription_posts WHERE site_id=?1", [&site])?;
+                    tx.execute(
+                        "DELETE FROM subscription_searches WHERE site_id=?1",
+                        [&site],
+                    )?;
+                }
+                let of = of.to_string();
                 tx.execute(
                     "INSERT INTO subscription_sites(site_id,searches) VALUES (?1,?2)
                      ON CONFLICT(site_id) DO UPDATE SET searches=excluded.searches",
@@ -155,6 +160,20 @@ async fn prepare(db: &Database, t: &Transport, sites: &[Site]) -> Result<Vec<Row
         Ok(rows)
     })
     .await
+}
+
+/// Whether a site's saved posts still belong to the feed after its searches changed from `saved`
+/// to `now`: they do when the site is the same and every search followed before still is. Posts
+/// do not record the search that found them, so a removed search clears the site's posts.
+fn keeps_posts(saved: Option<&Value>, now: &Value) -> bool {
+    let Some(saved) = saved else {
+        return false;
+    };
+    let searches = |v: &Value| v["searches"].as_array().cloned().unwrap_or_default();
+    let followed = searches(now);
+    saved["engine"] == now["engine"]
+        && saved["base"] == now["base"]
+        && searches(saved).iter().all(|s| followed.contains(s))
 }
 
 /// Each post's sort date: its own, never later than the post above it (see
@@ -1125,6 +1144,37 @@ mod tests {
         subscribe(&db, json!(["fox"])).await;
         assert_eq!(read_feed(&db, &[site], 40, false).await.0, ["1"]);
         task.abort();
+    }
+    #[tokio::test]
+    async fn a_new_subscription_keeps_the_posts_saved_before() {
+        let posts = Arc::new(Mutex::new(vec![(1, "fox", 1_800_000_000)]));
+        let (base, _, task) = booru(posts.clone()).await;
+        let (_dir, db) = open();
+        let site = setup(&db, "e621", &base).await;
+        subscribe(&db, json!(["fox"])).await;
+        assert_eq!(
+            read_feed(&db, std::slice::from_ref(&site), 40, false)
+                .await
+                .0,
+            ["1"]
+        );
+        // The site no longer lists post 1, so only the saved copy can show it.
+        *posts.lock().unwrap() = vec![(2, "wolf", 1_800_000_100)];
+        subscribe(&db, json!(["fox", "wolf"])).await;
+        assert_eq!(read_feed(&db, &[site], 40, false).await.0, ["2", "1"]);
+        task.abort();
+    }
+    #[test]
+    fn saved_posts_go_when_a_search_or_the_site_changes() {
+        let of = |base: &str, searches: &[&str]| {
+            json!({"engine": "e621", "base": base, "searches": searches})
+        };
+        let saved = of("https://e621.net", &["fox", "wolf"]);
+        let keeps = |now: Value| keeps_posts(Some(&saved), &now);
+        assert!(keeps(of("https://e621.net", &["wolf", "fox", "cat"])));
+        assert!(!keeps(of("https://e621.net", &["fox"])));
+        assert!(!keeps(of("https://e926.net", &["fox", "wolf"])));
+        assert!(!keeps_posts(None, &saved));
     }
     #[tokio::test]
     async fn a_failing_site_is_reported_and_the_others_still_load() {

@@ -557,7 +557,6 @@ kept.
 | Tags, description, related posts and pools (Explore and library detail) | Until evicted | In the background once the copy is a day old; the new answer is shown next time. A post the site removed is forgotten |
 | Comments | Until evicted | In the background once the copy is an hour old |
 | Explore search pages and pool pages | Until evicted | Always; the copy answers only when the site cannot be reached |
-| Each Subscriptions search page | Until evicted | Once the copy is five minutes old; the feed is still merged live |
 
 A post the site removed is not answered from the cache. Settings → Extra
 limits the cache to 1, 3 (default), 5 or 10 GB, or leaves it unlimited
@@ -600,9 +599,11 @@ before, with no limit per search or per site, eight searches at a time: four at
 once on Danbooru, two on every other site. It runs when the app starts, every
 15 minutes, and in the background when the feed opens; a search synced in the
 last minute is skipped. The first sync of a search, after installing or after
-the site's subscriptions change, reads one page. Changing a site's searches
-reads that site again from its newest posts. Posts older than 365 days are
-deleted.
+following it, reads one page. Adding a search keeps
+the posts saved before; removing one, or changing the site's address or engine,
+deletes the site's saved posts and reads it again from its newest posts, because
+a saved post does not record which search found it. Posts older than 365 days
+are deleted.
 
 The feed lists the saved posts by date. A search that may have older posts sets
 a limit: the list stops at its oldest saved post and the feed reads that
