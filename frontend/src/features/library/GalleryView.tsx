@@ -7,6 +7,7 @@ import { TagSearchInput } from './TagSearchInput';
 import { VirtualGalleryMasonry } from './VirtualGalleryMasonry';
 
 import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
+import { WavyProgress } from '@/components/WavyProgress';
 import { FeatureUnavailable } from '@/features/shell/FeatureUnavailable';
 import {
   PanelChoice,
@@ -331,7 +332,12 @@ export function GalleryView({
                     Show photos and videos
                   </button>
                 </>
-              ) : galleryPageState.loading ? <p>Loading files…</p> : !online && narrowed.length === 0 ? (
+              ) : galleryPageState.loading ? (
+                <div className="flex flex-col items-center gap-4" role="status">
+                  <WavyProgress label="Loading files" />
+                  Loading files…
+                </div>
+              ) : !online && narrowed.length === 0 ? (
                 <p>No signal in the cave, and nothing downloaded to keep you company. Everything else comes back when you reconnect.</p>
               ) : narrowed.length > 0 ? (
                 <>
@@ -366,13 +372,13 @@ export function GalleryView({
               />
               {galleryHasMore ? (
                 <div className="flex justify-center mt-4">
-                  <button
-                    className="btn btn-outline-light btn-sm"
-                    onClick={onLoadMore}
-                    disabled={galleryPageState.loading}
-                  >
-                    {galleryPageState.loading ? 'Loading…' : 'Load more'}
-                  </button>
+                  {galleryPageState.loading ? (
+                    <WavyProgress label="Loading more files" />
+                  ) : (
+                    <button className="btn btn-outline-light btn-sm" onClick={onLoadMore}>
+                      Load more
+                    </button>
+                  )}
                 </div>
               ) : null}
               <div ref={galleryLoadMoreRef} className="gallery-load-sentinel" />
