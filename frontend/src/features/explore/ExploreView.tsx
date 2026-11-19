@@ -589,9 +589,11 @@ export function ExploreView({
                     >
                       {firstSubscriptionsLoad ? (
                         <>
+                          {/* Until the sync counts searches (sites loading, searches being
+                              prepared, the watchlist syncing) how much is left is unknown. */}
                           <WavyProgress
-                            read={syncProgress?.read ?? 0}
-                            total={syncProgress?.total ?? 0}
+                            read={syncProgress?.read}
+                            total={syncProgress?.total}
                             label="Reading your searches"
                           />
                           <span>

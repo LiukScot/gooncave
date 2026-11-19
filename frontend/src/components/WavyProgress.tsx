@@ -39,6 +39,10 @@ export function WavyProgress({
         <clipPath id={`${clip}-wave`}>
           <rect className="wavy-progress-travel" x={0} y={0} width={SEGMENT} height={16} />
         </clipPath>
+        {/* The stretch enters and leaves through the ends of the track, never past them. */}
+        <clipPath id={`${clip}-track`}>
+          <rect x={0} y={0} width={WIDTH} height={16} />
+        </clipPath>
         <mask id={`${clip}-rest`} maskUnits="userSpaceOnUse" x={0} y={0} width={WIDTH} height={16}>
           <rect x={0} y={0} width={WIDTH} height={16} fill="white" />
           <rect
@@ -58,8 +62,10 @@ export function WavyProgress({
           y2={8}
           mask={`url(#${clip}-rest)`}
         />
-        <g clipPath={`url(#${clip}-wave)`}>
-          <path className="wavy-progress-wave" d={WAVE} />
+        <g clipPath={`url(#${clip}-track)`}>
+          <g clipPath={`url(#${clip}-wave)`}>
+            <path className="wavy-progress-wave" d={WAVE} />
+          </g>
         </g>
       </svg>
     );

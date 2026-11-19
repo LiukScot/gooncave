@@ -4704,7 +4704,7 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 
 .wavy-progress-wave {
   stroke: hsl(var(--primary));
-  animation: wavy-progress-shift 1s linear infinite;
+  animation: wavy-progress-shift 1.6s linear infinite;
 }
 
 .wavy-progress-fill {
@@ -4721,7 +4721,7 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 
 /* Unknown progress: the stretch of wave enters on the left and leaves on the right. */
 .wavy-progress-travel {
-  animation: wavy-progress-travel 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation: wavy-progress-travel 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 @keyframes wavy-progress-travel {
