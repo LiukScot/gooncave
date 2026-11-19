@@ -5115,6 +5115,16 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
     animation: 0.25s cubic-bezier(0.3, 0, 1, 1) both vt-sink;
     z-index: 1;
   }
+
+  /* The picture sinks with its page: left behind, it stood alone over the
+     grid after the page had gone, a white flash when it is light. */
+  :root:active-view-transition-type(detail-close)::view-transition-group(detail-media) {
+    animation: none;
+  }
+
+  :root:active-view-transition-type(detail-close)::view-transition-old(detail-media) {
+    animation: 0.25s cubic-bezier(0.3, 0, 1, 1) both vt-sink;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

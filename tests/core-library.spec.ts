@@ -603,3 +603,31 @@ test('the ring around the chosen source is whole on a phone', async ({ page }) =
   });
   expect(cut).toBeNull();
 });
+
+test('closing a file, the picture leaves with the page instead of staying alone over the grid', async ({ page }) => {
+  await page.goto('/app/gallery');
+  await card(page, 'landscape.png').click();
+  await expect(page.locator('.file-detail-panel-current .file-detail-media-wrap img')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
+  await page.getByRole('button', { name: 'Back to gallery' }).first().click();
+  const ends = await page.evaluate(async () => {
+    for (let frame = 0; frame < 120; frame++) {
+      const found = new Map<string, number>();
+      for (const animation of document.getAnimations()) {
+        const pseudo = (animation.effect as KeyframeEffect | null)?.pseudoElement;
+        const end = animation.effect?.getComputedTiming().endTime;
+        if (pseudo && typeof end === 'number') {
+          found.set(pseudo, Math.max(found.get(pseudo) ?? 0, end));
+        }
+      }
+      if (found.has('::view-transition-old(root)')) return Object.fromEntries(found);
+      await new Promise(requestAnimationFrame);
+    }
+    return null;
+  });
+  if (!ends) throw new Error('The closing animation did not run');
+  const pageEnd = ends['::view-transition-old(root)'];
+  for (const [pseudo, end] of Object.entries(ends)) {
+    if (pseudo.includes('detail-media')) expect(end, pseudo).toBeLessThanOrEqual(pageEnd);
+  }
+});
