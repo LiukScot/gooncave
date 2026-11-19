@@ -46,8 +46,11 @@ Accepted on 2026-11-19. Replaces the live feed of #714.
 
 ## Consequences
 
-- The first opening after installing or changing subscriptions reads one
-  page per search (16 s measured on the owner's library).
+- The first opening after installing reads one page per search (15 s
+  measured on the owner's library). Adding a search keeps the saved posts.
+  Removing one, or changing a site's address or engine, deletes that site's
+  saved posts and reads it again, because a saved post does not record which
+  search found it.
 - The database grows by about 8 MB a month on the owner's subscriptions
   (about 58 posts a day, about 4 KB each). Posts older than 365 days are
   deleted.
