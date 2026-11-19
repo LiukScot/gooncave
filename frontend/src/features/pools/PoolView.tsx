@@ -6,6 +6,7 @@ import { readPoolSnapshot, writePoolSnapshot } from './poolSnapshot';
 import { PoolTile } from './PoolTile';
 
 import { api, type PoolPage, type PoolPagePost } from '@/api';
+import { WavyProgress } from '@/components/WavyProgress';
 import { useOpenPoolPage } from '@/features/explore/useOpenBooruPost';
 import { OfflineNotice } from '@/features/shell/OfflineNotice';
 import {
@@ -139,14 +140,17 @@ function PoolContent({ site, pool }: { site: string; pool: string }) {
       </div>
       {hasMore ? (
         <div className="flex justify-center mt-4">
-          <button
-            type="button"
-            className="btn btn-outline-light btn-sm"
-            disabled={loading}
-            onClick={() => void loadPage(pages.length + 1)}
-          >
-            {loading ? 'Loading…' : 'Load more'}
-          </button>
+          {loading ? (
+            <WavyProgress label="Loading more posts" />
+          ) : (
+            <button
+              type="button"
+              className="btn btn-outline-light btn-sm"
+              onClick={() => void loadPage(pages.length + 1)}
+            >
+              Load more
+            </button>
+          )}
         </div>
       ) : null}
     </div>

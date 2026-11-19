@@ -8,7 +8,6 @@ import {
   Heart,
   History,
   Images,
-  LoaderCircle,
   Play,
   Rss,
   Settings2,
@@ -606,10 +605,7 @@ export function ExploreView({
                         </>
                       ) : (
                         <>
-                          <LoaderCircle
-                            className="size-8 animate-spin motion-reduce:animate-none"
-                            aria-hidden="true"
-                          />
+                          <WavyProgress label="Loading images" />
                           Loading images…
                         </>
                       )}

@@ -4719,6 +4719,21 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   fill: hsl(var(--primary));
 }
 
+/* Unknown progress: the stretch of wave enters on the left and leaves on the right. */
+.wavy-progress-travel {
+  animation: wavy-progress-travel 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes wavy-progress-travel {
+  from {
+    transform: translateX(-84px);
+  }
+
+  to {
+    transform: translateX(252px);
+  }
+}
+
 @keyframes wavy-progress-shift {
   to {
     transform: translateX(20px);
@@ -4732,6 +4747,11 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 
   .wavy-progress-fill {
     transition: none;
+  }
+
+  .wavy-progress-travel {
+    animation: none;
+    transform: translateX(84px);
   }
 }
 
