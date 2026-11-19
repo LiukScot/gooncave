@@ -1,5 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
+  ArrowUp,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+
 
 import { ExploreDetailPanel } from './ExploreDetailPanel';
 import { gridImageUrlFor, isGifPost, isGifUrl, isVideoUrl, mediaSrc } from './exploreMedia';
@@ -60,6 +62,7 @@ import {
   type ActiveFilter,
   type FilterChip
 } from '@/features/shell/SearchPanel';
+import { scrollViewToTop } from '@/features/shell/viewReselect';
 import { useDeviceProfile } from '@/hooks/device';
 import { useExtraSettings, useSubscriptionTags, useUpdateSubscriptionTags } from '@/hooks/settings';
 import { ANIMATED_PICTURE } from '@/lib/freezePictures';
@@ -528,6 +531,25 @@ export function ExploreView({
                     </SearchPanel>
                   )}
 
+                  {ctl.newSubscriptionPosts > 0 ? (
+                    // No height of its own: posts already on screen stay where they are.
+                    <div className="explore-new-posts">
+                      <button
+                        type="button"
+                        className="explore-new-posts-button"
+                        data-test-id="explore-new-posts"
+                        onClick={() => {
+                          scrollViewToTop();
+                          void ctl.retrySearch();
+                        }}
+                      >
+                        <ArrowUp aria-hidden="true" />
+                        {ctl.newSubscriptionPosts === 1
+                          ? 'Show 1 new post'
+                          : `Show ${ctl.newSubscriptionPosts} new posts`}
+                      </button>
+                    </div>
+                  ) : null}
                   {ctl.slowSites.map((site) => (
                     <div
                       key={site.siteId}

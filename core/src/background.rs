@@ -1,25 +1,32 @@
 //! What the iPhone app runs when iOS wakes it in the background, and what its continued sync
 //! reads. The desktop app does not call it.
 use crate::{
+    booru_http::Transport,
     db::Database,
     favorites,
     favorites::Mode,
+    subscription_feed,
     sync::{self, Trigger},
 };
 use std::time::Duration;
 
 const POLL: Duration = Duration::from_secs(1);
 
-/// One background pass: a short favorites sync, then one database sync cycle that uploads what it
-/// changed. A failed step is logged and the next runs. Subscriptions are read live when opened.
+/// One background pass: a short favorites sync and a Subscriptions sync side by side, then one
+/// database sync cycle that uploads what they changed. A failed step is logged and the next runs.
 /// Dropping the future stops it between steps; call [`cancel_favorites`] to stop the sync too.
 pub async fn refresh(db: &Database) {
-    if let Err(error) = favorites::sync_automatic(db, Mode::Short).await {
-        eprintln!("[developer] The background favorites sync did not start: {error}");
-    }
-    while favorites_progress(db).is_some() {
-        tokio::time::sleep(POLL).await;
-    }
+    // Side by side: a short window spent on favorites alone would leave subscriptions for later.
+    let favorites = async {
+        if let Err(error) = favorites::sync_automatic(db, Mode::Short).await {
+            eprintln!("[developer] The background favorites sync did not start: {error}");
+        }
+        while favorites_progress(db).is_some() {
+            tokio::time::sleep(POLL).await;
+        }
+    };
+    let transport = Transport::default();
+    tokio::join!(favorites, subscription_feed::sync(db, &transport, true));
     if let Err(error) = sync::run(db, Trigger::Full).await {
         eprintln!("[developer] The background database sync failed: {error}");
     }

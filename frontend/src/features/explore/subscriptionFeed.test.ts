@@ -20,12 +20,14 @@ describe('collectSubscriptionPosts', () => {
         posts: [post('hidden'), post('first')],
         hasMore: true,
         nextCursor: 'second-page',
+        newestAt: 1_800_000_000,
         siteErrors: [{ siteId: 'broken', siteName: 'Broken', error: 'Offline' }]
       },
       {
         posts: [post('second')],
         hasMore: false,
         nextCursor: null,
+        newestAt: null,
         siteErrors: []
       }
     ];
@@ -49,9 +51,10 @@ describe('collectSubscriptionPosts', () => {
     ]);
     expect(result.siteErrors.map((error) => error.siteId)).toEqual(['broken']);
     expect(result.hasMore).toBe(false);
+    expect(result.newestAt).toBe(1_800_000_000);
   });
 
-  it('stops after three live pages of read posts and leaves the rest to Show more', async () => {
+  it('stops after three pages of read posts and leaves the rest to Show more', async () => {
     let page = 0;
 
     const result = await collectSubscriptionPosts({
@@ -64,6 +67,7 @@ describe('collectSubscriptionPosts', () => {
           posts: [post(`read-${page}`)],
           hasMore: true,
           nextCursor: `page-${page + 1}`,
+          newestAt: null,
           siteErrors: []
         };
       },
@@ -86,7 +90,7 @@ describe('collectSubscriptionPosts', () => {
       fetchPage: async () => {
         calls += 1;
         if (calls === 2) throw new Error('Network down');
-        return { posts: [post('first')], hasMore: true, nextCursor: 'second', siteErrors: [] };
+        return { posts: [post('first')], hasMore: true, nextCursor: 'second', newestAt: null, siteErrors: [] };
       },
       keep: () => true
     });

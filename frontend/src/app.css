@@ -5926,3 +5926,41 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   font-size: 1.25rem;
   font-weight: 600;
 }
+
+/* Posts a sync saved above an open Subscriptions feed. Sticks under the heading without taking
+   room, so the posts on screen stay where they are. */
+.explore-new-posts {
+  position: sticky;
+  z-index: 300;
+  top: calc(3.25rem + env(safe-area-inset-top));
+  display: flex;
+  justify-content: center;
+  height: 0;
+  overflow: visible;
+}
+
+.explore-new-posts-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 2.25rem;
+  padding: 0.375rem 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-size: 0.875rem;
+  font-weight: 600;
+  box-shadow: 0 4px 16px hsl(0 0% 0% / 0.25);
+  cursor: pointer;
+}
+
+.explore-new-posts-button > svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.explore-new-posts-button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}

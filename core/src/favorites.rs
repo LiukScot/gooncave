@@ -599,6 +599,7 @@ async fn action_site(db: &Database, v: &Value) -> Result<(Site, String)> {
 /// The site-side and bookkeeping half of a favorite; the local import follows it.
 async fn apply_favorite(db: &Database, t: &Transport, site: &Site, id: &str) -> Result<()> {
     remote::set(t, site, id, true).await?;
+    crate::subscription_feed::set_favorited(db, &site.id, id, true).await?;
     let (key, post) = (site.id.clone(), id.to_owned());
     db.call(move |c| decline(c, &key, &post, false)).await?;
     db.favorites
@@ -696,6 +697,7 @@ async fn unfavorite(
     let (key, post) = (site.id.clone(), id.clone());
     db.call(move |c| set_pending(c, &key, &post, false)).await?;
     remote::set(&Transport::default(), &site, &id, false).await?;
+    crate::subscription_feed::set_favorited(&db, &site.id, &id, false).await?;
     let (key, post) = (site.id.clone(), id.clone());
     db.call(move |c| decline(c, &key, &post, true)).await?;
     db.favorites

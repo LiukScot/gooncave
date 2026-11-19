@@ -28,6 +28,8 @@ pub struct Database {
     paths: Arc<LibraryPaths>,
     pub(crate) favorites: Arc<crate::favorites::Job>,
     pub(crate) subscriptions: Arc<tokio::sync::Mutex<()>>,
+    /// Held by the saved Subscriptions feed sync.
+    pub(crate) subscription_feed: Arc<tokio::sync::Mutex<()>>,
     pub(crate) sources: Arc<crate::source_jobs::Job>,
     pub(crate) wd14: Arc<crate::wd14::Job>,
     pub(crate) duplicates: Arc<crate::duplicates::Job>,
@@ -233,6 +235,7 @@ impl Database {
             }),
             favorites: Arc::new(crate::favorites::Job::default()),
             subscriptions: Arc::new(tokio::sync::Mutex::new(())),
+            subscription_feed: Arc::new(tokio::sync::Mutex::new(())),
             sources: Arc::new(crate::source_jobs::Job::default()),
             wd14: Arc::new(crate::wd14::Job::default()),
             duplicates: Arc::new(crate::duplicates::Job::default()),

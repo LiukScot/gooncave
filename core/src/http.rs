@@ -154,6 +154,7 @@ impl Server {
         };
         let importer = tokio::spawn(crate::tag_import::watch(self.database.clone()));
         let favorites = tokio::spawn(crate::favorites::watch(self.database.clone()));
+        let subscriptions = tokio::spawn(crate::subscription_feed::watch(self.database.clone()));
         let sources = tokio::spawn(crate::source_jobs::watch(self.database.clone()));
         let tagging = tokio::spawn(crate::wd14::watch(self.database.clone()));
         let duplicates = tokio::spawn(crate::duplicate_policy::watch(self.database.clone()));
@@ -168,6 +169,7 @@ impl Server {
                 &trimming,
                 &importer,
                 &favorites,
+                &subscriptions,
                 &sources,
                 &tagging,
                 &duplicates,
@@ -190,6 +192,7 @@ impl Server {
         repair.abort();
         importer.abort();
         favorites.abort();
+        subscriptions.abort();
         sources.abort();
         let _ = sources.await;
         tagging.abort();
@@ -259,6 +262,7 @@ fn routes(database: Database) -> Router {
         .merge(crate::read_history::routes())
         .merge(crate::favorites::routes())
         .merge(crate::subscriptions::routes())
+        .merge(crate::subscription_feed::routes())
         // Upload routes raise this with their own, inner limit.
         .layer(DefaultBodyLimit::max(64 * 1024))
         .with_state(database)

@@ -714,6 +714,8 @@ type SubscriptionFeedResponse = {
   posts: ExplorePost[];
   hasMore: boolean;
   nextCursor: string | null;
+  /** Sort date of the first post, seconds since 1970; set on the first page. */
+  newestAt: number | null;
   /** Sites that could not be read; they leave the feed until it is reloaded. */
   siteErrors: ExploreSiteError[];
 };
@@ -1339,17 +1341,37 @@ export const api = {
     siteIds?: string[];
     cursor?: string;
     limit?: number;
+    unread?: boolean;
     signal?: AbortSignal;
   }) => {
     const query = new URLSearchParams();
     if (params.limit) query.set('limit', String(params.limit));
     if (params.siteIds) query.set('sites', params.siteIds.join(','));
     if (params.cursor) query.set('cursor', params.cursor);
+    if (params.unread) query.set('unread', '1');
     const res = await apiFetch(
       `${API_BASE}/explore/subscriptions?${query.toString()}`,
       params.signal ? { signal: params.signal } : undefined
     );
     return handle<SubscriptionFeedResponse>(res);
+  },
+  /** Saved subscription posts newer than `after` (a feed's `newestAt`). */
+  newSubscriptionPosts: async (params: {
+    siteIds: string[];
+    after: number;
+    unread: boolean;
+    signal?: AbortSignal;
+  }) => {
+    const query = new URLSearchParams({
+      sites: params.siteIds.join(','),
+      after: String(params.after)
+    });
+    if (params.unread) query.set('unread', '1');
+    const res = await apiFetch(
+      `${API_BASE}/explore/subscriptions/new?${query.toString()}`,
+      params.signal ? { signal: params.signal } : undefined
+    );
+    return handle<{ count: number }>(res);
   },
   readHistory: async (params: {
     siteIds: string[];

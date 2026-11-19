@@ -29,9 +29,6 @@ static REFRESHING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 
 /// How long a saved answer stands for the site's.
 pub(crate) enum Keep {
-    /// The site is asked again once the copy is older than this many seconds. The copy answers
-    /// only when the site cannot be reached.
-    Fresh(i64),
     /// The site is always asked. The copy answers only when it cannot be reached.
     Fallback,
     /// The copy answers at once whatever its age. Once older than this many seconds, the site is
@@ -325,7 +322,6 @@ where
             }
             Ok(value)
         }
-        (Keep::Fresh(max), Some((value, age))) if age <= max => Ok(value),
         (_, saved) => match fetch().await {
             Ok(fresh) => {
                 // The answer is good even when it cannot be kept.
@@ -433,25 +429,6 @@ mod tests {
 
     fn offline() -> std::future::Ready<Result<Value>> {
         std::future::ready(Err(crate::booru_http::remote(crate::booru_http::OFFLINE)))
-    }
-
-    #[tokio::test]
-    async fn a_fresh_copy_answers_without_asking_the_site() {
-        let (_dir, db) = open();
-        let calls = Arc::new(AtomicUsize::new(0));
-        let first = remember(&db, "feed:a", Keep::Fresh(300), answer(json!(1), &calls))
-            .await
-            .unwrap();
-        let second = remember(&db, "feed:a", Keep::Fresh(300), answer(json!(2), &calls))
-            .await
-            .unwrap();
-        assert_eq!((first, second), (json!(1), json!(1)));
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-        age(&db, "feed:a", 301).await;
-        let third = remember(&db, "feed:a", Keep::Fresh(300), answer(json!(3), &calls))
-            .await
-            .unwrap();
-        assert_eq!(third, json!(3));
     }
 
     #[tokio::test]

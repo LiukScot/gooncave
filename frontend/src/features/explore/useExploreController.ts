@@ -92,6 +92,8 @@ import { transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 const PAGE_SIZE = 40;
+/** How often an open Subscriptions feed asks whether a sync saved newer posts. */
+const NEW_POSTS_CHECK_MS = 30_000;
 /**
  * How many pages one Load more may ask for. Sites ranked within a point of
  * each other release a post at a time; without a cap a search could keep
@@ -418,6 +420,9 @@ export function useExploreController({
   const streamsRef = useRef<Map<string, SiteStream>>(new Map());
   /** Where Subscribed or History carries on: both are one feed with a cursor. */
   const subscriptionCursorRef = useRef<string | null>(null);
+  /** Sort date of the newest post shown in Subscriptions; posts synced above it are counted. */
+  const [subscriptionNewestAt, setSubscriptionNewestAt] = useState<number | null>(null);
+  const [newSubscriptionPosts, setNewSubscriptionPosts] = useState(0);
   /** Buffered or already shown, so no site contributes the same post twice. */
   const seenRef = useRef({ keys: new Set<string>() });
 
@@ -549,6 +554,8 @@ export function useExploreController({
     requestRef.current = controller;
     streamsRef.current = new Map();
     subscriptionCursorRef.current = null;
+    setSubscriptionNewestAt(null);
+    setNewSubscriptionPosts(0);
     seenRef.current = { keys: new Set() };
     automaticFavoriteGenerationRef.current += 1;
     automaticFavoriteAttemptsRef.current.clear();
@@ -602,12 +609,14 @@ export function useExploreController({
               siteIds: activeSiteIds,
               cursor: cursor ?? undefined,
               limit: PAGE_SIZE,
+              unread: effectiveUnreadOnly,
               signal: controller.signal
             }),
           keep: keepPost
         });
         if (controller.signal.aborted) return;
         subscriptionCursorRef.current = first.nextCursor;
+        setSubscriptionNewestAt(first.newestAt);
         const prepared = await preparePosts(first.posts, controller.signal);
         if (controller.signal.aborted) return;
         setPosts(prepared);
@@ -645,6 +654,33 @@ export function useExploreController({
     sort,
     effectiveUnreadOnly
   ]);
+
+  // A sync started when the feed opened, or the one every 15 minutes, saves new posts above
+  // the ones shown; they are counted here and shown on request, never inserted above the reader.
+  useEffect(() => {
+    if (sort !== 'subscribed' || subscriptionNewestAt === null) return;
+    const controller = new AbortController();
+    const check = () => {
+      if (document.visibilityState !== 'visible') return;
+      api
+        .newSubscriptionPosts({
+          siteIds: activeSiteIds,
+          after: subscriptionNewestAt,
+          unread: effectiveUnreadOnly,
+          signal: controller.signal
+        })
+        .then(({ count }) => setNewSubscriptionPosts(count))
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          console.error('[developer] Cannot count new subscription posts:', error);
+        });
+    };
+    const timer = window.setInterval(check, NEW_POSTS_CHECK_MS);
+    return () => {
+      window.clearInterval(timer);
+      controller.abort();
+    };
+  }, [sort, subscriptionNewestAt, activeSiteIds, effectiveUnreadOnly]);
 
   /** Identity of the search on screen — exactly what a reload depends on. */
   const searchKey = [
@@ -852,6 +888,7 @@ export function useExploreController({
               siteIds: activeSiteIds,
               cursor: cursor ?? undefined,
               limit: PAGE_SIZE,
+              unread: effectiveUnreadOnly,
               signal: controller.signal
             }),
           keep: keepPost
@@ -902,7 +939,8 @@ export function useExploreController({
     loadHistoryPage,
     loading,
     preparePosts,
-    sort
+    sort,
+    effectiveUnreadOnly
   ]);
 
   const showLinkedPost = useCallback(
@@ -1626,6 +1664,8 @@ export function useExploreController({
     submitSearch,
     /** Runs the current search again, also when its text has not changed. */
     retrySearch: reload,
+    /** Posts saved above the Subscriptions feed since it loaded. */
+    newSubscriptionPosts,
     selectTag,
     readTrackingEnabled,
     unreadOnly: effectiveUnreadOnly,

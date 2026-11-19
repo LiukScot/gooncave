@@ -49,6 +49,7 @@ mod source_matches;
 mod source_remote;
 mod source_routes;
 mod source_store;
+mod subscription_feed;
 mod subscription_remote;
 mod subscription_store;
 mod subscriptions;
