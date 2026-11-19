@@ -11,7 +11,6 @@
 	<!-- Shown when the person turns on deleting photos after adding them. -->
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>GoonCave deletes the photos you added to it from your library, only when you turn that option on.</string>
-	<!-- The app is dark only, so the status bar text is light. -->
 	<!-- Without it iOS caps the app's own animations at 60 Hz on a 120 Hz iPhone. -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
@@ -27,6 +26,7 @@
 		<string>fetch</string>
 		<string>processing</string>
 	</array>
+	<!-- The app is dark only, so the status bar text is light. -->
 	<key>UIStatusBarStyle</key>
 	<string>UIStatusBarStyleLightContent</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>

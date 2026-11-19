@@ -99,8 +99,18 @@ private final class DownloadDelegate: NSObject, URLSessionDownloadDelegate {
         _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void
     ) {
-        guard let host = request.url?.host, host != task.originalRequest?.url?.host else {
-            return completionHandler(request)
+        let original = task.originalRequest?.url
+        guard let host = request.url?.host, host != original?.host else {
+            // The login never goes back to plain http after https, which would send it unencrypted,
+            // nor to another port of the host, which may be another service.
+            let port = { (url: URL?) in url?.port ?? (url?.scheme == "https" ? 443 : 80) }
+            let downgraded = original?.scheme == "https" && request.url?.scheme != "https"
+            let upgraded = original?.scheme == "http" && request.url?.scheme == "https"
+            var next = request
+            if downgraded || (!upgraded && port(request.url) != port(original)) {
+                next.setValue(nil, forHTTPHeaderField: "Authorization")
+            }
+            return completionHandler(next)
         }
         let isAddress = IPv4Address(host) != nil || IPv6Address(host) != nil || host.contains(":")
         guard request.url?.scheme == "https", !isAddress, host != "localhost", !host.hasSuffix(".local") else {

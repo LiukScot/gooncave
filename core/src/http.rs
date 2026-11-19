@@ -151,6 +151,23 @@ impl Server {
         let repair = tokio::spawn(crate::favorite_links::watch(self.database.clone()));
         let closing = self.database.clone();
         let scanner = tokio::spawn(crate::library::watch(self.database));
+        let _workers = Workers(
+            [
+                &adopting,
+                &importer,
+                &favorites,
+                &subscriptions,
+                &sources,
+                &tagging,
+                &duplicates,
+                &syncing,
+                &originals,
+                &repair,
+                &scanner,
+            ]
+            .map(|worker| worker.abort_handle())
+            .into(),
+        );
         let result = axum::serve(self.listener, self.router)
             .with_graceful_shutdown(async {
                 let _ = shutdown.await;
@@ -179,6 +196,17 @@ impl Server {
         let _ = favorites.await;
         let _ = importer.await;
         result
+    }
+}
+
+/// Stops the workers when `serve` is dropped before its shutdown, as when the iPhone app drops a
+/// server whose socket iOS took back: a dropped `JoinHandle` leaves its task running, and the next
+/// server would start a second set beside it.
+struct Workers(Vec<tokio::task::AbortHandle>);
+
+impl Drop for Workers {
+    fn drop(&mut self) {
+        self.0.iter().for_each(tokio::task::AbortHandle::abort);
     }
 }
 
@@ -521,6 +549,40 @@ mod tests {
             json!({"error": "wait", "code": "BOORU_CAPTCHA"})
         );
     }
+    /// The iPhone app drops a server whose socket iOS took back and starts another; the workers of
+    /// the dropped one must stop, or every restart adds a second sync, tagger and originals worker.
+    #[tokio::test]
+    async fn a_dropped_server_stops_its_workers() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let server = Server::bind(db.clone(), 0, Frontend::Directory(dir.path().into()))
+            .await
+            .unwrap();
+        let clones = || Arc::strong_count(&db.favorites);
+        // Each worker holds its own copy of the database, and serve spawns them all at once.
+        let before = clones();
+        let (_shutdown, receiver) = oneshot::channel();
+        let serving = tokio::spawn(server.serve(receiver));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while clones() <= before {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the workers never started"
+            );
+            tokio::task::yield_now().await;
+        }
+        serving.abort();
+        let _ = serving.await;
+        while clones() > 1 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "{} workers still run after the server was dropped",
+                clones() - 1
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+
     #[test]
     fn download_names_keep_unicode_and_cannot_break_the_header() {
         assert_eq!(

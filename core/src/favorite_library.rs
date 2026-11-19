@@ -1015,4 +1015,46 @@ mod tests {
         assert_eq!(std::fs::read(outside).unwrap(), b"keep");
         task.abort();
     }
+
+    /// The iPhone downloads a favorite's file in the background; the core adds that file instead of
+    /// downloading it again, and refuses one that is not the media it claims to be.
+    #[tokio::test]
+    async fn a_file_the_system_downloaded_becomes_the_favorite_without_a_second_download() {
+        let dir = tempfile::tempdir().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        // An address nothing answers: a second download would fail the test.
+        let app = Router::new().route(
+            "/posts/{id}",
+            get(
+                |axum::extract::Path(id): axum::extract::Path<String>| async move {
+                    let id = id.trim_end_matches(".json").parse::<u64>().unwrap();
+                    axum::Json(json!({"post": {"id": id,
+                    "file": {"url": format!("https://cdn.invalid/{id}.png"), "ext": "png"},
+                    "tags": {"general": ["blue"]}, "pools": [], "relationships": {}}}))
+                },
+            ),
+        );
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let site = site(base);
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        register(&db, &site).await;
+        let t = Transport {
+            allow_loopback: true,
+        };
+
+        let part = db.library().root.join(".favorite-part.png");
+        std::fs::write(&part, png(dir.path())).unwrap();
+        adopt(&db, &t, &site, "7", &part).await.unwrap();
+        let path = saved(&db, &site, "7").await.unwrap().unwrap().1;
+        assert!(Path::new(&path).is_file());
+        assert!(!part.exists(), "the downloaded file moved into the library");
+
+        let damaged = db.library().root.join(".favorite-damaged.png");
+        std::fs::write(&damaged, b"not a picture").unwrap();
+        let error = adopt(&db, &t, &site, "8", &damaged).await.unwrap_err();
+        assert!(error.to_string().starts_with(MISMATCH), "{error}");
+        assert!(saved(&db, &site, "8").await.unwrap().is_none());
+        task.abort();
+    }
 }
