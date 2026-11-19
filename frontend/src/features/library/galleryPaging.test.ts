@@ -1,11 +1,26 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  GALLERY_CACHED_LISTS,
   GALLERY_MAX_LIMIT,
   GALLERY_PAGE_SIZE,
+  rememberGalleryList,
   resetFetchLimit,
   mergeGalleryRefresh
 } from './galleryPaging';
+
+describe('rememberGalleryList', () => {
+  it('keeps only the most recently loaded lists', () => {
+    const cache = new Map<string, number>();
+    for (let i = 0; i <= GALLERY_CACHED_LISTS; i += 1) rememberGalleryList(cache, `search ${i}`, i);
+    rememberGalleryList(cache, 'search 1', 1);
+    rememberGalleryList(cache, 'one more', -1);
+    expect(cache.size).toBe(GALLERY_CACHED_LISTS);
+    expect(cache.has('search 0')).toBe(false);
+    expect(cache.has('search 2')).toBe(false);
+    expect(cache.has('search 1')).toBe(true);
+  });
+});
 
 describe('resetFetchLimit', () => {
   it('keeps visible files in place, updates them, removes deleted ones and appends new files after them', () => {

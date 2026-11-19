@@ -6,15 +6,14 @@ use crate::{
     explore, subscription_remote as remote, subscription_store as store, Error, Result,
 };
 use axum::{
-    extract::{Query, State},
+    extract::State,
     routing::{get, post},
     Json, Router,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 
-const PAGE_SIZE: usize = 40;
+pub(crate) const PAGE_SIZE: usize = 40;
 const MAX_PAGE: usize = 1000;
 type Payload = std::result::Result<Json<Value>, axum::extract::rejection::JsonRejection>;
 
@@ -33,7 +32,6 @@ pub(crate) fn routes() -> Router<Database> {
             "/settings/subscriptions/pools",
             get(pools).post(follow_pool).delete(unfollow_pool),
         )
-        .route("/explore/subscriptions", get(feed))
 }
 fn body(p: Payload) -> Result<Value> {
     let Json(v) = p.map_err(|_| Error::Invalid("Send a valid JSON object.".into()))?;
@@ -175,7 +173,11 @@ const MAX_UNWATCH_AT_ONCE: usize = 3;
 /// Two-way sync of the artists with each enabled FurAffinity watchlist (see `store::reconcile`).
 /// A failed account is returned as an error and retried on the next sync; its changes are kept.
 /// The caller holds the `subscriptions` lock.
-async fn sync_artists(db: &Database, t: &Transport, sites: &[Site]) -> Result<Vec<Value>> {
+pub(crate) async fn sync_artists(
+    db: &Database,
+    t: &Transport,
+    sites: &[Site],
+) -> Result<Vec<Value>> {
     let mut errors = Vec::new();
     for site in sites
         .iter()
@@ -456,13 +458,13 @@ async fn unfollow_pool(State(db): State<Database>, p: Payload) -> Result<Json<Va
     })
     .await
 }
-/// Where one search of one site has got to. `below` is the ID of the oldest post shown; `page`
+/// Where one search of one site has got to. `below` is the ID of the oldest post read; `page`
 /// is the next page on sites that page by number or by link (FurAffinity). Posts on that page
-/// with an ID of `below` or higher were shown already; on sites whose IDs are not numbers,
-/// `skip` counts the posts of that page already shown instead.
+/// with an ID of `below` or higher were read already; on sites whose IDs are not numbers,
+/// `skip` counts the posts of that page already read instead.
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Position {
+pub(crate) struct Position {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     page: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -470,50 +472,23 @@ struct Position {
     #[serde(default, skip_serializing_if = "is_zero")]
     skip: usize,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    done: bool,
+    pub(crate) done: bool,
 }
 fn is_zero(n: &usize) -> bool {
     *n == 0
 }
-/// Each site's searches, as `of` (a fingerprint of the searches) and one position per search.
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SitePositions {
-    of: String,
-    at: Vec<Position>,
-}
-type FeedCursor = std::collections::BTreeMap<String, SitePositions>;
-const MAX_CURSOR: usize = 100_000;
-
-fn invalid_cursor() -> Error {
-    Error::Invalid("The subscriptions changed since this feed was opened. Reload the feed.".into())
-}
-fn decode_cursor(raw: &str) -> Result<FeedCursor> {
-    if raw.len() > MAX_CURSOR {
-        return Err(invalid_cursor());
-    }
-    let bytes = URL_SAFE_NO_PAD.decode(raw).map_err(|_| invalid_cursor())?;
-    serde_json::from_slice(&bytes).map_err(|_| invalid_cursor())
-}
-/// Identifies one site's address, engine and searches, so a cursor made for others is refused.
-/// Stable across app versions, since the frontend keeps cursors while the app is open.
-fn fingerprint(site: &Site, searches: &[Vec<String>]) -> String {
-    use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(json!([site.engine, site.base, searches]).to_string());
-    digest[..8].iter().map(|b| format!("{b:02x}")).collect()
-}
 /// The searches the feed of `site` reads: one per batch of [`site_searches`], or one for the
 /// FurAffinity inbox, which holds the watched artists' posts.
-fn site_queries(
-    tags: &[String],
-    artists: &[String],
-    pools: &[store::PoolSubscription],
-    site: &Site,
-) -> Vec<Vec<String>> {
+pub(crate) fn site_queries(searches: &[String], absent: &[usize], site: &Site) -> Vec<Vec<String>> {
     if site.engine == "furaffinity" {
         return vec![vec![]];
     }
-    let searches = site_searches(tags, artists, pools, site);
+    let searches = searches
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !absent.contains(i))
+        .map(|(_, s)| s.clone())
+        .collect::<Vec<_>>();
     let mut queries = Vec::new();
     let mut start = 0;
     while !searches.is_empty() {
@@ -526,148 +501,69 @@ fn site_queries(
     }
     queries
 }
-
-/// One feed page read live from the sites: no post is saved.
-///
-/// Every search of every site reads its next page, newest first. A search that may have more
-/// posts sets a limit: posts older than its last one may still come from it, so they wait for
-/// the next feed page. Posts from the limit up are merged by date and shown. A post the sites
-/// add later is newer than everything shown, so it can only appear at the top after a reload.
-async fn feed(
-    State(db): State<Database>,
-    Query(q): Query<HashMap<String, String>>,
-) -> Result<Json<Value>> {
-    let limit = q
-        .get("limit")
-        .map(|s| {
-            s.parse::<usize>()
-                .ok()
-                .filter(|n| (1..=100).contains(n))
-                .ok_or_else(|| Error::Invalid("limit must be from 1 through 100.".into()))
-        })
-        .transpose()?
-        .unwrap_or(PAGE_SIZE);
-    let cursor = q
-        .get("cursor")
-        .filter(|s| !s.is_empty())
-        .map(|s| decode_cursor(s))
-        .transpose()?;
-    let wanted = match q.get("sites") {
-        Some(raw) if raw.len() <= 2000 => Some(
-            raw.split(|c: char| c == ',' || c.is_whitespace())
-                .filter(|s| !s.is_empty())
-                .map(str::to_owned)
-                .collect::<HashSet<_>>(),
-        ),
-        Some(_) => return Err(Error::Invalid("The site selection is too long.".into())),
-        None => None,
-    };
-    let sites = boorus::sites(&db)
-        .await?
-        .into_iter()
-        .filter(|s| s.enabled && wanted.as_ref().is_none_or(|ids| ids.contains(&s.id)))
-        .collect::<Vec<_>>();
-    feed_page(&db, &Transport::default(), sites, cursor, limit)
-        .await
-        .map(Json)
-}
-async fn feed_page(
+/// The searches of a Danbooru site, by index in `searches`, whose tag has no posts there and is
+/// no alias. Free accounts search two tags at a time, so each pair costs a request on every feed
+/// page; most followed artists of other sites have no tag there. A tag that gets its first post
+/// joins the feed within a day. When the lookup fails, every search is read.
+pub(crate) async fn absent_searches(
     db: &Database,
     t: &Transport,
-    sites: Vec<Site>,
-    cursor: Option<FeedCursor>,
-    limit: usize,
-) -> Result<Value> {
-    if cursor.is_none() && sites.iter().any(|s| s.engine == "furaffinity") {
-        // The inbox follows the watchlist; a running sync (Settings) already covers it.
-        if let Ok(_guard) = db.subscriptions.try_lock() {
-            for error in sync_artists(db, t, &sites).await? {
-                eprintln!("[developer] FurAffinity watchlist sync failed: {error}");
-            }
-        }
+    site: &Site,
+    searches: &[String],
+) -> Vec<usize> {
+    let plain = |s: &str| {
+        !s.chars().any(|c| c.is_whitespace() || c == ':' || c == '*') && !s.starts_with(['-', '~'])
+    };
+    if site.engine != "danbooru" {
+        return vec![];
     }
-    let (tags, artists, pools) = db
-        .call(|c| Ok((store::searches(c)?, store::artists(c)?, store::pools(c)?)))
-        .await?;
-    let mut streams = Vec::new();
-    let mut next_cursor = FeedCursor::new();
-    for (index, site) in sites.iter().enumerate() {
-        let queries = site_queries(&tags, &artists, &pools, site);
-        if queries.is_empty() {
-            continue;
-        }
-        let of = fingerprint(site, &queries);
-        let at = match &cursor {
-            None => vec![Position::default(); queries.len()],
-            Some(cursor) => match cursor.get(&site.id) {
-                Some(saved) if saved.of == of && saved.at.len() == queries.len() => {
-                    saved.at.clone()
-                }
-                _ => return Err(invalid_cursor()),
-            },
-        };
-        for (slot, (query, at)) in queries.into_iter().zip(&at).enumerate() {
-            if !at.done {
-                streams.push(Stream {
-                    site: index,
-                    slot,
-                    query,
-                    at: at.clone(),
-                });
-            }
-        }
-        next_cursor.insert(site.id.clone(), SitePositions { of, at });
-    }
-    let reads = read_all(t, &sites, &streams).await;
-    let page = merge(&streams, reads, limit);
-    let mut errors = Vec::new();
-    for (index, error) in page.failed {
-        let site = &sites[index];
-        errors.push(crate::booru_http::site_error(&site.id, &site.name, &error));
-        // A site that failed leaves the feed until it is reloaded: posts it would send later
-        // would land among older ones.
-        for at in &mut next_cursor.get_mut(&site.id).unwrap().at {
-            at.done = true;
-        }
-    }
-    for (stream, position) in streams.iter().zip(page.positions) {
-        let saved = &mut next_cursor.get_mut(&sites[stream.site].id).unwrap().at[stream.slot];
-        if !saved.done {
-            *saved = position;
-        }
-    }
-    let has_more = next_cursor.values().any(|s| s.at.iter().any(|at| !at.done));
-    // Only the Settings filter depends on it: a failure must not hide the feed.
-    if let Err(e) = record_site_hits(db, &sites, &tags, &artists, &page.posts).await {
-        eprintln!("[developer] The subscription site hits were not saved: {e}");
-    }
-    let key = explore::media_key(db).await?;
-    let mut grouped = HashMap::<usize, Vec<Value>>::new();
-    let mut order = Vec::new();
-    for (index, post) in page.posts {
-        order.push((index, post["remoteId"].as_str().unwrap().to_owned()));
-        grouped.entry(index).or_default().push(post);
-    }
-    let mut decorated = HashMap::new();
-    for (index, posts) in grouped {
-        for post in explore::decorate(db, &sites[index], posts, &key).await? {
-            decorated.insert((index, post["remoteId"].as_str().unwrap().to_owned()), post);
-        }
-    }
-    let posts = order
-        .into_iter()
-        .filter_map(|key| decorated.remove(&key))
+    let mut names = searches
+        .iter()
+        .filter(|s| plain(s))
+        .map(|s| s.to_lowercase())
         .collect::<Vec<_>>();
-    Ok(json!({
-        "posts": posts,
-        "hasMore": has_more,
-        "nextCursor": has_more.then(|| URL_SAFE_NO_PAD.encode(serde_json::to_vec(&next_cursor).unwrap())),
-        "siteErrors": errors,
-    }))
+    names.sort();
+    names.dedup();
+    if names.is_empty() {
+        return vec![];
+    }
+    let key = format!("tags-with-posts:{}:{}", site.id, names.join(" "));
+    let (held, held_site) = (t.clone(), site.clone());
+    let known = crate::cache::remember(
+        db,
+        &key,
+        crate::cache::Keep::Revalidate(crate::cache::DAY),
+        move || async move {
+            Ok(json!(
+                booru_engines::danbooru_tags_with_posts(&held, &held_site, &names).await?
+            ))
+        },
+    )
+    .await
+    .and_then(|v| {
+        serde_json::from_value::<HashSet<String>>(v)
+            .map_err(|_| Error::Storage("A cached tag list is damaged.".into()))
+    });
+    let known = match known {
+        Ok(known) => known,
+        Err(e) => {
+            eprintln!(
+                "[developer] {}: subscribed tags not checked, every search is read: {e}",
+                site.name
+            );
+            return vec![];
+        }
+    };
+    searches
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| plain(s) && !known.contains(&s.to_lowercase()))
+        .map(|(i, _)| i)
+        .collect()
 }
 /// The saved searches, then each followed artist, then `pool:ID` for each pool followed on the
 /// site. `batch` sends a `pool:` search alone, since it contains `:`.
-fn site_searches(
+pub(crate) fn site_searches(
     tags: &[String],
     artists: &[String],
     pools: &[store::PoolSubscription],
@@ -733,24 +629,23 @@ fn any_of(site: &Site, tags: Vec<String>) -> Vec<String> {
         _ => tags,
     }
 }
-/// Searches read at once across all sites: each feed page asks every search for its next page.
-const PARALLEL_SEARCHES: usize = 6;
-/// Searches read at once on one site: e621 allows about two requests a second.
-const PARALLEL_SEARCHES_PER_SITE: usize = 2;
-/// Pages one search may pass in one feed page when every post on them was shown already.
+/// Searches read at once across all sites.
+pub(crate) const PARALLEL_SEARCHES: usize = 8;
+/// Searches read at once on one site: e621 allows about two requests a second; Danbooru about
+/// ten, and a sync asks it the most, since it searches two tags at a time.
+pub(crate) fn parallel_searches(site: &Site) -> usize {
+    if site.engine == "danbooru" {
+        4
+    } else {
+        2
+    }
+}
+/// Pages one read may pass when every post on them was read already.
 const MAX_SKIPPED_PAGES: usize = 3;
 
-struct Stream {
-    /// Index into the feed's sites.
-    site: usize,
-    /// Index of this search among its site's searches.
-    slot: usize,
-    query: Vec<String>,
-    at: Position,
-}
-/// One search's next posts, newest first, without those already shown.
-struct Read {
-    posts: Vec<Value>,
+/// One search's next posts, newest first, without those already read.
+pub(crate) struct Read {
+    pub(crate) posts: Vec<Value>,
     /// Whether the site may have older posts than these.
     more: bool,
     /// The page these posts came from, and the one after it, on sites that page by number or link.
@@ -759,10 +654,38 @@ struct Read {
     /// Posts of `page` left out by [`Position::skip`].
     skipped: usize,
 }
-fn post_id(post: &Value) -> Option<u64> {
+impl Read {
+    /// Where the search carries on after these posts, which are all taken.
+    pub(crate) fn after(&self, at: &Position) -> Position {
+        let last = self.posts.last();
+        let mut next = Position {
+            page: self.page.clone(),
+            below: last.and_then(post_id).or(at.below),
+            // Without a numeric ID only the count of posts read marks the place.
+            skip: if last.is_some_and(|p| post_id(p).is_none()) || self.posts.is_empty() {
+                self.skipped + self.posts.len()
+            } else {
+                0
+            },
+            done: !self.more,
+        };
+        if let Some(page) = &self.next {
+            next.page = Some(page.clone());
+            next.skip = 0;
+        }
+        next
+    }
+}
+pub(crate) fn post_id(post: &Value) -> Option<u64> {
     post["remoteId"].as_str()?.parse().ok()
 }
-async fn read(t: &Transport, site: &Site, query: &[String], at: &Position) -> Result<Read> {
+/// The page of `query` after `at`, newest first.
+pub(crate) async fn read(
+    t: &Transport,
+    site: &Site,
+    query: &[String],
+    at: &Position,
+) -> Result<Read> {
     let by_id = booru_engines::pages_by_id(site);
     let mut page = at.page.clone();
     for pass in 0..=MAX_SKIPPED_PAGES {
@@ -772,7 +695,9 @@ async fn read(t: &Transport, site: &Site, query: &[String], at: &Position) -> Re
         } else {
             let number = match &page {
                 None => 1,
-                Some(p) => p.parse::<usize>().map_err(|_| invalid_cursor())?,
+                Some(p) => p
+                    .parse::<usize>()
+                    .map_err(|_| Error::Storage("A saved feed position is damaged.".into()))?,
             };
             if number > MAX_PAGE {
                 return Err(crate::booru_http::remote(
@@ -799,7 +724,7 @@ async fn read(t: &Transport, site: &Site, query: &[String], at: &Position) -> Re
             )
         };
         let skipped = if pass == 0 { at.skip.min(raw.len()) } else { 0 };
-        // A page that moved since it was read repeats posts already shown.
+        // A page that moved since it was read repeats posts already read.
         let posts = raw
             .into_iter()
             .skip(skipped)
@@ -820,67 +745,18 @@ async fn read(t: &Transport, site: &Site, query: &[String], at: &Position) -> Re
             skipped,
         });
     }
-    // shortcut: a search whose pages all repeat shown posts waits for the next feed page and
-    // sets no limit on this one, so its older posts may land just above the limit of the others.
+    // Pages that moved since the search was read: carry on after them, so the next read starts
+    // further down instead of reading the same pages again.
     Ok(Read {
         posts: vec![],
         more: true,
-        page,
-        next: None,
+        page: page.clone(),
+        next: page,
         skipped: 0,
     })
 }
-async fn read_all(t: &Transport, sites: &[Site], streams: &[Stream]) -> Vec<Result<Read>> {
-    let mut results = (0..streams.len()).map(|_| None).collect::<Vec<_>>();
-    let mut queued = (0..streams.len()).collect::<std::collections::VecDeque<_>>();
-    let mut running = vec![0; sites.len()];
-    let mut pending = tokio::task::JoinSet::new();
-    loop {
-        while pending.len() < PARALLEL_SEARCHES {
-            let Some(at) = queued
-                .iter()
-                .position(|i| running[streams[*i].site] < PARALLEL_SEARCHES_PER_SITE)
-            else {
-                break;
-            };
-            let index = queued.remove(at).unwrap();
-            let stream = &streams[index];
-            running[stream.site] += 1;
-            let (t, site, query, at) = (
-                t.clone(),
-                sites[stream.site].clone(),
-                stream.query.clone(),
-                stream.at.clone(),
-            );
-            pending.spawn(async move { (index, read(&t, &site, &query, &at).await) });
-        }
-        let Some(done) = pending.join_next().await else {
-            break;
-        };
-        match done {
-            Ok((index, result)) => {
-                running[streams[index].site] -= 1;
-                results[index] = Some(result);
-            }
-            // A task that panicked keeps its slot: its site has failed anyway.
-            Err(e) => eprintln!("[developer] A subscription search task failed: {e}"),
-        }
-    }
-    results
-        .into_iter()
-        .map(|r| r.unwrap_or_else(|| Err(Error::Storage("The search did not finish.".into()))))
-        .collect()
-}
-struct FeedPage {
-    /// (site index, post), newest first.
-    posts: Vec<(usize, Value)>,
-    /// Each stream's position after this page, in the order of the streams.
-    positions: Vec<Position>,
-    /// The first error of each site that failed.
-    failed: Vec<(usize, String)>,
-}
 /// Seconds since 1970 of `createdAt`, or None when the post has no readable date.
-fn posted(post: &Value) -> Option<i64> {
+pub(crate) fn posted(post: &Value) -> Option<i64> {
     post["createdAt"]
         .as_str()
         .and_then(|s| {
@@ -888,11 +764,16 @@ fn posted(post: &Value) -> Option<i64> {
         })
         .map(|d| d.unix_timestamp())
 }
-/// One search's dates, never rising, so each search stays a run in the merge: a post dated
-/// after the one above it takes that date, and a post without a date takes the date above it,
-/// or below it at the top of the page. A page without any date sorts first.
-fn run_dates(posts: &[Value]) -> Vec<i64> {
-    let first = posts.iter().find_map(posted).unwrap_or(i64::MAX);
+/// One search's dates, never rising, so each search stays a run in the feed: a post dated
+/// after the one above it, or after `above` (the last post read from the search), takes that
+/// date, and a post without a date takes the date above it, or below it at the top of the page.
+/// A page without any date sorts first. Some sites date a post by its last edit (Rule34's
+/// `change`, FurAffinity's thumbnail), which a later post ID shows to be too late.
+pub(crate) fn run_dates(posts: &[Value], above: Option<i64>) -> Vec<i64> {
+    let first = posts
+        .iter()
+        .find_map(posted)
+        .map_or(above.unwrap_or(i64::MAX), |d| above.map_or(d, |a| d.min(a)));
     let mut last = first;
     posts
         .iter()
@@ -902,108 +783,9 @@ fn run_dates(posts: &[Value]) -> Vec<i64> {
         })
         .collect()
 }
-/// Merges the reads by date down to the limit the searches with more posts set; see [`feed`].
-fn merge(streams: &[Stream], reads: Vec<Result<Read>>, limit: usize) -> FeedPage {
-    let mut failed: Vec<(usize, String)> = Vec::new();
-    for (stream, read) in streams.iter().zip(&reads) {
-        if let Err(e) = read {
-            if !failed.iter().any(|(site, _)| *site == stream.site) {
-                failed.push((stream.site, e.to_string()));
-            }
-        }
-    }
-    let ok = |stream: &Stream| !failed.iter().any(|(site, _)| *site == stream.site);
-    let dates = reads
-        .iter()
-        .map(|read| read.as_ref().map_or(vec![], |read| run_dates(&read.posts)))
-        .collect::<Vec<_>>();
-    let floor = streams
-        .iter()
-        .zip(&reads)
-        .zip(&dates)
-        .filter(|((stream, read), dates)| {
-            ok(stream) && read.as_ref().is_ok_and(|r| r.more) && !dates.is_empty()
-        })
-        .map(|(_, dates)| *dates.last().unwrap())
-        .max();
-    let mut candidates = Vec::new();
-    for (index, (stream, dates)) in streams.iter().zip(&dates).enumerate() {
-        if !ok(stream) {
-            continue;
-        }
-        for (position, date) in dates.iter().enumerate() {
-            if floor.is_some_and(|floor| *date < floor) {
-                break;
-            }
-            candidates.push((*date, index, position));
-        }
-    }
-    // Stable: equal dates keep the order of the sites, then of each search.
-    candidates.sort_by_key(|c| std::cmp::Reverse(c.0));
-    let mut taken = vec![0; streams.len()];
-    let mut shown = HashSet::new();
-    let mut posts = Vec::new();
-    for (_, index, position) in candidates {
-        if posts.len() == limit {
-            break;
-        }
-        let read = reads[index].as_ref().unwrap();
-        let post = &read.posts[position];
-        taken[index] = position + 1;
-        let site = streams[index].site;
-        // A post that matches two searches of a site comes once.
-        if shown.insert((
-            site,
-            post["remoteId"].as_str().unwrap_or_default().to_owned(),
-        )) {
-            posts.push((site, post.clone()));
-        }
-    }
-    let positions = streams
-        .iter()
-        .zip(&reads)
-        .zip(taken)
-        .map(|((stream, read), taken)| {
-            let Ok(read) = read else {
-                return Position {
-                    done: true,
-                    ..stream.at.clone()
-                };
-            };
-            let last = read.posts[..taken].last();
-            let mut at = Position {
-                page: read.page.clone(),
-                below: last.and_then(post_id).or(stream.at.below),
-                // Without a numeric ID only the count of shown posts marks the place.
-                skip: if last.is_some_and(|p| post_id(p).is_none()) || taken == 0 {
-                    read.skipped + taken
-                } else {
-                    0
-                },
-                done: false,
-            };
-            if taken == read.posts.len() {
-                match &read.next {
-                    _ if !read.more => at.done = true,
-                    Some(next) => {
-                        at.page = Some(next.clone());
-                        at.skip = 0;
-                    }
-                    None => {}
-                }
-            }
-            at
-        })
-        .collect();
-    FeedPage {
-        posts,
-        positions,
-        failed,
-    }
-}
-/// Adds to `subscriptions.siteHits` the booru sites where the shown posts match a search, for
+/// Adds to `subscriptions.siteHits` the booru sites where the saved posts match a search, for
 /// the filter in Settings.
-async fn record_site_hits(
+pub(crate) async fn record_site_hits(
     db: &Database,
     sites: &[Site],
     tags: &[String],
@@ -1074,216 +856,6 @@ mod tests {
 
     use crate::db::OWNER_ID;
 
-    /// An e621 that holds `posts` as (id, tag, unix seconds) and answers `~a ~b` (any of),
-    /// `a b` (all of), `page=N` and `page=b<id>` as e621 does, newest ID first.
-    async fn booru(
-        posts: Vec<(u64, &'static str, i64)>,
-    ) -> (String, Arc<Mutex<Vec<String>>>, tokio::task::JoinHandle<()>) {
-        let requests = Arc::new(Mutex::new(Vec::new()));
-        let captured = requests.clone();
-        let app = Router::new().fallback(any(move |request: Request| {
-            let (requests, posts) = (captured.clone(), posts.clone());
-            async move {
-                let query = request.uri().query().unwrap_or("").to_owned();
-                let url = reqwest::Url::parse(&format!("https://fixture.example/?{query}")).unwrap();
-                let params = url.query_pairs().into_owned().collect::<HashMap<_, _>>();
-                requests.lock().unwrap().push(format!("{} page={}", params["tags"], params["page"]));
-                let terms = params["tags"].split(' ').collect::<Vec<_>>();
-                let any = terms.iter().filter_map(|t| t.strip_prefix('~')).collect::<Vec<_>>();
-                let all = terms.iter().filter(|t| !t.starts_with('~') && !t.contains(':')).collect::<Vec<_>>();
-                let limit: usize = params["limit"].parse().unwrap();
-                let mut rows = posts
-                    .iter()
-                    .filter(|(_, tag, _)| all.iter().all(|t| *t == tag) && (any.is_empty() || any.contains(tag)))
-                    .collect::<Vec<_>>();
-                rows.sort_by_key(|p| std::cmp::Reverse(p.0));
-                let rows = match params["page"].strip_prefix('b') {
-                    Some(below) => {
-                        let below: u64 = below.parse().unwrap();
-                        rows.into_iter().filter(|p| p.0 < below).take(limit).collect::<Vec<_>>()
-                    }
-                    None => {
-                        let page: usize = params["page"].parse().unwrap();
-                        rows.into_iter().skip((page - 1) * limit).take(limit).collect()
-                    }
-                };
-                let rows = rows.iter().map(|(id, tag, at)| {
-                    let at = time::OffsetDateTime::from_unix_timestamp(*at).unwrap()
-                        .format(&time::format_description::well_known::Rfc3339).unwrap();
-                    json!({"id":id,"file":{"url":"https://cdn.example.com/post.jpg","ext":"jpg"},
-                        "preview":{"url":"https://cdn.example.com/preview.jpg"},"tags":{"general":[tag]},
-                        "created_at":at,"relationships":{},"pools":[]})
-                }).collect::<Vec<_>>();
-                Json(json!({"posts":rows})).into_response()
-            }
-        }));
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let base = format!("http://{}", listener.local_addr().unwrap());
-        let task = tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-        (base, requests, task)
-    }
-    /// Reads the whole feed of `sites` `limit` posts at a time, as Show more does: the ids
-    /// shown and the site errors.
-    async fn read_feed(db: &Database, sites: &[Site], limit: usize) -> (Vec<String>, Vec<Value>) {
-        let t = Transport {
-            allow_loopback: true,
-        };
-        let (mut ids, mut errors, mut cursor) = (vec![], vec![], None);
-        for _ in 0..100 {
-            let page = feed_page(db, &t, sites.to_vec(), cursor, limit)
-                .await
-                .unwrap();
-            ids.extend(
-                page["posts"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|p| p["remoteId"].as_str().unwrap().to_owned()),
-            );
-            errors.extend(page["siteErrors"].as_array().unwrap().iter().cloned());
-            let Some(next) = page["nextCursor"].as_str() else {
-                return (ids, errors);
-            };
-            assert_eq!(page["hasMore"], true);
-            cursor = Some(decode_cursor(next).unwrap());
-        }
-        panic!("the feed never ended");
-    }
-    fn ids(range: impl DoubleEndedIterator<Item = u64>) -> Vec<String> {
-        range.rev().map(|id| id.to_string()).collect()
-    }
-    #[tokio::test]
-    async fn every_post_of_a_search_comes_once_in_order_even_past_its_first_page() {
-        // 100 new posts on one search: the old refresh read only the newest 40 of them.
-        let (base, requests, task) = booru(
-            (1..=100)
-                .map(|id| {
-                    (
-                        id,
-                        if id % 2 == 0 { "fox" } else { "wolf" },
-                        1_800_000_000 + id as i64 * 60,
-                    )
-                })
-                .collect(),
-        )
-        .await;
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        let site = setup(&db, base).await;
-        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox", "wolf"])))
-            .await
-            .unwrap();
-        let (shown, errors) = read_feed(&db, &[site], 30).await;
-        assert!(errors.is_empty(), "{errors:?}");
-        assert_eq!(shown, ids(1..=100));
-        // One search, `~fox ~wolf`, paged by ID: posts added on top cannot shift the next page.
-        assert!(requests
-            .lock()
-            .unwrap()
-            .iter()
-            .all(|r| r.starts_with("~fox ~wolf page=")));
-        task.abort();
-    }
-    #[tokio::test]
-    async fn searches_merge_by_date_and_an_older_post_never_follows_a_newer_one_later() {
-        // `fox score:>10` is searched alone: two searches, one busy and recent, one sparse.
-        let mut posts = (101..=160)
-            .map(|id| (id, "fox", 1_800_000_000 + id as i64 * 60))
-            .collect::<Vec<_>>();
-        posts.extend((1..=30).map(|id| (id, "wolf", 1_800_000_000 + id as i64 * 400)));
-        let (base, _, task) = booru(posts.clone()).await;
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        let site = setup(&db, base).await;
-        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox score:>10", "wolf"])))
-            .await
-            .unwrap();
-        let (shown, _) = read_feed(&db, &[site], 25).await;
-        posts.sort_by_key(|p| std::cmp::Reverse(p.2));
-        assert_eq!(
-            shown,
-            posts.iter().map(|p| p.0.to_string()).collect::<Vec<_>>()
-        );
-        task.abort();
-    }
-    #[tokio::test]
-    async fn a_failing_site_is_reported_and_the_others_still_load() {
-        let (base, _, task) = booru(
-            (1..=3)
-                .map(|id| (id, "fox", 1_800_000_000 + id as i64))
-                .collect(),
-        )
-        .await;
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        let site = setup(&db, base).await;
-        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox"])))
-            .await
-            .unwrap();
-        let broken = Site {
-            id: "broken".into(),
-            name: "Broken".into(),
-            base: "http://127.0.0.1:1".into(),
-            ..site.clone()
-        };
-        let (shown, errors) = read_feed(&db, &[site, broken], 40).await;
-        assert_eq!(shown, ["3", "2", "1"]);
-        assert_eq!(errors.len(), 1);
-        assert_eq!(errors[0]["siteId"], "broken");
-        task.abort();
-    }
-    #[tokio::test]
-    async fn a_cursor_for_other_searches_is_refused() {
-        let (base, _, task) = booru(
-            (1..=50)
-                .map(|id| (id, "fox", 1_800_000_000 + id as i64))
-                .collect(),
-        )
-        .await;
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        let site = setup(&db, base).await;
-        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox"])))
-            .await
-            .unwrap();
-        let t = Transport {
-            allow_loopback: true,
-        };
-        let first = feed_page(&db, &t, vec![site.clone()], None, 10)
-            .await
-            .unwrap();
-        let cursor = decode_cursor(first["nextCursor"].as_str().unwrap()).unwrap();
-        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox", "wolf"])))
-            .await
-            .unwrap();
-        assert!(matches!(
-            feed_page(&db, &t, vec![site], Some(cursor), 10).await,
-            Err(Error::Invalid(_))
-        ));
-        task.abort();
-    }
-    #[tokio::test]
-    async fn the_shown_posts_record_where_each_search_has_results() {
-        let (base, _, task) = booru(vec![(1, "wolf", 1_800_000_000)]).await;
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        let site = setup(&db, base).await;
-        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["wolf score:>5", "fox"])))
-            .await
-            .unwrap();
-        read_feed(&db, &[site], 40).await;
-        let sites = boorus::sites(&db).await.unwrap();
-        let (wolf, fox) = ("wolf score:>5".to_owned(), "fox".to_owned());
-        let hits = db
-            .call(move |c| site_hits(c, &sites, &[&wolf, &fox]))
-            .await
-            .unwrap();
-        assert_eq!(hits["wolf score:>5"], ["fixture"]);
-        assert!(!hits.contains_key("fox"));
-        task.abort();
-    }
     async fn setup(db: &Database, base: String) -> Site {
         db.call(|c| {
             c.execute("INSERT INTO user_booru_sites(id,user_id,name,engine,base_url,is_preset,enabled,sort_order,created_at,updated_at)
@@ -1371,63 +943,76 @@ mod tests {
         site.base = base;
         (site, requests, task)
     }
-    #[tokio::test]
-    async fn the_furaffinity_inbox_carries_on_from_the_last_post_shown() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        let (site, requests, task) = fa_inbox(&db).await;
-        let (shown, errors) = read_feed(&db, &[site], 1).await;
-        assert_eq!(shown, ["9", "8", "7"]);
-        // The watchlist sync, then each page once: a page read whole is not read again.
-        let pages = requests
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|p| p.starts_with("/msg/"))
-            .cloned()
-            .collect::<Vec<_>>();
-        assert_eq!(
-            pages,
-            [
-                "/msg/submissions/",
-                "/msg/submissions/new~8@48/",
-                "/msg/submissions/new~7@48/"
-            ]
-        );
-        assert!(errors.is_empty(), "{errors:?}");
-        task.abort();
-    }
-    fn stream(site: usize) -> Stream {
-        Stream {
-            site,
-            slot: 0,
-            query: vec![],
-            at: Position::default(),
-        }
-    }
     fn dated(id: &str, at: &str) -> Value {
         json!({"remoteId":id,"createdAt":at})
     }
+    #[tokio::test]
+    async fn pages_that_moved_since_the_last_read_are_passed_not_read_forever() {
+        // A number-paged site where new posts pushed every page down: each holds posts read already.
+        let app = Router::new().fallback(any(|| async {
+            Json(json!((1000..1040)
+                .rev()
+                .map(|id| json!({"id":id,"file_url":"https://cdn.example.com/f.jpg","tags":"fox"}))
+                .collect::<Vec<_>>()))
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let site = Site {
+            id: "fixture".into(),
+            name: "Fixture".into(),
+            engine: "moebooru".into(),
+            base,
+            username: None,
+            key: None,
+            cookie: None,
+            enabled: true,
+            public: Value::Null,
+        };
+        let at = Position {
+            page: Some("2".into()),
+            below: Some(10),
+            ..Position::default()
+        };
+        let read = read(
+            &Transport {
+                allow_loopback: true,
+            },
+            &site,
+            &["fox".into()],
+            &at,
+        )
+        .await
+        .unwrap();
+        task.abort();
+        assert!(read.posts.is_empty());
+        assert_eq!(
+            read.after(&at),
+            Position {
+                page: Some("6".into()),
+                below: Some(10),
+                ..Position::default()
+            }
+        );
+    }
     #[test]
-    fn a_page_of_ids_that_are_not_numbers_carries_on_by_counting_the_posts_shown() {
+    fn a_page_of_ids_that_are_not_numbers_carries_on_by_counting_the_posts_read() {
         let read = Read {
-            posts: ["c", "b", "a"]
+            posts: ["c", "b"]
                 .iter()
                 .map(|id| dated(id, "2026-10-12T00:00:00Z"))
                 .collect(),
             more: true,
             page: None,
-            next: Some("2".into()),
-            skipped: 0,
+            next: None,
+            skipped: 1,
         };
-        let page = merge(&[stream(0)], vec![Ok(read)], 2);
-        assert_eq!(page.posts.len(), 2);
         assert_eq!(
-            page.positions,
-            [Position {
-                skip: 2,
+            read.after(&Position::default()),
+            Position {
+                skip: 3,
                 ..Position::default()
-            }]
+            }
         );
     }
     #[test]
@@ -1439,31 +1024,8 @@ mod tests {
             dated("0", "2026-10-13T00:00:00Z"),
         ];
         let day = 1_791_763_200;
-        assert_eq!(run_dates(&posts), [day, day, day, day]);
-        assert_eq!(run_dates(&[json!({"remoteId":"1"})]), [i64::MAX]);
-    }
-    #[test]
-    fn a_cursor_belongs_to_one_address_and_engine() {
-        let site = |base: &str| Site {
-            id: "fixture".into(),
-            name: "Fixture".into(),
-            engine: "e621".into(),
-            base: base.into(),
-            username: None,
-            key: None,
-            cookie: None,
-            enabled: true,
-            public: Value::Null,
-        };
-        let searches = [vec!["fox".to_owned()]];
-        assert_eq!(
-            fingerprint(&site("https://e621.net"), &searches),
-            fingerprint(&site("https://e621.net"), &searches)
-        );
-        assert_ne!(
-            fingerprint(&site("https://e621.net"), &searches),
-            fingerprint(&site("https://e926.net"), &searches)
-        );
+        assert_eq!(run_dates(&posts, None), [day, day, day, day]);
+        assert_eq!(run_dates(&[json!({"remoteId":"1"})], None), [i64::MAX]);
     }
     #[tokio::test]
     async fn site_hits_count_a_furaffinity_artist_from_the_watchlist() {

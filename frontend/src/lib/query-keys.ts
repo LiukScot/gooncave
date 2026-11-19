@@ -60,6 +60,8 @@ export const queryKeys = {
   settings: {
     all: ['settings'] as const,
     extra: () => [...queryKeys.settings.all, 'extra'] as const,
+    recentSearches: () => [...queryKeys.settings.all, 'recent-searches'] as const,
+    cacheUsage: () => [...queryKeys.settings.all, 'cache-usage'] as const,
     shortcuts: () => [...queryKeys.settings.all, 'shortcuts'] as const,
     blacklist: () => [...queryKeys.settings.all, 'blacklist'] as const,
     subscriptions: () => [...queryKeys.settings.all, 'subscriptions'] as const,

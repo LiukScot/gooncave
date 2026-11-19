@@ -135,7 +135,7 @@ async fn the_feed_validates_its_inputs_and_reports_sites_it_cannot_read() {
         request(&s, "GET", "/explore/subscriptions", Value::Null).await,
         (
             200,
-            json!({"posts":[],"hasMore":false,"nextCursor":null,"siteErrors":[]})
+            json!({"posts":[],"hasMore":false,"nextCursor":null,"newestAt":null,"siteErrors":[]})
         ),
         "with no searches there is nothing to read"
     );

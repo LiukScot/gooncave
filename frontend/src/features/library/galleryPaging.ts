@@ -51,3 +51,19 @@ export const resetFetchLimit = (cachedOffset: number): number => {
   // scroll for the rest — add the loop if a library that deep turns up.
   return Math.min(cachedOffset, GALLERY_MAX_LIMIT);
 };
+
+/**
+ * Lists the gallery keeps to show again at once, one per sort, search and filter. Each holds
+ * every file loaded under it, so without a limit a long session keeps every search it ever made.
+ */
+export const GALLERY_CACHED_LISTS = 20;
+
+/** Saves `value` as the newest entry and drops the oldest past GALLERY_CACHED_LISTS. */
+export function rememberGalleryList<V>(cache: Map<string, V>, key: string, value: V): void {
+  cache.delete(key);
+  cache.set(key, value);
+  for (const oldest of cache.keys()) {
+    if (cache.size <= GALLERY_CACHED_LISTS) break;
+    cache.delete(oldest);
+  }
+}

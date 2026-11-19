@@ -5,6 +5,7 @@ type SubscriptionPage = {
   posts: ExplorePost[];
   hasMore: boolean;
   nextCursor: string | null;
+  newestAt: number | null;
   siteErrors: ExploreSiteError[];
 };
 
@@ -44,12 +45,12 @@ export const subscriptionReasons = (
   ];
 };
 
-/** Feed pages one load may read: each page asks every site, so a feed of read posts stops here. */
+/** Feed pages one load may read: a page may wait for the sites while it reads older posts. */
 const MAX_PAGES_PER_LOAD = 3;
 
 /**
  * Reads feed pages until `target` posts pass `keep`, the feed ends, or
- * MAX_PAGES_PER_LOAD pages were read. Each page is read live from the sites.
+ * MAX_PAGES_PER_LOAD pages were read. `newestAt` comes from the first page read.
  */
 export const collectSubscriptionPosts = async (options: {
   cursor: string | null;
@@ -61,6 +62,7 @@ export const collectSubscriptionPosts = async (options: {
   const posts: ExplorePost[] = [];
   const siteErrors: ExploreSiteError[] = [];
   let nextCursor = options.cursor;
+  let newestAt: number | null = null;
   let hasMore = true;
   for (
     let pages = 0;
@@ -81,12 +83,13 @@ export const collectSubscriptionPosts = async (options: {
       break;
     }
     if (options.signal.aborted) break;
+    if (pages === 0) newestAt = page.newestAt;
     posts.push(...page.posts.filter(options.keep));
     siteErrors.push(...page.siteErrors);
     nextCursor = page.nextCursor;
     hasMore = page.hasMore && nextCursor !== null;
   }
-  return { posts, nextCursor, hasMore, siteErrors };
+  return { posts, nextCursor, newestAt, hasMore, siteErrors };
 };
 
 export type FeedDay<T> = {

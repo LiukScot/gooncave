@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { needsDuplicateRescan } from './galleryDuplicateStacks';
-import { GALLERY_MAX_LIMIT, GALLERY_PAGE_SIZE, mergeGalleryRefresh, resetFetchLimit } from './galleryPaging';
+import { GALLERY_MAX_LIMIT, GALLERY_PAGE_SIZE, mergeGalleryRefresh, rememberGalleryList, resetFetchLimit } from './galleryPaging';
 import type {
   FetchState,
   GallerySort,
@@ -230,10 +230,10 @@ export function useGalleryController(
   // Refs
   // -------------------------------------------------------------------------
 
-  /** Hand-rolled LRU-style page cache keyed by buildGalleryCacheKey */
   // Files deleted with an undo still pending: the server lists them until the
   // delete is sent, and a refresh in that window must not bring them back.
   const pendingDeletesRef = useRef(new Set<string>());
+  /** Lists already loaded, by buildGalleryCacheKey; new ones go through rememberGalleryList. */
   const galleryCacheRef = useRef<
     Map<
       string,
@@ -390,7 +390,7 @@ export function useGalleryController(
         // The masonry may ask for the next page in the commit that shows this one.
         galleryOffsetRef.current = nextOffset;
         setGalleryHasMore(nextOffset < total);
-        galleryCacheRef.current.set(cacheKey, {
+        rememberGalleryList(galleryCacheRef.current, cacheKey, {
           files: updatedFiles,
           total,
           offset: nextOffset,

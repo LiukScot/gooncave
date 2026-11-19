@@ -802,6 +802,7 @@ async fn act(
             let site = site_for(db, &provider).await?;
             let _guard = db.favorites.writes.lock().await;
             remote::set(&Transport::default(), &site, &id, true).await?;
+            crate::subscription_feed::set_favorited(db, &site.id, &id, true).await?;
             db.favorites.mark_removed(provider.clone(), &id, false)?;
             let source = booru_engines::post_url(&site, &id)?;
             db.call(move |c| {
@@ -832,6 +833,7 @@ async fn act(
             let site = site_for(db, &provider).await?;
             let _guard = db.favorites.writes.lock().await;
             remote::set(&Transport::default(), &site, &id, false).await?;
+            crate::subscription_feed::set_favorited(db, &site.id, &id, false).await?;
             db.favorites.mark_removed(provider.clone(), &id, true)?;
             let site = site.id.clone();
             db.call(move |c| {

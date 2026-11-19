@@ -166,7 +166,13 @@ export type ExtraSettings = {
   maxGridColumns: number;
   /** How far a double tap on either side of a video jumps: 5, 10, 15 or 30. */
   videoSkipSeconds: number;
+  /** The most the cache of loaded posts and pictures may hold, in GB; 0 keeps everything. */
+  cacheLimitGb: CacheLimitGb;
 };
+
+/** The sizes the cache can be limited to, in GB, smallest first; 0 means no limit. */
+export const CACHE_LIMITS_GB = [1, 3, 5, 10, 0] as const;
+export type CacheLimitGb = (typeof CACHE_LIMITS_GB)[number];
 
 /**
  * Mirrors the backend defaults, used while the real settings are still in
@@ -183,7 +189,8 @@ export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   pullFullscreen: true,
   fullscreenActions: true,
   maxGridColumns: 0,
-  videoSkipSeconds: 10
+  videoSkipSeconds: 10,
+  cacheLimitGb: 3
 };
 
 export type BlacklistSettings = {
@@ -707,6 +714,8 @@ type SubscriptionFeedResponse = {
   posts: ExplorePost[];
   hasMore: boolean;
   nextCursor: string | null;
+  /** Sort date of the first post, seconds since 1970; set on the first page. */
+  newestAt: number | null;
   /** Sites that could not be read; they leave the feed until it is reloaded. */
   siteErrors: ExploreSiteError[];
 };
@@ -1332,17 +1341,44 @@ export const api = {
     siteIds?: string[];
     cursor?: string;
     limit?: number;
+    unread?: boolean;
     signal?: AbortSignal;
   }) => {
     const query = new URLSearchParams();
     if (params.limit) query.set('limit', String(params.limit));
     if (params.siteIds) query.set('sites', params.siteIds.join(','));
     if (params.cursor) query.set('cursor', params.cursor);
+    if (params.unread) query.set('unread', '1');
     const res = await apiFetch(
       `${API_BASE}/explore/subscriptions?${query.toString()}`,
       params.signal ? { signal: params.signal } : undefined
     );
     return handle<SubscriptionFeedResponse>(res);
+  },
+  /** Saved subscription posts newer than `after` (a feed's `newestAt`). */
+  newSubscriptionPosts: async (params: {
+    siteIds: string[];
+    after: number;
+    unread: boolean;
+    signal?: AbortSignal;
+  }) => {
+    const query = new URLSearchParams({
+      sites: params.siteIds.join(','),
+      after: String(params.after)
+    });
+    if (params.unread) query.set('unread', '1');
+    const res = await apiFetch(
+      `${API_BASE}/explore/subscriptions/new?${query.toString()}`,
+      params.signal ? { signal: params.signal } : undefined
+    );
+    return handle<{ count: number }>(res);
+  },
+  subscriptionProgress: async (signal?: AbortSignal) => {
+    const res = await apiFetch(
+      `${API_BASE}/explore/subscriptions/progress`,
+      signal ? { signal } : undefined
+    );
+    return handle<{ read: number | null; total: number | null }>(res);
   },
   readHistory: async (params: {
     siteIds: string[];
@@ -1619,6 +1655,24 @@ export const api = {
   getExtraSettings: async () => {
     const res = await apiFetch(`${API_BASE}/settings/extra`);
     return handle<ExtraSettings>(res);
+  },
+  /** Bytes the cache of loaded posts and pictures holds on this device. */
+  getCacheUsage: async () => {
+    const res = await apiFetch(`${API_BASE}/cache`);
+    return handle<{ bytes: number }>(res);
+  },
+  /** The last searches made in Explore, newest first; shared between devices. */
+  getRecentSearches: async () => {
+    const res = await apiFetch(`${API_BASE}/settings/explore`);
+    return (await handle<{ recentSearches: string[] }>(res)).recentSearches;
+  },
+  setRecentSearches: async (recentSearches: string[]) => {
+    const res = await apiFetch(`${API_BASE}/settings/explore`, {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify({ recentSearches })
+    });
+    return (await handle<{ recentSearches: string[] }>(res)).recentSearches;
   },
   getBlacklist: async () => {
     const res = await apiFetch(`${API_BASE}/settings/blacklist`);

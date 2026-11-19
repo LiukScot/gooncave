@@ -6,7 +6,9 @@ import { readPoolSnapshot, writePoolSnapshot } from './poolSnapshot';
 import { PoolTile } from './PoolTile';
 
 import { api, type PoolPage, type PoolPagePost } from '@/api';
+import { WavyProgress } from '@/components/WavyProgress';
 import { useOpenPoolPage } from '@/features/explore/useOpenBooruPost';
+import { OfflineNotice } from '@/features/shell/OfflineNotice';
 import {
   poolScrollKey,
   rememberListPlace,
@@ -14,6 +16,7 @@ import {
   takeListScrollY,
   useWindowScrollScreen
 } from '@/features/shell/windowScroll';
+import { useOnline } from '@/lib/online';
 
 /**
  * One pool, first page to last, in the booru's reading order.
@@ -33,6 +36,7 @@ function PoolContent({ site, pool }: { site: string; pool: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const openPoolPage = useOpenPoolPage();
+  const online = useOnline();
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
   const scrollKey = poolScrollKey(site, pool);
@@ -120,7 +124,9 @@ function PoolContent({ site, pool }: { site: string; pool: string }) {
           <PoolHeaderActions site={site} pool={pool} name={head?.name} />
         </div>
       </div>
-      {error ? (
+      {error && !online && posts.length === 0 ? (
+        <OfflineNotice className="text-muted-foreground mb-2" />
+      ) : error ? (
         <div className="text-destructive text-sm mb-2">{error}</div>
       ) : null}
       <div className="pool-grid">
@@ -134,14 +140,17 @@ function PoolContent({ site, pool }: { site: string; pool: string }) {
       </div>
       {hasMore ? (
         <div className="flex justify-center mt-4">
-          <button
-            type="button"
-            className="btn btn-outline-light btn-sm"
-            disabled={loading}
-            onClick={() => void loadPage(pages.length + 1)}
-          >
-            {loading ? 'Loading…' : 'Load more'}
-          </button>
+          {loading ? (
+            <WavyProgress label="Loading more posts" />
+          ) : (
+            <button
+              type="button"
+              className="btn btn-outline-light btn-sm"
+              onClick={() => void loadPage(pages.length + 1)}
+            >
+              Load more
+            </button>
+          )}
         </div>
       ) : null}
     </div>

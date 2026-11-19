@@ -140,8 +140,21 @@ impl Server {
                 eprintln!("Cannot adopt the site keys of another device: {error}");
             }
         });
+        let trimming = {
+            let database = self.database.clone();
+            tokio::spawn(async move {
+                let trimmed = match crate::cache::sweep(&database).await {
+                    Ok(()) => crate::cache::evict(&database).await,
+                    Err(error) => Err(error),
+                };
+                if let Err(error) = trimmed {
+                    eprintln!("[developer] Cannot fit the cache to its limit: {error}");
+                }
+            })
+        };
         let importer = tokio::spawn(crate::tag_import::watch(self.database.clone()));
         let favorites = tokio::spawn(crate::favorites::watch(self.database.clone()));
+        let subscriptions = tokio::spawn(crate::subscription_feed::watch(self.database.clone()));
         let sources = tokio::spawn(crate::source_jobs::watch(self.database.clone()));
         let tagging = tokio::spawn(crate::wd14::watch(self.database.clone()));
         let duplicates = tokio::spawn(crate::duplicate_policy::watch(self.database.clone()));
@@ -153,8 +166,10 @@ impl Server {
         let _workers = Workers(
             [
                 &adopting,
+                &trimming,
                 &importer,
                 &favorites,
+                &subscriptions,
                 &sources,
                 &tagging,
                 &duplicates,
@@ -177,6 +192,7 @@ impl Server {
         repair.abort();
         importer.abort();
         favorites.abort();
+        subscriptions.abort();
         sources.abort();
         let _ = sources.await;
         tagging.abort();
@@ -238,6 +254,7 @@ fn routes(database: Database) -> Router {
         .merge(crate::native_share::routes())
         .merge(crate::backup::routes())
         .merge(crate::boorus::routes())
+        .merge(crate::cache::routes())
         .merge(crate::explore::routes())
         .merge(crate::tags::routes())
         .merge(crate::tag_import::routes())
@@ -245,6 +262,7 @@ fn routes(database: Database) -> Router {
         .merge(crate::read_history::routes())
         .merge(crate::favorites::routes())
         .merge(crate::subscriptions::routes())
+        .merge(crate::subscription_feed::routes())
         // Upload routes raise this with their own, inner limit.
         .layer(DefaultBodyLimit::max(64 * 1024))
         .with_state(database)
@@ -307,11 +325,17 @@ async fn update_settings(
     let Json(patch) = payload.map_err(|_| {
         Error::Invalid("Send valid JSON settings with Content-Type application/json.".into())
     })?;
-    Ok(Json(
-        database
-            .call(move |connection| settings::update(connection, &section, patch))
-            .await?,
-    ))
+    let limit_changed = section == "extra" && patch.get("cacheLimitGb").is_some();
+    let updated = database
+        .call(move |connection| settings::update(connection, &section, patch))
+        .await?;
+    // The new limit is saved either way; the next write trims again.
+    if limit_changed {
+        if let Err(error) = crate::cache::evict(&database).await {
+            eprintln!("[developer] Cannot fit the cache to its new limit: {error}");
+        }
+    }
+    Ok(Json(updated))
 }
 
 pub async fn unavailable() -> Error {

@@ -30,9 +30,11 @@ import {
 } from './mergeStream';
 import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
+import { useRememberSearch } from './recentSearches';
 import { stackDuplicates } from './stackDuplicates';
 import { collectSubscriptionPosts } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
+import { useNewSubscriptionPosts } from './useNewSubscriptionPosts';
 import { useOpenPostLink } from './useOpenPostLink';
 import { useTagSubscriptionAction } from './useTagSubscriptionAction';
 import { withVisualMatches } from './visualMatch';
@@ -128,6 +130,14 @@ const credentialsReady = (site: BooruSite): boolean => {
 };
 
 export { explorePostKey };
+
+/** The detail view's way back: to the pool it was opened from, or to the page it was opened on. */
+export function exploreBackLabel(sort: ExploreSort, inPool: boolean): string {
+  if (inPool) return 'Back to pool';
+  if (sort === 'subscribed') return 'Back to subscriptions';
+  if (sort === 'history') return 'Back to history';
+  return 'Back to explore';
+}
 
 export function useExploreController({
   feed
@@ -417,6 +427,8 @@ export function useExploreController({
   const streamsRef = useRef<Map<string, SiteStream>>(new Map());
   /** Where Subscribed or History carries on: both are one feed with a cursor. */
   const subscriptionCursorRef = useRef<string | null>(null);
+  /** Sort date of the newest post shown in Subscriptions; posts synced above it are counted. */
+  const [subscriptionNewestAt, setSubscriptionNewestAt] = useState<number | null>(null);
   /** Buffered or already shown, so no site contributes the same post twice. */
   const seenRef = useRef({ keys: new Set<string>() });
 
@@ -548,6 +560,7 @@ export function useExploreController({
     requestRef.current = controller;
     streamsRef.current = new Map();
     subscriptionCursorRef.current = null;
+    setSubscriptionNewestAt(null);
     seenRef.current = { keys: new Set() };
     automaticFavoriteGenerationRef.current += 1;
     automaticFavoriteAttemptsRef.current.clear();
@@ -601,12 +614,14 @@ export function useExploreController({
               siteIds: activeSiteIds,
               cursor: cursor ?? undefined,
               limit: PAGE_SIZE,
+              unread: effectiveUnreadOnly,
               signal: controller.signal
             }),
           keep: keepPost
         });
         if (controller.signal.aborted) return;
         subscriptionCursorRef.current = first.nextCursor;
+        setSubscriptionNewestAt(first.newestAt);
         const prepared = await preparePosts(first.posts, controller.signal);
         if (controller.signal.aborted) return;
         setPosts(prepared);
@@ -644,6 +659,12 @@ export function useExploreController({
     sort,
     effectiveUnreadOnly
   ]);
+
+  const newSubscriptionPosts = useNewSubscriptionPosts(
+    sort === 'subscribed' ? subscriptionNewestAt : null,
+    activeSiteIds,
+    effectiveUnreadOnly
+  );
 
   /** Identity of the search on screen — exactly what a reload depends on. */
   const searchKey = [
@@ -851,6 +872,7 @@ export function useExploreController({
               siteIds: activeSiteIds,
               cursor: cursor ?? undefined,
               limit: PAGE_SIZE,
+              unread: effectiveUnreadOnly,
               signal: controller.signal
             }),
           keep: keepPost
@@ -901,7 +923,8 @@ export function useExploreController({
     loadHistoryPage,
     loading,
     preparePosts,
-    sort
+    sort,
+    effectiveUnreadOnly
   ]);
 
   const showLinkedPost = useCallback(
@@ -927,13 +950,18 @@ export function useExploreController({
     },
     [openPostLink, tagQuery]
   );
-  const submitSearch = useCallback(() => applySearch(tagInput), [applySearch, tagInput]);
+  const rememberSearch = useRememberSearch();
+  const submitSearch = useCallback(() => {
+    rememberSearch(tagInput);
+    applySearch(tagInput);
+  }, [applySearch, rememberSearch, tagInput]);
   const searchNow = useCallback(
     (value: string) => {
+      rememberSearch(value);
       setTagInput(value);
       applySearch(value);
     },
-    [applySearch]
+    [applySearch, rememberSearch]
   );
 
   // Remote search is costlier than the local gallery query, but it should
@@ -1345,12 +1373,14 @@ export function useExploreController({
         void navigate({ to: '/app/gallery', search: { fileId: post.libraryFileId, fs: undefined } });
         return;
       }
+      // A search whose results got opened is one worth offering again.
+      if (sort !== 'subscribed' && sort !== 'history') rememberSearch(tagQuery);
       // Opened from the results: whatever pool was being read is over.
       setPoolContext(null);
       useExploreUiStore.getState().setExcursionNav(null);
       stepTo(post);
     },
-    [navigate, setPoolContext, stepTo]
+    [navigate, rememberSearch, setPoolContext, sort, stepTo, tagQuery]
   );
 
   // The open post is mirrored into `?post=`, so the browser's back button
@@ -1567,8 +1597,7 @@ export function useExploreController({
   const hasNext =
     excursionNav?.hasNext ??
     (anchorIndex >= 0 && (anchorIndex < navKeys.length - 1 || hasMore));
-  const backLabel = excursionNav?.backLabel ??
-    (poolContext ? 'Back to pool' : 'Back to explore');
+  const backLabel = excursionNav?.backLabel ?? exploreBackLabel(sort, Boolean(poolContext));
 
   // The header owns Back and Prev/Next for the gallery; explore publishes the
   // same controls here so both pages get them from one place.
@@ -1618,6 +1647,8 @@ export function useExploreController({
     submitSearch,
     /** Runs the current search again, also when its text has not changed. */
     retrySearch: reload,
+    /** Posts saved above the Subscriptions feed since it loaded. */
+    newSubscriptionPosts,
     selectTag,
     readTrackingEnabled,
     unreadOnly: effectiveUnreadOnly,

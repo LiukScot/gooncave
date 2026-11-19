@@ -4,7 +4,6 @@ import { useEffect } from 'react';
 
 import { useAppShellContext } from './AppShell';
 import { FeatureUnavailable } from './FeatureUnavailable';
-import { OfflineView } from './OfflineView';
 import { PageTitle } from './PageTitle';
 import { GALLERY_SCROLL_KEY, useWindowScrollScreen } from './windowScroll';
 
@@ -31,7 +30,6 @@ import { SyncSettings } from '@/features/settings/SyncSettings';
 import { TrashSettings } from '@/features/settings/TrashSettings';
 import { useExtraSettings } from '@/hooks/settings';
 import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
-import { useOnline } from '@/lib/online';
 
 export function GalleryRouteView() {
   const { authUser, galleryCtl, fileDetailCtl, openGalleryFile, sourceFavoritesCtl, addFiles, addFromPhotos } = useAppShellContext();
@@ -109,20 +107,15 @@ export function GalleryRouteView() {
 export function ExploreRouteView() {
   const { authUser } = useAppShellContext();
   const { feed } = useSearch({ from: '/app/explore' });
-  const online = useOnline();
   if (authUser.capabilities?.boorus === false) return <FeatureUnavailable feature="Explore" />;
   if (feed === 'subscribed' && authUser.capabilities?.subscriptions === false) return <FeatureUnavailable feature="Subscriptions" />;
-  // ExploreView keeps its results for the way back, so reconnecting restores the list.
-  // History stays: it is kept on this device, and shows what can still open.
-  if (!online && feed !== 'history') return <OfflineView feature={feed === 'subscribed' ? 'Subscriptions' : 'Explore'} />;
+  // Offline too: the core answers from its cache what this device loaded before.
   return <ExploreView feed={feed} />;
 }
 
 export function PoolRouteView() {
   const { authUser } = useAppShellContext();
-  const online = useOnline();
   if (authUser.capabilities?.boorus === false) return <FeatureUnavailable feature="Pools" />;
-  if (!online) return <OfflineView feature="Pools" />;
   return <PoolView />;
 }
 

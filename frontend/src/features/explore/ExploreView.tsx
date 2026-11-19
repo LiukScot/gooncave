@@ -1,5 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
+  ArrowUp,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -7,7 +8,6 @@ import {
   Heart,
   History,
   Images,
-  LoaderCircle,
   Play,
   Rss,
   Settings2,
@@ -22,6 +22,7 @@ import { loadFurAffinityGridPreview } from './explorePostDetails';
 import { ExploreReadFooter } from './ExploreReadFooter';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
 import { PopularPeriodNote } from './PopularPeriodNote';
+import { useRecentSearches } from './recentSearches';
 import { RemoteImage } from './RemoteImage';
 import {
   normalizeSubscriptionSearch,
@@ -29,11 +30,13 @@ import {
   subscriptionReasons
 } from './subscriptionFeed';
 import { explorePostKey, useExploreController } from './useExploreController';
+import { useSubscriptionProgress } from './useSubscriptionProgress';
 
 
 import { LIBRARY_SITE_ID, type ExploreFeed, type ExplorePost, type ExploreSort, type ExploreWindow } from '@/api';
 import { EyeToggleIcon } from '@/components/icons/EyeToggleIcon';
 import { ThumbnailMotion } from '@/components/ThumbnailMotion';
+import { WavyProgress } from '@/components/WavyProgress';
 import { SiteLogo } from '@/features/file-detail/SourcesDialog';
 import { CardVideo } from '@/features/library/CardVideo';
 import { GallerySourceIcon, GallerySourceIconList } from '@/features/library/GallerySourceIcon';
@@ -49,6 +52,7 @@ import {
 import { tagFilters } from '@/features/library/tagInputTokens';
 import { TagSearchInput } from '@/features/library/TagSearchInput';
 import { useScrolledPastRead } from '@/features/read-marks/useScrolledPastRead';
+import { OfflineNotice } from '@/features/shell/OfflineNotice';
 import { PageTitle } from '@/features/shell/PageTitle';
 import {
   PanelChoice,
@@ -58,6 +62,7 @@ import {
   type ActiveFilter,
   type FilterChip
 } from '@/features/shell/SearchPanel';
+import { scrollViewToTop } from '@/features/shell/viewReselect';
 import { useDeviceProfile } from '@/hooks/device';
 import { useExtraSettings, useSubscriptionTags, useUpdateSubscriptionTags } from '@/hooks/settings';
 import { ANIMATED_PICTURE } from '@/lib/freezePictures';
@@ -116,6 +121,10 @@ export function ExploreView({
   feed?: ExploreFeed;
 }) {
   const ctl = useExploreController({ feed });
+  const firstSubscriptionsLoad =
+    ctl.sort === 'subscribed' && ctl.posts.length === 0 && (ctl.loading || ctl.sitesLoading);
+  const syncProgress = useSubscriptionProgress(firstSubscriptionsLoad);
+  const recentSearches = useRecentSearches();
   const { maxGridColumns } = useExtraSettings();
   const subscriptionsAvailable = useDeviceProfile().data?.capabilities?.subscriptions !== false;
   const subscriptions = useSubscriptionTags();
@@ -124,11 +133,17 @@ export function ExploreView({
   useErrorToast(addSubscription.error);
   const navigate = useNavigate();
   const { siteErrors } = ctl;
+  const online = useOnline();
+  // Read rather than depended on: reconnecting must not show again the errors of an offline search.
+  const onlineRef = useRef(online);
+  onlineRef.current = online;
   const retrySearch = useRef(ctl.retrySearch);
   retrySearch.current = ctl.retrySearch;
   // A site that failed is named rather than silently dropped: an expired API key looks
   // exactly like "no results" otherwise.
   useEffect(() => {
+    // Offline every site fails: the heading already says Offline, and saved results still show.
+    if (!onlineRef.current) return;
     const now = Date.now();
     const shown = siteErrors.filter((siteError) => {
       if (siteError.code !== 'SITE_OFFLINE') return true;
@@ -424,6 +439,7 @@ export function ExploreView({
                             onClear={() => ctl.searchNow('')}
                             onPick={ctl.searchNow}
                             onSubmit={ctl.submitSearch}
+                            recent={recentSearches}
                             placeholder="tags · ~either · -not · score:>5"
                           />
                         )
@@ -518,6 +534,25 @@ export function ExploreView({
                     </SearchPanel>
                   )}
 
+                  {ctl.newSubscriptionPosts > 0 ? (
+                    // No height of its own: posts already on screen stay where they are.
+                    <div className="explore-new-posts">
+                      <button
+                        type="button"
+                        className="explore-new-posts-button"
+                        data-test-id="explore-new-posts"
+                        onClick={() => {
+                          scrollViewToTop();
+                          void ctl.retrySearch();
+                        }}
+                      >
+                        <ArrowUp aria-hidden="true" />
+                        {ctl.newSubscriptionPosts === 1
+                          ? 'Show 1 new post'
+                          : `Show ${ctl.newSubscriptionPosts} new posts`}
+                      </button>
+                    </div>
+                  ) : null}
                   {ctl.slowSites.map((site) => (
                     <div
                       key={site.siteId}
@@ -552,12 +587,33 @@ export function ExploreView({
                       className="explore-loading text-muted-foreground"
                       role="status"
                     >
-                      <LoaderCircle
-                        className="size-8 animate-spin motion-reduce:animate-none"
-                        aria-hidden="true"
-                      />
-                      Loading images…
+                      {firstSubscriptionsLoad ? (
+                        <>
+                          {/* Until the sync counts searches (sites loading, searches being
+                              prepared, the watchlist syncing) how much is left is unknown. */}
+                          <WavyProgress
+                            read={syncProgress?.read}
+                            total={syncProgress?.total}
+                            label="Reading your searches"
+                          />
+                          <span>
+                            {syncProgress ? 'Reading your searches…' : 'Loading posts…'}
+                          </span>
+                          {syncProgress && (
+                            <span className="text-sm">
+                              {syncProgress.read} of {syncProgress.total}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <WavyProgress label="Loading images" />
+                          Loading images…
+                        </>
+                      )}
                     </div>
+                  ) : ctl.posts.length === 0 && !online && ctl.sort !== 'history' ? (
+                    <OfflineNotice className="explore-empty text-muted-foreground" />
                   ) : ctl.posts.length === 0 ? (
                     <p className="explore-empty text-muted-foreground">
                       {ctl.unreadOnly && ctl.readHidden && !ctl.hasMore
@@ -718,7 +774,8 @@ export function ExploreCard({
   const post = posts[activeIndex % posts.length];
   const online = useOnline();
   const isLibraryFile = post.siteId === LIBRARY_SITE_ID;
-  const unavailable = !online && post.libraryLocation !== 'LOCAL';
+  // A site's post may open from the cache; a library file needs its original on this device.
+  const unavailable = !online && isLibraryFile && post.libraryLocation !== 'LOCAL';
   const postKey = explorePostKey(post);
   const stacked = posts.length > 1;
   const activeSourceIcon = sourceIcon(post);

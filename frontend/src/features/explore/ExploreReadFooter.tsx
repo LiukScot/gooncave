@@ -1,6 +1,7 @@
 import { explorePostKey } from './navSequence';
 
 import type { ExplorePost } from '@/api';
+import { WavyProgress } from '@/components/WavyProgress';
 import { queueReads } from '@/features/read-marks/readQueue';
 
 export function ExploreReadFooter({
@@ -25,19 +26,22 @@ export function ExploreReadFooter({
   if (hasMore && (posts.length > 0 || readHidden)) {
     return (
       <div className="flex justify-center mt-4">
-        <button
-          type="button"
-          className="btn btn-outline-light btn-sm"
-          onClick={() => {
-            if (readTrackingEnabled) {
-              queueReads('post', posts.map(explorePostKey));
-            }
-            void onLoadMore();
-          }}
-          disabled={loading}
-        >
-          {loading ? 'Loading…' : 'Load more'}
-        </button>
+        {loading ? (
+          <WavyProgress label="Loading more posts" />
+        ) : (
+          <button
+            type="button"
+            className="btn btn-outline-light btn-sm"
+            onClick={() => {
+              if (readTrackingEnabled) {
+                queueReads('post', posts.map(explorePostKey));
+              }
+              void onLoadMore();
+            }}
+          >
+            Load more
+          </button>
+        )}
       </div>
     );
   }

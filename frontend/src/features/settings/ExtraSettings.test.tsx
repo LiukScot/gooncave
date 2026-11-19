@@ -56,3 +56,37 @@ it('deletes the history only after turning History off is confirmed', async () =
   expect(settings.readTrackingEnabled).toBe(false);
   container.remove();
 });
+
+it('saves the cache size where the slider is let go, not at each size passed on the way', async () => {
+  const saved: unknown[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith('/tagging')) {
+      return Response.json({ available: false, enabled: false, model: 'fixture', modelBytes: 0,
+        downloadedBytes: 0, total: 0, completed: 0, failed: 0, error: null, state: 'idle' });
+    }
+    if (String(input).endsWith('/cache')) return Response.json({ bytes: 0 });
+    if (init?.method === 'PUT') saved.push(JSON.parse(String(init.body)));
+    return Response.json({ ...EXTRA_SETTINGS_DEFAULTS, cacheLimitGb: 10 });
+  }));
+  const container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  await act(async () => root?.render(<QueryClientProvider client={client}><ConfirmProvider><ExtraSettings /></ConfirmProvider></QueryClientProvider>));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  const slider = container.querySelector<HTMLInputElement>('#extra-cacheLimitGb');
+  if (!slider) throw new Error('no cache slider');
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  // From 10 GB down past 1 GB and back up to 5 GB in one drag.
+  for (const position of ['2', '1', '0', '1', '2']) {
+    await act(async () => {
+      setValue?.call(slider, position);
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+  expect(saved).toEqual([]);
+  await act(async () => slider.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  expect(saved).toEqual([{ cacheLimitGb: 5 }]);
+  container.remove();
+});

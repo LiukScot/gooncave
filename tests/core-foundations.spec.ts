@@ -17,7 +17,7 @@ test('opens the gallery without login and keeps a setting after reload', async (
   await expect(setting).toBeChecked({ checked: !initial });
 });
 
-test('Subscribed reads the feed live from the sites on screen', async ({ page }) => {
+test('Subscribed reads the feed of the sites on screen', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.request.put('/settings/subscriptions/tags', { data: { tags: ['fixture_artist'] } });
   let requestedSites: string | null = null;
@@ -55,6 +55,30 @@ test('Subscribed reads the feed live from the sites on screen', async ({ page })
     // A site the live feed could not read is reported, not hidden.
     await expect(page.locator('[data-sonner-toast]')).toContainText('Fixture: The site is limiting requests.');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  } finally {
+    await page.request.put('/settings/subscriptions/tags', { data: { tags: [] } });
+  }
+});
+
+test('while the first Subscriptions page waits, the bar moves until the sync counts its searches', async ({ page }) => {
+  await page.request.put('/settings/subscriptions/tags', { data: { tags: ['fixture_artist'] } });
+  await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [{
+    id: 'fixture', name: 'Fixture', engine: 'moebooru', baseUrl: 'https://fixture.invalid',
+    enabled: true, username: null, hasApiKey: false, hasSessionCookie: false,
+    engineCredentialSchema: 'none', sortOrder: 0
+  }] } }));
+  // The feed stays open while the core prepares the searches, then counts them.
+  await page.route('**/explore/subscriptions?*', () => undefined);
+  let progress: { read: number | null; total: number | null } = { read: null, total: null };
+  await page.route('**/explore/subscriptions/progress', (route) => route.fulfill({ json: progress }));
+  try {
+    await page.goto('/app/explore?feed=subscribed');
+    const bar = page.getByRole('progressbar', { name: 'Reading your searches' });
+    await expect(bar).toBeVisible();
+    await expect(bar).not.toHaveAttribute('aria-valuenow');
+    progress = { read: 3, total: 10 };
+    await expect(bar).toHaveAttribute('aria-valuenow', '3');
+    await expect(page.getByText('3 of 10')).toBeVisible();
   } finally {
     await page.request.put('/settings/subscriptions/tags', { data: { tags: [] } });
   }

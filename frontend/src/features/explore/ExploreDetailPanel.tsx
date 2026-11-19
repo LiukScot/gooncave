@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronLeft, Copy, Heart } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -14,6 +15,7 @@ import {
   preloadAdjacentFurAffinityImages
 } from './explorePostDetails';
 import { PostMoreMenu } from './PostMoreMenu';
+import { needsDetailTags, prefetchNeighbors } from './prefetchNeighbors';
 import { ratingLabel } from './rating';
 import { RemoteImage } from './RemoteImage';
 
@@ -67,6 +69,7 @@ import { dialogOwnsKey, useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { useDeviceProfile } from '@/hooks/device';
 import { useExtraSettings } from '@/hooks/settings';
 import { formatDateTime } from '@/lib/format';
+import { useOnline } from '@/lib/online';
 import { useShowsSection } from '@/stores/appearanceStore';
 import type { NeighbourPreview } from '@/stores/exploreUiStore';
 
@@ -170,6 +173,8 @@ export function ExploreDetailPanel({
   onOpenRelated: (post: ExplorePost) => void;
 }): React.ReactElement {
   const shortcuts = useShortcuts();
+  const queryClient = useQueryClient();
+  const online = useOnline();
   const [mediaFullscreen, setMediaFullscreen] = useState(false);
   const currentVideoRef = useRef<HTMLVideoElement | null>(null);
   const postKey = `${post.siteId}:${post.remoteId}`;
@@ -285,9 +290,7 @@ export function ExploreDetailPanel({
   const [detailTags, setDetailTags] = useState<ExplorePost['tags'] | null>(
     null
   );
-  const uncategorised =
-    post.tags.length === 0 ||
-    post.tags.every((entry) => entry.category === 'general');
+  const uncategorised = needsDetailTags(post);
   const needsFullMedia = post.engine === 'furaffinity' && !post.fileUrl;
 
   useEffect(() => {
@@ -331,7 +334,8 @@ export function ExploreDetailPanel({
   useEffect(() => {
     // Fire and forget: preloading must never delay rendering the open post.
     void preloadAdjacentFurAffinityImages(post, nextPost, prevPost);
-  }, [post, nextPost, prevPost]);
+    prefetchNeighbors(queryClient, [nextPost, prevPost]);
+  }, [post, nextPost, prevPost, queryClient]);
 
   const tags = detailTags ?? post.tags;
 
@@ -669,7 +673,9 @@ export function ExploreDetailPanel({
                 referrerPolicy="origin"
                 fallback={
                   <div className="text-muted-foreground text-sm p-4">
-                    This post's media could not be loaded.
+                    {online
+                      ? "This post's media could not be loaded."
+                      : 'This picture is not saved on this device. It loads when you reconnect.'}
                   </div>
                 }
               />

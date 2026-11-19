@@ -28,6 +28,10 @@ pub struct Database {
     paths: Arc<LibraryPaths>,
     pub(crate) favorites: Arc<crate::favorites::Job>,
     pub(crate) subscriptions: Arc<tokio::sync::Mutex<()>>,
+    /// Held by the saved Subscriptions feed sync.
+    pub(crate) subscription_feed: Arc<tokio::sync::Mutex<()>>,
+    /// Searches read and to read by the running feed sync, if any.
+    pub(crate) subscription_progress: Arc<Mutex<Option<(usize, usize)>>>,
     pub(crate) sources: Arc<crate::source_jobs::Job>,
     pub(crate) wd14: Arc<crate::wd14::Job>,
     pub(crate) duplicates: Arc<crate::duplicates::Job>,
@@ -60,6 +64,8 @@ pub struct LibraryPaths {
     /// For large temporary files: the system's temp folder can be RAM. Emptied at every start, so
     /// what a crash leaves behind does not stay.
     pub(crate) temp: PathBuf,
+    /// What the core keeps of what it loaded from the sites (`crate::cache`).
+    pub(crate) cache: PathBuf,
 }
 
 impl LibraryPaths {
@@ -126,6 +132,16 @@ impl Database {
     }
     /// Opens `library.sqlite` in `data_directory` and creates `library_root` when missing.
     pub fn open(data_directory: &Path, library_root: &Path) -> Result<Self> {
+        Self::open_with_cache(data_directory, library_root, &data_directory.join("cache"))
+    }
+    /// Like `open`, with what the core keeps of the sites in `cache_directory`: a folder the
+    /// system may empty and leaves out of backups, such as iOS's `Library/Caches`. It must be on
+    /// the same volume as `data_directory`, because entries are moved there from its temp folder.
+    pub fn open_with_cache(
+        data_directory: &Path,
+        library_root: &Path,
+        cache_directory: &Path,
+    ) -> Result<Self> {
         std::fs::create_dir_all(data_directory)?;
         crate::app_log::start(data_directory);
         std::fs::create_dir_all(library_root)?;
@@ -139,6 +155,8 @@ impl Database {
             _ => {}
         }
         std::fs::create_dir_all(&temp)?;
+        let cache = cache_directory.to_path_buf();
+        std::fs::create_dir_all(&cache)?;
         let database_path = data_directory.join("library.sqlite");
         let mut connection = connect(&database_path)?;
         #[cfg(unix)]
@@ -215,9 +233,12 @@ impl Database {
                 thumbnails,
                 models: data_directory.join("models"),
                 temp,
+                cache,
             }),
             favorites: Arc::new(crate::favorites::Job::default()),
             subscriptions: Arc::new(tokio::sync::Mutex::new(())),
+            subscription_feed: Arc::new(tokio::sync::Mutex::new(())),
+            subscription_progress: Arc::default(),
             sources: Arc::new(crate::source_jobs::Job::default()),
             wd14: Arc::new(crate::wd14::Job::default()),
             duplicates: Arc::new(crate::duplicates::Job::default()),
