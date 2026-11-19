@@ -38,6 +38,7 @@ pub(crate) fn routes() -> Router<Database> {
     Router::new()
         .route("/explore/subscriptions", get(feed))
         .route("/explore/subscriptions/new", get(new_posts))
+        .route("/explore/subscriptions/progress", get(progress))
 }
 
 #[derive(Clone, Debug)]
@@ -327,13 +328,15 @@ fn older_job(db: Database, t: Transport, site: Site, row: Row) -> Work {
 }
 
 /// Runs `job` on each row, a few at a time per site. Returns the posts saved, by site index, and
-/// the first error of each site that failed.
+/// the first error of each site that failed. With `count`, each finished row counts in
+/// `subscription_progress`.
 async fn run(
     db: &Database,
     t: &Transport,
     sites: &[Site],
     rows: Vec<Row>,
     job: Job,
+    count: bool,
 ) -> (Vec<(usize, Value)>, HashMap<usize, String>) {
     let mut queued = rows.into_iter().collect::<std::collections::VecDeque<_>>();
     let mut running = vec![0; sites.len()];
@@ -359,6 +362,16 @@ async fn run(
         match done {
             Ok((index, result)) => {
                 running[index] -= 1;
+                if count {
+                    if let Some((read, _)) = db
+                        .subscription_progress
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner())
+                        .as_mut()
+                    {
+                        *read += 1;
+                    }
+                }
                 match result {
                     Ok(posts) => saved.extend(posts.into_iter().map(|p| (index, p))),
                     Err(e) => {
@@ -453,7 +466,14 @@ async fn sync_sites(
     if rows.is_empty() {
         return HashMap::new();
     }
-    let (saved, failed) = run(db, t, sites, rows, sync_job).await;
+    let progress = || {
+        db.subscription_progress
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+    };
+    *progress() = Some((0, rows.len()));
+    let (saved, failed) = run(db, t, sites, rows, sync_job, true).await;
+    *progress() = None;
     hits(db, sites, &saved).await;
     failed
 }
@@ -717,7 +737,7 @@ async fn page(db: &Database, t: &Transport, sites: Vec<Site>, q: FeedQuery) -> R
             })
             .take(subs::PARALLEL_SEARCHES)
             .collect::<Vec<_>>();
-        let (saved, errors) = run(db, t, &sites, batch, older_job).await;
+        let (saved, errors) = run(db, t, &sites, batch, older_job, false).await;
         hits(db, &sites, &saved).await;
         failed.extend(errors);
     };
@@ -781,6 +801,18 @@ async fn page(db: &Database, t: &Transport, sites: Vec<Site>, q: FeedQuery) -> R
 }
 /// How many saved posts are newer than `after` (a feed's `newestAt`): what a sync found while
 /// the feed was open.
+/// The searches the running sync has read and has to read: `read` and `total`, both null when
+/// no sync runs. A failed site's searches never count as read.
+async fn progress(State(db): State<Database>) -> Json<Value> {
+    let progress = *db
+        .subscription_progress
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    Json(match progress {
+        Some((read, total)) => json!({"read": read, "total": total}),
+        None => json!({"read": null, "total": null}),
+    })
+}
 async fn new_posts(
     State(db): State<Database>,
     Query(q): Query<HashMap<String, String>>,
@@ -1143,6 +1175,45 @@ mod tests {
         );
         subscribe(&db, json!(["fox"])).await;
         assert_eq!(read_feed(&db, &[site], 40, false).await.0, ["1"]);
+        task.abort();
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_first_opening_reports_how_many_searches_it_has_read() {
+        let posts = Arc::new(Mutex::new(vec![(1, "fox", 1_800_000_000)]));
+        let (base, _, task) = booru(posts.clone()).await;
+        let (_dir, db) = open();
+        let site = setup(&db, "e621", &base).await;
+        subscribe(&db, json!(["fox"])).await;
+        // Holding the site's posts keeps its answer waiting while the feed opens.
+        let (locked, release) = (std::sync::mpsc::channel(), std::sync::mpsc::channel::<()>());
+        let held = posts.clone();
+        let holder = std::thread::spawn(move || {
+            let _posts = held.lock().unwrap();
+            locked.0.send(()).unwrap();
+            release.1.recv().unwrap();
+        });
+        locked.1.recv().unwrap();
+        let opening = {
+            let db = db.clone();
+            tokio::spawn(async move { page(&db, &t(), vec![site], options(None, 40, false)).await })
+        };
+        let mut seen = json!(null);
+        for _ in 0..200 {
+            seen = progress(State(db.clone())).await.0;
+            if !seen["total"].is_null() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(seen, json!({"read": 0, "total": 1}));
+        release.0.send(()).unwrap();
+        holder.join().unwrap();
+        let first = opening.await.unwrap().unwrap();
+        assert_eq!(first["posts"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            progress(State(db.clone())).await.0,
+            json!({"read": null, "total": null})
+        );
         task.abort();
     }
     #[tokio::test]

@@ -4687,6 +4687,54 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   padding: 4rem 0;
 }
 
+/* The Expressive progress bar: a wave in the page's colour fills a flat track. */
+.wavy-progress {
+  width: 15rem;
+  max-width: 100%;
+  height: 1rem;
+  overflow: visible;
+}
+
+.wavy-progress-wave,
+.wavy-progress-rest {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.wavy-progress-wave {
+  stroke: hsl(var(--primary));
+  animation: wavy-progress-shift 1s linear infinite;
+}
+
+.wavy-progress-fill {
+  transition: width 300ms ease-out;
+}
+
+.wavy-progress-rest {
+  stroke: hsl(var(--foreground) / 0.2);
+}
+
+.wavy-progress-end {
+  fill: hsl(var(--primary));
+}
+
+@keyframes wavy-progress-shift {
+  to {
+    transform: translateX(20px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wavy-progress-wave {
+    animation: none;
+  }
+
+  .wavy-progress-fill {
+    transition: none;
+  }
+}
+
 /* What takes the loader's place when nothing came back. The top padding is
    the loader's own plus its spinner and gap, so the words stay where
    "Loading images…" was. */

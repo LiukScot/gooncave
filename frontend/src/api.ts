@@ -1373,6 +1373,13 @@ export const api = {
     );
     return handle<{ count: number }>(res);
   },
+  subscriptionProgress: async (signal?: AbortSignal) => {
+    const res = await apiFetch(
+      `${API_BASE}/explore/subscriptions/progress`,
+      signal ? { signal } : undefined
+    );
+    return handle<{ read: number | null; total: number | null }>(res);
+  },
   readHistory: async (params: {
     siteIds: string[];
     cursor: string | null;

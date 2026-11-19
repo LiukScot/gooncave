@@ -31,11 +31,13 @@ import {
   subscriptionReasons
 } from './subscriptionFeed';
 import { explorePostKey, useExploreController } from './useExploreController';
+import { useSubscriptionProgress } from './useSubscriptionProgress';
 
 
 import { LIBRARY_SITE_ID, type ExploreFeed, type ExplorePost, type ExploreSort, type ExploreWindow } from '@/api';
 import { EyeToggleIcon } from '@/components/icons/EyeToggleIcon';
 import { ThumbnailMotion } from '@/components/ThumbnailMotion';
+import { WavyProgress } from '@/components/WavyProgress';
 import { SiteLogo } from '@/features/file-detail/SourcesDialog';
 import { CardVideo } from '@/features/library/CardVideo';
 import { GallerySourceIcon, GallerySourceIconList } from '@/features/library/GallerySourceIcon';
@@ -120,6 +122,9 @@ export function ExploreView({
   feed?: ExploreFeed;
 }) {
   const ctl = useExploreController({ feed });
+  const firstSubscriptionsLoad =
+    ctl.sort === 'subscribed' && ctl.posts.length === 0 && (ctl.loading || ctl.sitesLoading);
+  const syncProgress = useSubscriptionProgress(firstSubscriptionsLoad);
   const recentSearches = useRecentSearches();
   const { maxGridColumns } = useExtraSettings();
   const subscriptionsAvailable = useDeviceProfile().data?.capabilities?.subscriptions !== false;
@@ -583,11 +588,31 @@ export function ExploreView({
                       className="explore-loading text-muted-foreground"
                       role="status"
                     >
-                      <LoaderCircle
-                        className="size-8 animate-spin motion-reduce:animate-none"
-                        aria-hidden="true"
-                      />
-                      Loading images…
+                      {firstSubscriptionsLoad ? (
+                        <>
+                          <WavyProgress
+                            read={syncProgress?.read ?? 0}
+                            total={syncProgress?.total ?? 0}
+                            label="Reading your searches"
+                          />
+                          <span>
+                            {syncProgress ? 'Reading your searches…' : 'Loading posts…'}
+                          </span>
+                          {syncProgress && (
+                            <span className="text-sm">
+                              {syncProgress.read} of {syncProgress.total}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <LoaderCircle
+                            className="size-8 animate-spin motion-reduce:animate-none"
+                            aria-hidden="true"
+                          />
+                          Loading images…
+                        </>
+                      )}
                     </div>
                   ) : ctl.posts.length === 0 && !online && ctl.sort !== 'history' ? (
                     <OfflineNotice className="explore-empty text-muted-foreground" />
