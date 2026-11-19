@@ -17,7 +17,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-
 import { ExploreDetailPanel } from './ExploreDetailPanel';
 import { gridImageUrlFor, isGifPost, isGifUrl, isVideoUrl, mediaSrc } from './exploreMedia';
 import { loadFurAffinityGridPreview } from './explorePostDetails';

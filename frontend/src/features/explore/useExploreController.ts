@@ -34,6 +34,7 @@ import { useRememberSearch } from './recentSearches';
 import { stackDuplicates } from './stackDuplicates';
 import { collectSubscriptionPosts } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
+import { useNewSubscriptionPosts } from './useNewSubscriptionPosts';
 import { useOpenPostLink } from './useOpenPostLink';
 import { useTagSubscriptionAction } from './useTagSubscriptionAction';
 import { withVisualMatches } from './visualMatch';
@@ -92,8 +93,6 @@ import { transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 const PAGE_SIZE = 40;
-/** How often an open Subscriptions feed asks whether a sync saved newer posts. */
-const NEW_POSTS_CHECK_MS = 30_000;
 /**
  * How many pages one Load more may ask for. Sites ranked within a point of
  * each other release a post at a time; without a cap a search could keep
@@ -422,7 +421,6 @@ export function useExploreController({
   const subscriptionCursorRef = useRef<string | null>(null);
   /** Sort date of the newest post shown in Subscriptions; posts synced above it are counted. */
   const [subscriptionNewestAt, setSubscriptionNewestAt] = useState<number | null>(null);
-  const [newSubscriptionPosts, setNewSubscriptionPosts] = useState(0);
   /** Buffered or already shown, so no site contributes the same post twice. */
   const seenRef = useRef({ keys: new Set<string>() });
 
@@ -555,7 +553,6 @@ export function useExploreController({
     streamsRef.current = new Map();
     subscriptionCursorRef.current = null;
     setSubscriptionNewestAt(null);
-    setNewSubscriptionPosts(0);
     seenRef.current = { keys: new Set() };
     automaticFavoriteGenerationRef.current += 1;
     automaticFavoriteAttemptsRef.current.clear();
@@ -655,32 +652,11 @@ export function useExploreController({
     effectiveUnreadOnly
   ]);
 
-  // A sync started when the feed opened, or the one every 15 minutes, saves new posts above
-  // the ones shown; they are counted here and shown on request, never inserted above the reader.
-  useEffect(() => {
-    if (sort !== 'subscribed' || subscriptionNewestAt === null) return;
-    const controller = new AbortController();
-    const check = () => {
-      if (document.visibilityState !== 'visible') return;
-      api
-        .newSubscriptionPosts({
-          siteIds: activeSiteIds,
-          after: subscriptionNewestAt,
-          unread: effectiveUnreadOnly,
-          signal: controller.signal
-        })
-        .then(({ count }) => setNewSubscriptionPosts(count))
-        .catch((error: unknown) => {
-          if (controller.signal.aborted) return;
-          console.error('[developer] Cannot count new subscription posts:', error);
-        });
-    };
-    const timer = window.setInterval(check, NEW_POSTS_CHECK_MS);
-    return () => {
-      window.clearInterval(timer);
-      controller.abort();
-    };
-  }, [sort, subscriptionNewestAt, activeSiteIds, effectiveUnreadOnly]);
+  const newSubscriptionPosts = useNewSubscriptionPosts(
+    sort === 'subscribed' ? subscriptionNewestAt : null,
+    activeSiteIds,
+    effectiveUnreadOnly
+  );
 
   /** Identity of the search on screen — exactly what a reload depends on. */
   const searchKey = [
