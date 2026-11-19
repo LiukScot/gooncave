@@ -585,12 +585,17 @@ FurAffinity account's watchlist. Follow and Unfollow change that remote account;
 they require a username and session cookie in Accounts. Other sites follow
 artist tags through saved searches. Search operators and compound searches stay one query; simple
 tags are batched with OR on e621 (up to 40), Rule34 (up to 20) and Danbooru (up to two).
-Other sites, Gelbooru included, search one tag at a time.
+Other sites, Gelbooru included, search one tag at a time. On Danbooru the feed
+first asks which plain tags have posts or are aliases there (one lookup per 100
+tags, kept a day) and skips the others for that whole feed, so artists followed
+for other sites cost no Danbooru request; a tag that gets its first post joins
+within a day.
 A followed pool adds the search `pool:ID` on its own site only, sent alone.
 Followed pools stay on this device: each device gives a synced site its own ID.
 
 No feed is saved: each feed page asks every search of every site for its next
-page, newest first, six searches at a time. A search's page read in the last
+page, newest first, eight searches at a time: four at once on Danbooru, two on
+every other site. A search's page read in the last
 five minutes comes from the cache, so reopening the feed soon asks no site. e621, Danbooru and Gelbooru page by
 post ID (`page=b<id>`, `id:<N`), so posts added on top do not shift the pages
 below; other sites page by number and skip the posts already shown. A search
@@ -599,10 +604,14 @@ the next page. Posts from the highest limit up are merged by date. A post the
 sites add later is newer than everything shown, so it appears only at the top
 after a reload. A site that fails is reported and leaves the feed until it is
 reloaded. Opening the feed first syncs the FurAffinity watchlists. Search
-paging stops at 1,000 pages with recovery guidance.
+paging stops at 1,000 pages with recovery guidance. Rule34 and other Gelbooru
+forks send no upload time in JSON, only the time of the last edit, so each
+search also reads the same page as XML for its `created_at`; without it an old
+post tagged or flagged today would sort among today's.
 
 The Subscriptions page always opens at the newest posts. Show more reads up to
-three feed pages. The existing Unread only filter still applies. List
+three feed pages, and more while every post read so far is hidden as read, so it
+always adds a post unless the feed ends. The existing Unread only filter still applies. List
 restoration within an open app retains the existing scroll position and cards.
 Settings filters searches by the sites where the feed has shown a match; this
 record stays on the device.

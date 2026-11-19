@@ -44,12 +44,14 @@ export const subscriptionReasons = (
   ];
 };
 
-/** Feed pages one load may read: each page asks every site, so a feed of read posts stops here. */
+/** Feed pages one load reads to fill `target`, once it has a post to show: each page asks every site. */
 const MAX_PAGES_PER_LOAD = 3;
 
 /**
  * Reads feed pages until `target` posts pass `keep`, the feed ends, or
- * MAX_PAGES_PER_LOAD pages were read. Each page is read live from the sites.
+ * MAX_PAGES_PER_LOAD pages were read and at least one post passed. Pages of
+ * read posts alone never end a load, or Show more would add nothing.
+ * Each page is read live from the sites.
  */
 export const collectSubscriptionPosts = async (options: {
   cursor: string | null;
@@ -64,7 +66,9 @@ export const collectSubscriptionPosts = async (options: {
   let hasMore = true;
   for (
     let pages = 0;
-    pages < MAX_PAGES_PER_LOAD && posts.length < options.target && hasMore;
+    (pages < MAX_PAGES_PER_LOAD || posts.length === 0) &&
+    posts.length < options.target &&
+    hasMore;
     pages += 1
   ) {
     let page: SubscriptionPage;

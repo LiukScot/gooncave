@@ -237,8 +237,14 @@ fn parent(v: &Value) -> Result<Value> {
 }
 fn timestamp(v: &Value) -> Value {
     if let Some(s) = v.as_str() {
+        // Gelbooru: "Tue Nov 17 15:00:51 +0100 2026".
+        let gelbooru = time::format_description::parse_borrowed::<2>(
+            "[weekday repr:short] [month repr:short] [day] [hour]:[minute]:[second] [offset_hour sign:mandatory][offset_minute] [year]",
+        )
+        .expect("valid format");
         if let Ok(date) = OffsetDateTime::parse(s, &Rfc3339)
             .or_else(|_| OffsetDateTime::parse(s, &time::format_description::well_known::Rfc2822))
+            .or_else(|_| OffsetDateTime::parse(s, &gelbooru))
         {
             return date.format(&Rfc3339).map_or(Value::Null, |s| json!(s));
         }
@@ -633,6 +639,91 @@ fn gel_auth(site: &Site, url: &mut Url) {
 /// Rule34 answers an empty body when a search has no results, and sometimes by mistake:
 /// one retry, then no results.
 async fn gel_search(t: &Transport, site: &Site, url: Url) -> Result<Value> {
+    if url.host_str() == Some("gelbooru.com") {
+        return gel_read(t, site, url).await;
+    }
+    // Rule34 and other forks send no upload time in JSON, only `change`, the time of the last
+    // edit, which puts an old post that was just tagged or flagged among today's. Their XML has it.
+    let mut xml = url.clone();
+    xml.query_pairs_mut()
+        .clear()
+        .extend_pairs(url.query_pairs().filter(|(k, _)| k != "json"));
+    let (mut v, dates) = tokio::join!(gel_read(t, site, url), gel_upload_times(t, site, xml));
+    let dates = match dates {
+        Ok(dates) => dates,
+        Err(e) => {
+            eprintln!("[developer] {}: upload times not read, posts show their last edit time instead: {e}", site.name);
+            HashMap::new()
+        }
+    };
+    if let Some(posts) = v.as_mut().ok().and_then(Value::as_array_mut) {
+        for post in posts.iter_mut().filter(|p| p.get("created_at").is_none()) {
+            let id = post["id"].to_string().trim_matches('"').to_owned();
+            if let Some(date) = dates.get(&id) {
+                post["created_at"] = json!(date);
+            }
+        }
+    }
+    v
+}
+/// Which of `names` find posts on a Danbooru site: tags with posts and active aliases.
+pub(crate) async fn danbooru_tags_with_posts(
+    t: &Transport,
+    site: &Site,
+    names: &[String],
+) -> Result<std::collections::HashSet<String>> {
+    let mut found = std::collections::HashSet::new();
+    for chunk in names.chunks(100) {
+        let list = chunk.join(",");
+        let mut tags = endpoint(site, "/tags.json")?;
+        tags.query_pairs_mut()
+            .append_pair("search[name_comma]", &list)
+            .append_pair("only", "name,post_count")
+            .append_pair("limit", "1000");
+        let mut aliases = endpoint(site, "/tag_aliases.json")?;
+        aliases
+            .query_pairs_mut()
+            .append_pair("search[antecedent_name_comma]", &list)
+            .append_pair("search[status]", "active")
+            .append_pair("only", "antecedent_name")
+            .append_pair("limit", "1000");
+        let (tags, aliases) = tokio::join!(
+            t.json(tags, headers(site, false)?),
+            t.json(aliases, headers(site, false)?)
+        );
+        let malformed = || booru_http::remote("Danbooru returned an unexpected tag list.");
+        for tag in tags?.as_array().ok_or_else(malformed)? {
+            if tag["post_count"].as_i64().is_some_and(|n| n > 0) {
+                found.insert(tag["name"].as_str().ok_or_else(malformed)?.to_owned());
+            }
+        }
+        for alias in aliases?.as_array().ok_or_else(malformed)? {
+            found.insert(
+                alias["antecedent_name"]
+                    .as_str()
+                    .ok_or_else(malformed)?
+                    .to_owned(),
+            );
+        }
+    }
+    Ok(found)
+}
+async fn gel_upload_times(t: &Transport, site: &Site, url: Url) -> Result<HashMap<String, String>> {
+    let text = t.text(url, headers(site, false)?).await?;
+    if text.trim().is_empty() {
+        return Ok(HashMap::new());
+    }
+    Ok(xml_posts(&text, &site.name)?
+        .into_iter()
+        .filter_map(|p| {
+            Some((
+                p.get("id")?.as_str()?.to_owned(),
+                p.get("created_at")?.as_str()?.to_owned(),
+            ))
+        })
+        .collect())
+}
+async fn gel_read(t: &Transport, site: &Site, url: Url) -> Result<Value> {
     for attempt in 1..=2 {
         let text = t.text(url.clone(), headers(site, false)?).await?;
         if text.trim().is_empty() {
@@ -933,6 +1024,13 @@ pub(crate) async fn search(t: &Transport, site: &Site, s: &Search) -> Result<Vec
         .collect()
 }
 fn shimmie(site: &Site, xml: &str) -> Result<Vec<Value>> {
+    xml_posts(xml, "Shimmie")?
+        .into_iter()
+        .map(|p| normalize(site, &Value::Object(p)))
+        .collect()
+}
+/// The attributes of each `<post>` in a `<posts>` list, as strings.
+fn xml_posts(xml: &str, name: &str) -> Result<Vec<serde_json::Map<String, Value>>> {
     use quick_xml::{events::Event, Reader};
     let mut reader = Reader::from_str(xml);
     let mut posts = Vec::new();
@@ -940,7 +1038,7 @@ fn shimmie(site: &Site, xml: &str) -> Result<Vec<Value>> {
     loop {
         match reader
             .read_event()
-            .map_err(|_| booru_http::remote("Shimmie returned malformed XML."))?
+            .map_err(|_| booru_http::remote(format!("{name} returned malformed XML.")))?
         {
             Event::Start(e) | Event::Empty(e) => {
                 if e.name().as_ref() == "posts" {
@@ -950,17 +1048,21 @@ fn shimmie(site: &Site, xml: &str) -> Result<Vec<Value>> {
                     let mut p = serde_json::Map::new();
                     for a in e.attributes() {
                         let a = a.map_err(|_| {
-                            booru_http::remote("Shimmie returned malformed attributes.")
+                            booru_http::remote(format!("{name} returned malformed attributes."))
                         })?;
-                        let key = a.key.as_ref();
+                        let key: String = a.key.as_ref().into();
                         let value = a
                             .normalized_value(quick_xml::XmlVersion::Implicit1_0)
-                            .map_err(|_| booru_http::remote("Invalid Shimmie attribute."))?;
-                        p.insert(key.into(), json!(value));
+                            .map_err(|_| {
+                                booru_http::remote(format!("Invalid {name} attribute."))
+                            })?;
+                        p.insert(key, json!(value));
                     }
-                    posts.push(normalize(site, &Value::Object(p))?);
+                    posts.push(p);
                     if posts.len() > 100 {
-                        return Err(booru_http::remote("Shimmie returned too many posts."));
+                        return Err(booru_http::remote(format!(
+                            "{name} returned too many posts."
+                        )));
                     }
                 }
             }
@@ -969,7 +1071,9 @@ fn shimmie(site: &Site, xml: &str) -> Result<Vec<Value>> {
         }
     }
     if !root {
-        return Err(booru_http::remote("Shimmie returned an unexpected page."));
+        return Err(booru_http::remote(format!(
+            "{name} returned an unexpected page."
+        )));
     }
     Ok(posts)
 }
@@ -1405,7 +1509,11 @@ mod tests {
             .await
             .unwrap();
         assert!(posts.is_empty());
-        assert_eq!(f.requests.lock().unwrap().len(), 2);
+        let requests = f.requests.lock().unwrap();
+        assert_eq!(
+            requests.iter().filter(|r| r.0.contains("json=1")).count(),
+            2
+        );
     }
     #[tokio::test]
     async fn all_nine_engines_search_and_preserve_ids_media_and_tag_categories() {
@@ -1591,6 +1699,32 @@ mod tests {
         let key = (site.id.clone(), site.base.clone(), "1".to_owned());
         assert!(!E621_READS.get().unwrap().lock().unwrap().contains_key(&key));
         server.abort();
+    }
+    #[tokio::test]
+    async fn rule34_posts_carry_their_upload_time_not_their_last_edit() {
+        // Rule34's JSON has only `change`, here a later edit; its XML has the upload time.
+        let app = Router::new().fallback(any(|request: Request| async move {
+            if request.uri().query().unwrap_or_default().contains("json=1") {
+                json!([{"id":7,"change":1795048961,"owner":"test_uploader","file_url":"https://cdn.example.com/file.png","tags":"plain"}]).to_string()
+            } else {
+                r#"<?xml version="1.0" encoding="UTF-8"?><posts count="1" offset="0"><post id="7" change="1795048961" created_at="Tue Nov 17 15:00:51 +0100 2026" tags="plain"/></posts>"#.to_owned()
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let posts = search(
+            &Transport {
+                allow_loopback: true,
+            },
+            &site("gelbooru", &base),
+            &Search::default(),
+        )
+        .await
+        .unwrap();
+        server.abort();
+        assert_eq!(posts[0]["createdAt"], "2026-11-17T15:00:51+01:00");
+        assert_eq!(posts[0]["uploader"], "test_uploader");
     }
     #[tokio::test]
     async fn e621_reads_the_post_format_of_its_api_v2() {

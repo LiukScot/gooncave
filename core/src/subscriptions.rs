@@ -481,6 +481,9 @@ fn is_zero(n: &usize) -> bool {
 struct SitePositions {
     of: String,
     at: Vec<Position>,
+    /// Searches left out, by index in [`site_searches`]; see [`absent_searches`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    absent: Vec<usize>,
 }
 type FeedCursor = std::collections::BTreeMap<String, SitePositions>;
 const MAX_CURSOR: usize = 100_000;
@@ -504,16 +507,16 @@ fn fingerprint(site: &Site, searches: &[Vec<String>]) -> String {
 }
 /// The searches the feed of `site` reads: one per batch of [`site_searches`], or one for the
 /// FurAffinity inbox, which holds the watched artists' posts.
-fn site_queries(
-    tags: &[String],
-    artists: &[String],
-    pools: &[store::PoolSubscription],
-    site: &Site,
-) -> Vec<Vec<String>> {
+fn site_queries(searches: &[String], absent: &[usize], site: &Site) -> Vec<Vec<String>> {
     if site.engine == "furaffinity" {
         return vec![vec![]];
     }
-    let searches = site_searches(tags, artists, pools, site);
+    let searches = searches
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !absent.contains(i))
+        .map(|(_, s)| s.clone())
+        .collect::<Vec<_>>();
     let mut queries = Vec::new();
     let mut start = 0;
     while !searches.is_empty() {
@@ -592,7 +595,17 @@ async fn feed_page(
     let mut streams = Vec::new();
     let mut next_cursor = FeedCursor::new();
     for (index, site) in sites.iter().enumerate() {
-        let queries = site_queries(&tags, &artists, &pools, site);
+        let searches = site_searches(&tags, &artists, &pools, site);
+        // Kept from the first page, so a lookup refreshed meanwhile cannot change the searches.
+        let absent = match &cursor {
+            None => absent_searches(db, t, site, &searches).await,
+            Some(cursor) => cursor
+                .get(&site.id)
+                .map(|saved| saved.absent.clone())
+                .filter(|absent| absent.iter().all(|i| *i < searches.len()))
+                .ok_or_else(invalid_cursor)?,
+        };
+        let queries = site_queries(&searches, &absent, site);
         if queries.is_empty() {
             continue;
         }
@@ -616,7 +629,7 @@ async fn feed_page(
                 });
             }
         }
-        next_cursor.insert(site.id.clone(), SitePositions { of, at });
+        next_cursor.insert(site.id.clone(), SitePositions { of, at, absent });
     }
     let reads = read_all(db, t, &sites, &streams).await;
     let page = merge(&streams, reads, limit);
@@ -664,6 +677,66 @@ async fn feed_page(
         "nextCursor": has_more.then(|| URL_SAFE_NO_PAD.encode(serde_json::to_vec(&next_cursor).unwrap())),
         "siteErrors": errors,
     }))
+}
+/// The searches of a Danbooru site, by index in `searches`, whose tag has no posts there and is
+/// no alias. Free accounts search two tags at a time, so each pair costs a request on every feed
+/// page; most followed artists of other sites have no tag there. A tag that gets its first post
+/// joins the feed within a day. When the lookup fails, every search is read.
+async fn absent_searches(
+    db: &Database,
+    t: &Transport,
+    site: &Site,
+    searches: &[String],
+) -> Vec<usize> {
+    let plain = |s: &str| {
+        !s.chars().any(|c| c.is_whitespace() || c == ':' || c == '*') && !s.starts_with(['-', '~'])
+    };
+    if site.engine != "danbooru" {
+        return vec![];
+    }
+    let mut names = searches
+        .iter()
+        .filter(|s| plain(s))
+        .map(|s| s.to_lowercase())
+        .collect::<Vec<_>>();
+    names.sort();
+    names.dedup();
+    if names.is_empty() {
+        return vec![];
+    }
+    let key = format!("tags-with-posts:{}:{}", site.id, names.join(" "));
+    let (held, held_site) = (t.clone(), site.clone());
+    let known = crate::cache::remember(
+        db,
+        &key,
+        crate::cache::Keep::Revalidate(crate::cache::DAY),
+        move || async move {
+            Ok(json!(
+                booru_engines::danbooru_tags_with_posts(&held, &held_site, &names).await?
+            ))
+        },
+    )
+    .await
+    .and_then(|v| {
+        serde_json::from_value::<HashSet<String>>(v)
+            .map_err(|_| Error::Storage("A cached tag list is damaged.".into()))
+    });
+    let known = match known {
+        Ok(known) => known,
+        Err(e) => {
+            eprintln!(
+                "[developer] {}: subscribed tags not checked, every search is read: {e}",
+                site.name
+            );
+            return vec![];
+        }
+    };
+    searches
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| plain(s) && !known.contains(&s.to_lowercase()))
+        .map(|(i, _)| i)
+        .collect()
 }
 /// The saved searches, then each followed artist, then `pool:ID` for each pool followed on the
 /// site. `batch` sends a `pool:` search alone, since it contains `:`.
@@ -734,9 +807,16 @@ fn any_of(site: &Site, tags: Vec<String>) -> Vec<String> {
     }
 }
 /// Searches read at once across all sites: each feed page asks every search for its next page.
-const PARALLEL_SEARCHES: usize = 6;
-/// Searches read at once on one site: e621 allows about two requests a second.
-const PARALLEL_SEARCHES_PER_SITE: usize = 2;
+const PARALLEL_SEARCHES: usize = 8;
+/// Searches read at once on one site: e621 allows about two requests a second; Danbooru about
+/// ten, and a feed page asks it the most, since it searches two tags at a time.
+fn parallel_searches(site: &Site) -> usize {
+    if site.engine == "danbooru" {
+        4
+    } else {
+        2
+    }
+}
 /// Pages one search may pass in one feed page when every post on them was shown already.
 const MAX_SKIPPED_PAGES: usize = 3;
 
@@ -868,10 +948,9 @@ async fn read_all(
     let mut pending = tokio::task::JoinSet::new();
     loop {
         while pending.len() < PARALLEL_SEARCHES {
-            let Some(at) = queued
-                .iter()
-                .position(|i| running[streams[*i].site] < PARALLEL_SEARCHES_PER_SITE)
-            else {
+            let Some(at) = queued.iter().position(|i| {
+                running[streams[*i].site] < parallel_searches(&sites[streams[*i].site])
+            }) else {
                 break;
             };
             let index = queued.remove(at).unwrap();
@@ -1315,6 +1394,62 @@ mod tests {
         assert_eq!(hits["wolf score:>5"], ["fixture"]);
         assert!(!hits.contains_key("fox"));
         task.abort();
+    }
+    #[tokio::test]
+    async fn danbooru_skips_the_tags_it_has_no_posts_for_on_every_page() {
+        let requests = Arc::new(Mutex::new(Vec::<String>::new()));
+        let captured = requests.clone();
+        let app = Router::new().fallback(any(move |request: Request| {
+            let requests = captured.clone();
+            async move {
+                let (path, query) = (request.uri().path().to_owned(), request.uri().query().unwrap_or("").to_owned());
+                let url = reqwest::Url::parse(&format!("https://fixture.example/?{query}")).unwrap();
+                let params = url.query_pairs().into_owned().collect::<HashMap<_, _>>();
+                match path.as_str() {
+                    "/tags.json" => {
+                        requests.lock().unwrap().push("tags".into());
+                        Json(json!([{"name":"fox","post_count":5},{"name":"wolf","post_count":3},{"name":"ghost_tag","post_count":0}]))
+                    }
+                    "/tag_aliases.json" => Json(json!([{"antecedent_name":"old_name"}])),
+                    _ => {
+                        requests.lock().unwrap().push(format!("{} page={}", params["tags"], params["page"]));
+                        let first = !params["page"].starts_with('b') && params["tags"] == "~fox ~wolf";
+                        Json(json!((first.then_some(61..=100).into_iter().flatten()).rev().map(|id| json!({
+                            "id":id,"file_url":"https://cdn.example.com/file.png","tag_string_general":"fox",
+                            "created_at":format!("2026-11-{:02}T00:00:00Z", id % 28 + 1)}))
+                            .collect::<Vec<_>>()))
+                    }
+                }
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        db.call(|c| {
+            c.execute("INSERT INTO user_booru_sites(id,user_id,name,engine,base_url,is_preset,enabled,sort_order,created_at,updated_at)
+                VALUES ('fixture',?1,'Fixture','danbooru','https://fixture.example',0,1,0,'2026-10-12','2026-10-12')",[OWNER_ID])?;
+            write_setting(c, "subscriptions.tags", &json!(["fox", "ghost_tag", "wolf", "owl", "old_name"]))
+        }).await.unwrap();
+        let mut site = boorus::site(&db, "fixture".into()).await.unwrap().unwrap();
+        site.base = base;
+        read_feed(&db, &[site], 30).await;
+        server.abort();
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.iter().filter(|r| *r == "tags").count(), 1);
+        let searched = requests
+            .iter()
+            .filter(|r| *r != "tags")
+            .flat_map(|r| {
+                r.split(" page=")
+                    .next()
+                    .unwrap()
+                    .split(' ')
+                    .map(|t| t.trim_start_matches('~'))
+            })
+            .collect::<HashSet<_>>();
+        assert_eq!(searched, HashSet::from(["fox", "wolf", "old_name"]));
     }
     async fn setup(db: &Database, base: String) -> Site {
         db.call(|c| {
