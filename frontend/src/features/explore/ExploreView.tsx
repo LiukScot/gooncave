@@ -22,6 +22,7 @@ import { loadFurAffinityGridPreview } from './explorePostDetails';
 import { ExploreReadFooter } from './ExploreReadFooter';
 import { isCurrentPeriod, periodLabel } from './popularPeriod';
 import { PopularPeriodNote } from './PopularPeriodNote';
+import { useRecentSearches } from './recentSearches';
 import { RemoteImage } from './RemoteImage';
 import {
   normalizeSubscriptionSearch,
@@ -49,6 +50,7 @@ import {
 import { tagFilters } from '@/features/library/tagInputTokens';
 import { TagSearchInput } from '@/features/library/TagSearchInput';
 import { useScrolledPastRead } from '@/features/read-marks/useScrolledPastRead';
+import { OfflineNotice } from '@/features/shell/OfflineNotice';
 import { PageTitle } from '@/features/shell/PageTitle';
 import {
   PanelChoice,
@@ -116,6 +118,7 @@ export function ExploreView({
   feed?: ExploreFeed;
 }) {
   const ctl = useExploreController({ feed });
+  const recentSearches = useRecentSearches();
   const { maxGridColumns } = useExtraSettings();
   const subscriptionsAvailable = useDeviceProfile().data?.capabilities?.subscriptions !== false;
   const subscriptions = useSubscriptionTags();
@@ -124,11 +127,14 @@ export function ExploreView({
   useErrorToast(addSubscription.error);
   const navigate = useNavigate();
   const { siteErrors } = ctl;
+  const online = useOnline();
   const retrySearch = useRef(ctl.retrySearch);
   retrySearch.current = ctl.retrySearch;
   // A site that failed is named rather than silently dropped: an expired API key looks
   // exactly like "no results" otherwise.
   useEffect(() => {
+    // Offline every site fails: the heading already says Offline, and saved results still show.
+    if (!online) return;
     const now = Date.now();
     const shown = siteErrors.filter((siteError) => {
       if (siteError.code !== 'SITE_OFFLINE') return true;
@@ -153,7 +159,7 @@ export function ExploreView({
       return id;
     });
     return () => ids.forEach((id) => toast.dismiss(id));
-  }, [siteErrors, navigate]);
+  }, [siteErrors, navigate, online]);
   const currentSearch = normalizeSubscriptionSearch(ctl.tagInput);
   // Subscriptions and History are feeds of their own; a search does not apply to them.
   const isFeed = ctl.sort === 'subscribed' || ctl.sort === 'history';
@@ -424,6 +430,7 @@ export function ExploreView({
                             onClear={() => ctl.searchNow('')}
                             onPick={ctl.searchNow}
                             onSubmit={ctl.submitSearch}
+                            recent={recentSearches}
                             placeholder="tags · ~either · -not · score:>5"
                           />
                         )
@@ -558,6 +565,8 @@ export function ExploreView({
                       />
                       Loading images…
                     </div>
+                  ) : ctl.posts.length === 0 && !online && ctl.sort !== 'history' ? (
+                    <OfflineNotice className="explore-empty text-muted-foreground" />
                   ) : ctl.posts.length === 0 ? (
                     <p className="explore-empty text-muted-foreground">
                       {ctl.unreadOnly && ctl.readHidden && !ctl.hasMore
@@ -718,7 +727,8 @@ export function ExploreCard({
   const post = posts[activeIndex % posts.length];
   const online = useOnline();
   const isLibraryFile = post.siteId === LIBRARY_SITE_ID;
-  const unavailable = !online && post.libraryLocation !== 'LOCAL';
+  // A site's post may open from the cache; a library file needs its original on this device.
+  const unavailable = !online && isLibraryFile && post.libraryLocation !== 'LOCAL';
   const postKey = explorePostKey(post);
   const stacked = posts.length > 1;
   const activeSourceIcon = sourceIcon(post);

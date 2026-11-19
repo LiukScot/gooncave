@@ -52,7 +52,8 @@ pub(crate) const CLOSE_TIMEOUT: Duration = Duration::from_secs(15);
 
 const CONNECTION_KEY: &str = "sync.webdav";
 const BACKUP_KEY: &str = "sync.lastBackup";
-/// Settings shared between devices. Grid columns, WD14 and sync itself stay on each device.
+/// Settings shared between devices. Grid columns, the cache size, WD14 and sync itself stay on
+/// each device.
 const SHARED_SETTINGS: &[&str] = &[
     "blacklist.settings",
     crate::duplicate_policy::SETTINGS_KEY,
@@ -63,6 +64,7 @@ const SHARED_SETTINGS: &[&str] = &[
     "source_display",
     "source_display_initialized",
     "trash.enabled",
+    "explore.recentSearches",
 ];
 /// Tables whose writes can change a shared record.
 const TABLES: &[&str] = &[
@@ -3177,7 +3179,7 @@ pub(crate) mod tests {
             INSERT INTO provider_credentials (user_id, provider, username, api_key, updated_at) VALUES ('{OWNER_ID}', 'SAUCENAO', 'sauce-user-7', 'sauce-key-7', {NOW});
             INSERT INTO file_tags (file_id, tag, canonical_tag, category, source, created_at, updated_at) SELECT id, 'blue_sky', 'blue_sky', 'general', 'site-on-a', {NOW}, {NOW} FROM files;
             INSERT INTO read_marks (scope, item_key, user_id, read_at, post) VALUES ('post', 'site-on-a:42', '{OWNER_ID}', {NOW}, '{{\"remoteId\":\"42\",\"previewUrl\":\"https://cdn.example.org/42.jpg\"}}');
-            INSERT INTO user_settings (user_id, key, value) VALUES ('{OWNER_ID}', 'blacklist.settings', '{{\"tags\":[\"gore\"]}}'), ('{OWNER_ID}', 'extra.maxGridColumns', '9');")).await;
+            INSERT INTO user_settings (user_id, key, value) VALUES ('{OWNER_ID}', 'blacklist.settings', '{{\"tags\":[\"gore\"]}}'), ('{OWNER_ID}', 'extra.maxGridColumns', '9'), ('{OWNER_ID}', 'extra.cacheLimitGb', '10'), ('{OWNER_ID}', 'explore.recentSearches', '[\"wolf rating:s\"]');")).await;
         a.sync(Trigger::Full).await;
 
         let snapshot = dav.files()["/dav/GoonCave/library.json.gz"].0.clone();
@@ -3193,6 +3195,7 @@ pub(crate) mod tests {
             "sauce-key-7",
             "dav-password-1",
             "maxGridColumns",
+            "cacheLimitGb",
         ] {
             assert!(!text.contains(secret), "{secret} reached the folder");
         }
@@ -3238,6 +3241,12 @@ pub(crate) mod tests {
             b.value("SELECT value FROM user_settings WHERE key = 'extra.maxGridColumns'")
                 .await,
             None
+        );
+        assert_eq!(
+            b.value("SELECT value FROM user_settings WHERE key = 'explore.recentSearches'")
+                .await
+                .as_deref(),
+            Some(r#"["wolf rating:s"]"#)
         );
     }
 

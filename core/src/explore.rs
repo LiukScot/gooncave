@@ -2,6 +2,7 @@ use crate::{
     booru_engines::{self, Search},
     booru_http::{self, Transport},
     boorus::{self, Site},
+    cache::{self, Keep},
     db::{Database, OWNER_ID},
     Error, Result,
 };
@@ -33,6 +34,8 @@ const POOL_PAGE_SIZE: usize = 60;
 const MAX_IMAGE_BYTES: usize = 25 * 1024 * 1024;
 const MAX_VIDEO_BYTES: usize = 500 * 1024 * 1024;
 static MEDIA_SLOTS: Semaphore = Semaphore::const_new(4);
+/// Other CDNs serve a whole grid of thumbnails in parallel.
+static CDN_SLOTS: Semaphore = Semaphore::const_new(16);
 static MOTION_SLOTS: Semaphore = Semaphore::const_new(2);
 
 type QueryMap = HashMap<String, String>;
@@ -184,8 +187,8 @@ pub(crate) fn verified_media(key: &[u8], link: &str) -> Option<(String, String)>
     let (site, raw) = (q.get("siteId")?, q.get("u")?);
     verified(key, site, raw, &signature_bytes(q.get("s")?)?).then(|| (site.clone(), raw.clone()))
 }
-/// Whether the browser loads this site's media through the core. FurAffinity's Cloudflare
-/// refuses a burst of thumbnails; other CDNs serve the browser directly, in parallel and cached.
+/// Whether the browser loads this site's full files through the core too. Thumbnails and samples
+/// of every site go through it, so the cache keeps them; FurAffinity's files need its cookies.
 fn proxied(site: &Site) -> bool {
     site.engine == "furaffinity"
 }
@@ -256,10 +259,13 @@ pub(crate) async fn decorate(
                 .as_str()
                 .map_or(Value::Null, |link| json!(format!("{link}&motion=1")));
         }
-        if proxied(site) {
-            for field in ["previewUrl", "sampleUrl", "fileUrl"] {
-                p[field] = signed(key, &site.id, &p[field]);
-            }
+        let fields: &[&str] = if proxied(site) {
+            &["previewUrl", "sampleUrl", "fileUrl"]
+        } else {
+            &["previewUrl", "sampleUrl"]
+        };
+        for field in fields {
+            p[*field] = signed(key, &site.id, &p[*field]);
         }
     }
     Ok(posts)
@@ -286,9 +292,10 @@ async fn search(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result
     for site in sites {
         let s = s.clone();
         let slots = slots.clone();
+        let db = db.clone();
         jobs.spawn(async move {
             let _slot = slots.acquire().await.expect("owned semaphore");
-            let result = booru_engines::search(&Transport::default(), &site, &s).await;
+            let result = cached_search(&db, &Transport::default(), &site, &s, Keep::Fallback).await;
             (site, result)
         });
     }
@@ -334,7 +341,7 @@ async fn single(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result
     let Some(site) = require_site(&db, &q).await? else {
         return Ok(crate::files::not_found("Site"));
     };
-    let Some(post) = booru_engines::single(&Transport::default(), &site, &id).await? else {
+    let Some(post) = cached_post(&db, &Transport::default(), &site, &id).await? else {
         return Ok(crate::files::not_found("Post"));
     };
     let key = media_key(&db).await?;
@@ -346,15 +353,111 @@ async fn post_tags(State(db): State<Database>, Query(q): Query<QueryMap>) -> Res
     let Some(site) = require_site(&db, &q).await? else {
         return Ok(crate::files::not_found("Site"));
     };
-    let Some(post) = tagged_post(&Transport::default(), &site, &id).await? else {
+    let (t, held, held_id) = (Transport::default(), site.clone(), id.clone());
+    let post = cache::remember(
+        &db,
+        &format!("tags:{}:{id}", site.id),
+        Keep::Revalidate(cache::DAY),
+        move || async move { Ok(json!(tagged_post(&t, &held, &held_id).await?)) },
+    )
+    .await?;
+    if post.is_null() {
         return Ok(crate::files::not_found("Post"));
-    };
+    }
     let file = if proxied(&site) {
         signed(&media_key(&db).await?, &site.id, &post["fileUrl"])
     } else {
         post["fileUrl"].clone()
     };
     Ok(Json(json!({"tags":post["tags"],"fileUrl":file})).into_response())
+}
+
+/// One site search, kept as `keep` says.
+pub(crate) async fn cached_search(
+    db: &Database,
+    t: &Transport,
+    site: &Site,
+    s: &Search,
+    keep: Keep,
+) -> Result<Vec<Value>> {
+    let key = format!("search:{}:{s:?}", site.id);
+    let (t, site, s) = (t.clone(), site.clone(), s.clone());
+    let found = cache::remember(db, &key, keep, move || async move {
+        Ok(json!(booru_engines::search(&t, &site, &s).await?))
+    })
+    .await?;
+    serde_json::from_value(found).map_err(|_| Error::Storage("A cached search is damaged.".into()))
+}
+/// `booru_engines::single`, answered from the cache and refreshed after a day.
+pub(crate) async fn cached_post(
+    db: &Database,
+    t: &Transport,
+    site: &Site,
+    id: &str,
+) -> Result<Option<Value>> {
+    let key = format!("post:{}:{id}", site.id);
+    let (t, site, id) = (t.clone(), site.clone(), id.to_owned());
+    let post = cache::remember(db, &key, Keep::Revalidate(cache::DAY), move || async move {
+        Ok(json!(booru_engines::single(&t, &site, &id).await?))
+    })
+    .await?;
+    Ok((!post.is_null()).then_some(post))
+}
+/// `post_text_of`, answered from the cache and refreshed after a day.
+pub(crate) async fn cached_post_text(
+    db: &Database,
+    t: &Transport,
+    site: &Site,
+    id: &str,
+) -> Result<Value> {
+    let key = format!("text:{}:{id}", site.id);
+    let (t, site, id) = (t.clone(), site.clone(), id.to_owned());
+    cache::remember(db, &key, Keep::Revalidate(cache::DAY), move || async move {
+        post_text_of(&t, &site, &id).await
+    })
+    .await
+}
+/// A post's comments, answered from the cache and refreshed after an hour.
+pub(crate) async fn cached_comments(
+    db: &Database,
+    t: &Transport,
+    site: &Site,
+    id: &str,
+) -> Result<Vec<Value>> {
+    let key = format!("comments:{}:{id}", site.id);
+    let (t, site, id) = (t.clone(), site.clone(), id.to_owned());
+    let comments = cache::remember(
+        db,
+        &key,
+        Keep::Revalidate(cache::HOUR),
+        move || async move { Ok(json!(crate::post_comments::fetch(&t, &site, &id).await?)) },
+    )
+    .await?;
+    serde_json::from_value(comments)
+        .map_err(|_| Error::Storage("Cached comments are damaged.".into()))
+}
+/// `post_pool_navigators`, answered from the cache and refreshed after a day.
+pub(crate) async fn cached_pool_navigators(
+    db: &Database,
+    t: &Transport,
+    site: &Site,
+    id: &str,
+    known: Option<&str>,
+) -> Result<Vec<Value>> {
+    let key = format!("pools:{}:{id}", site.id);
+    let (t, site, id, known) = (
+        t.clone(),
+        site.clone(),
+        id.to_owned(),
+        known.map(str::to_owned),
+    );
+    let pools = cache::remember(db, &key, Keep::Revalidate(cache::DAY), move || async move {
+        Ok(json!(
+            post_pool_navigators(&t, &site, &id, known.as_deref()).await?
+        ))
+    })
+    .await?;
+    serde_json::from_value(pools).map_err(|_| Error::Storage("Cached pools are damaged.".into()))
 }
 
 pub(crate) async fn tagged_post(
@@ -397,7 +500,7 @@ async fn post_text(State(db): State<Database>, Query(q): Query<QueryMap>) -> Res
     let Some(site) = require_site(&db, &q).await? else {
         return Ok(crate::files::not_found("Site"));
     };
-    let text = match post_text_of(&Transport::default(), &site, &id).await {
+    let text = match cached_post_text(&db, &Transport::default(), &site, &id).await {
         // A post removed from the site has no text, and asking again will not change that.
         Err(error) if booru_http::is_not_found(&error) => json!({"title":null,"description":null}),
         text => text?,
@@ -440,7 +543,7 @@ async fn post_comments(State(db): State<Database>, Query(q): Query<QueryMap>) ->
     if !crate::post_comments::supported(&site.engine) {
         return Ok(Json(json!({"supported":false,"comments":[]})).into_response());
     }
-    let comments = crate::post_comments::fetch(&Transport::default(), &site, &id).await?;
+    let comments = cached_comments(&db, &Transport::default(), &site, &id).await?;
     Ok(Json(json!({"supported":true,"comments":comments})).into_response())
 }
 async fn relations(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result<Response> {
@@ -490,8 +593,38 @@ pub(crate) async fn group(
     }
     let own_children = parent.is_some() && children;
     let root = parent.unwrap_or_else(|| id.to_owned());
+    let (t, held, held_id, held_root) = (t.clone(), site.clone(), id.to_owned(), root.clone());
+    let posts = cache::remember(
+        db,
+        &format!("relations:{}:{id}:{root}:{own_children}", site.id),
+        Keep::Revalidate(cache::DAY),
+        move || async move {
+            Ok(json!(
+                group_posts(&t, &held, &held_id, &held_root, own_children).await?
+            ))
+        },
+    )
+    .await?;
+    let posts: Vec<Value> = serde_json::from_value(posts)
+        .map_err(|_| Error::Storage("A cached post group is damaged.".into()))?;
+    let key = media_key(db).await?;
+    let mut posts = decorate(db, site, posts, &key).await?;
+    for p in &mut posts {
+        p["isParent"] = json!(p["remoteId"] == root);
+        p["isCurrent"] = json!(p["remoteId"] == id);
+    }
+    Ok(posts)
+}
+/// The site's posts of one group, undecorated, the parent first; empty under two posts.
+async fn group_posts(
+    t: &Transport,
+    site: &Site,
+    id: &str,
+    root: &str,
+    own_children: bool,
+) -> Result<Vec<Value>> {
     let mut posts: Vec<Value> = Vec::new();
-    for tags in group_searches(&site.engine, id, &root, own_children) {
+    for tags in group_searches(&site.engine, id, root, own_children) {
         let s = Search {
             tags,
             limit: 40,
@@ -504,19 +637,13 @@ pub(crate) async fn group(
         }
     }
     if !posts.iter().any(|p| p["remoteId"] == root) {
-        if let Some(p) = booru_engines::single(t, site, &root).await? {
+        if let Some(p) = booru_engines::single(t, site, root).await? {
             posts.insert(0, p);
         }
     }
     posts.sort_by_key(|p| p["remoteId"] != root);
     if posts.len() < 2 {
         posts.clear();
-    }
-    let key = media_key(db).await?;
-    let mut posts = decorate(db, site, posts, &key).await?;
-    for p in &mut posts {
-        p["isParent"] = json!(p["remoteId"] == root);
-        p["isCurrent"] = json!(p["remoteId"] == id);
     }
     Ok(posts)
 }
@@ -597,7 +724,7 @@ async fn post_pools(State(db): State<Database>, Query(q): Query<QueryMap>) -> Re
         return Ok(crate::files::not_found("Site"));
     };
     let known = query_text(&q, "poolIds", 500)?;
-    let pools = post_pool_navigators(&Transport::default(), &site, &id, known).await?;
+    let pools = cached_pool_navigators(&db, &Transport::default(), &site, &id, known).await?;
     Ok(Json(json!({"pools":pools})).into_response())
 }
 /// The pools a post is a page of, each with the pages either side of it.
@@ -663,16 +790,33 @@ async fn pool_page(State(db): State<Database>, Query(q): Query<QueryMap>) -> Res
     if !matches!(site.engine.as_str(), "e621" | "danbooru") {
         return Ok(crate::files::not_found("Pool"));
     }
-    let t = Transport::default();
-    let pool = read_pool(&t, &site, &id).await?;
-    let ids: Vec<_> = pool
-        .ids
-        .iter()
-        .skip((page - 1) * POOL_PAGE_SIZE)
-        .take(POOL_PAGE_SIZE)
-        .cloned()
-        .collect();
-    let posts = booru_engines::by_ids(&t, &site, &ids).await?;
+    let (t, held, held_id) = (Transport::default(), site.clone(), id.clone());
+    let answer = cache::remember(
+        &db,
+        &format!("pool:{}:{id}:{page}", site.id),
+        Keep::Fallback,
+        move || async move {
+            let pool = read_pool(&t, &held, &held_id).await?;
+            let ids: Vec<_> = pool
+                .ids
+                .iter()
+                .skip((page - 1) * POOL_PAGE_SIZE)
+                .take(POOL_PAGE_SIZE)
+                .cloned()
+                .collect();
+            let posts = booru_engines::by_ids(&t, &held, &ids).await?;
+            Ok(json!({"id": pool.id, "name": pool.name, "ids": pool.ids, "posts": posts}))
+        },
+    )
+    .await?;
+    let damaged = || Error::Storage("A cached pool page is damaged.".into());
+    let pool = Pool {
+        id: answer["id"].as_str().ok_or_else(damaged)?.to_owned(),
+        name: answer["name"].as_str().ok_or_else(damaged)?.to_owned(),
+        ids: serde_json::from_value(answer["ids"].clone()).map_err(|_| damaged())?,
+    };
+    let posts: Vec<Value> =
+        serde_json::from_value(answer["posts"].clone()).map_err(|_| damaged())?;
     let key = media_key(&db).await?;
     let mut posts = decorate(&db, &site, posts, &key).await?;
     for p in &mut posts {
@@ -702,21 +846,38 @@ async fn media(
     }
     let url = booru_http::url(raw)?;
     let mut headers = booru_engines::headers(&site, true)?;
-    if q.get("motion").is_some_and(|value| value == "1") {
+    let motion = q.get("motion").is_some_and(|value| value == "1");
+    let range = request.headers().get(header::RANGE).cloned();
+    let key = format!(
+        "media:{}:{raw}{}",
+        site.id,
+        if motion { "#motion" } else { "" }
+    );
+    if range.is_none() {
+        if let Some(entry) = cache::get(&db, &key).await? {
+            return Ok(([(header::CONTENT_TYPE, entry.mime)], entry.bytes).into_response());
+        }
+    }
+    if motion {
         let _slot = MOTION_SLOTS
             .acquire()
             .await
             .map_err(|_| booru_http::remote("The thumbnail request was cancelled."))?;
         let response = Transport::default().get(url, headers).await?;
-        return motion_preview(response, &db.library().temp).await;
+        let (mime, bytes) = motion_preview(response, &db.library().temp).await?;
+        return Ok(kept(&db, &key, mime, bytes).await);
     }
-    if let Some(range) = request.headers().get(header::RANGE) {
-        headers.insert(header::RANGE, range.clone());
+    if let Some(range) = range.clone() {
+        headers.insert(header::RANGE, range);
     }
-    let slot = MEDIA_SLOTS
-        .acquire()
-        .await
-        .map_err(|_| booru_http::remote("The media request was cancelled."))?;
+    let slot = if proxied(&site) {
+        &MEDIA_SLOTS
+    } else {
+        &CDN_SLOTS
+    }
+    .acquire()
+    .await
+    .map_err(|_| booru_http::remote("The media request was cancelled."))?;
     let response = Transport::default().get(url, headers).await?;
     let status = response.status();
     let h = response.headers().clone();
@@ -748,6 +909,24 @@ async fn media(
         return Err(booru_http::remote(
             "This media file exceeds the supported size. Open the original post.",
         ));
+    }
+    // Pictures are kept whole; videos stream, in ranges, without being kept.
+    if range.is_none() && status == StatusCode::OK && mime.starts_with("image/") {
+        let mime = mime.to_owned();
+        let mut response = response;
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|_| booru_http::remote("The media download was interrupted."))?
+        {
+            if bytes.len() + chunk.len() > max {
+                return Err(booru_http::remote("Media size limit exceeded"));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        drop(slot);
+        return Ok(kept(&db, &key, mime, bytes).await);
     }
     let stream = futures_util::stream::try_unfold(
         (response, 0usize, slot),
@@ -792,10 +971,20 @@ async fn media(
     Ok(result)
 }
 
+/// Answers with media and keeps it in the cache.
+async fn kept(db: &Database, key: &str, mime: String, bytes: Vec<u8>) -> Response {
+    // The picture still shows when it cannot be kept.
+    if let Err(error) = cache::put(db, key, "media", &mime, &bytes).await {
+        eprintln!("[developer] Cannot keep a picture in the cache: {error}");
+    }
+    ([(header::CONTENT_TYPE, mime)], bytes).into_response()
+}
+
+/// The video a GIF plays as in a grid: its type and bytes.
 async fn motion_preview(
     mut response: reqwest::Response,
     temp: &std::path::Path,
-) -> Result<Response> {
+) -> Result<(String, Vec<u8>)> {
     if !response.status().is_success()
         || response
             .content_length()
@@ -847,14 +1036,7 @@ async fn motion_preview(
     } else {
         "video/webm"
     };
-    Ok((
-        [
-            (header::CONTENT_TYPE, mime),
-            (header::CACHE_CONTROL, "private, max-age=86400"),
-        ],
-        tokio::fs::read(output).await?,
-    )
-        .into_response())
+    Ok((mime.to_owned(), tokio::fs::read(output).await?))
 }
 fn selector(raw: &str) -> Selector {
     Selector::parse(raw).expect("static selector")
@@ -1127,13 +1309,10 @@ mod tests {
             .output()
             .unwrap();
         assert!(gif.status.success());
-        let response = motion_preview(axum::http::Response::new(gif.stdout).into(), &temp)
+        let (mime, bytes) = motion_preview(axum::http::Response::new(gif.stdout).into(), &temp)
             .await
             .unwrap();
-        assert_eq!(response.headers()[header::CONTENT_TYPE], "video/webm");
-        let bytes = axum::body::to_bytes(response.into_body(), MAX_IMAGE_BYTES)
-            .await
-            .unwrap();
+        assert_eq!(mime, "video/webm");
         assert_eq!(&bytes[..4], &[0x1a, 0x45, 0xdf, 0xa3]);
         assert!(
             motion_preview(axum::http::Response::new("not a GIF").into(), &temp)
@@ -1179,8 +1358,12 @@ mod tests {
             .unwrap();
         let declined = decorate(&db, &site, vec![p], &key).await.unwrap();
         assert_eq!(declined[0]["favoriteDeclined"], true);
+        // Previews go through the core, which keeps them; the video file streams from the CDN.
         assert_eq!(decorated[0]["fileUrl"], "https://cdn.example.com/a.webm");
-        assert_eq!(decorated[0]["previewUrl"], "https://cdn.example.com/a.jpg");
+        assert_eq!(
+            verified_media(&key, decorated[0]["previewUrl"].as_str().unwrap()),
+            Some(("site-a".into(), "https://cdn.example.com/a.jpg".into()))
+        );
         assert!(decorated[0]["matchPreviewUrl"]
             .as_str()
             .unwrap()

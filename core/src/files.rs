@@ -414,7 +414,8 @@ async fn group_of(
     file_id: &str,
     remote_id: &str,
 ) -> Result<Vec<Value>> {
-    let Some(post) = crate::booru_engines::single(transport, site, remote_id).await? else {
+    let Some(post) = crate::explore::cached_post(database, transport, site, remote_id).await?
+    else {
         return Ok(Vec::new());
     };
     let (file, provider, id, answer) = (
@@ -460,7 +461,9 @@ async fn file_pools(
         else {
             continue;
         };
-        match crate::explore::post_pool_navigators(transport, site, &remote_id, None).await {
+        match crate::explore::cached_pool_navigators(database, transport, site, &remote_id, None)
+            .await
+        {
             Ok(pools) if pools.is_empty() => {}
             Ok(pools) => return Ok(Json(json!({"pools": pools})).into_response()),
             Err(error) => failure = failure.or(Some(error)),
@@ -506,7 +509,7 @@ async fn file_comments(
             continue;
         };
         supported = true;
-        match crate::post_comments::fetch(transport, site, &remote_id).await {
+        match crate::explore::cached_comments(database, transport, site, &remote_id).await {
             Ok(comments) if comments.is_empty() => {}
             Ok(comments) => sources.push(json!({
                 "siteName": site.name,
@@ -584,7 +587,7 @@ async fn file_source_text(
         else {
             continue;
         };
-        match crate::explore::post_text_of(transport, site, &remote_id).await {
+        match crate::explore::cached_post_text(database, transport, site, &remote_id).await {
             Ok(text) => {
                 let filled = |key: &str| !matches!(text[key].as_str(), None | Some(""));
                 if filled("title") || filled("description") {

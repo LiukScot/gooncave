@@ -15,7 +15,7 @@ use std::{
 };
 use time::{format_description::well_known::Rfc3339, Date, Month, OffsetDateTime};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct Search {
     pub tags: Vec<String>,
     pub sort: String,

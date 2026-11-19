@@ -618,7 +618,7 @@ async fn feed_page(
         }
         next_cursor.insert(site.id.clone(), SitePositions { of, at });
     }
-    let reads = read_all(t, &sites, &streams).await;
+    let reads = read_all(db, t, &sites, &streams).await;
     let page = merge(&streams, reads, limit);
     let mut errors = Vec::new();
     for (index, error) in page.failed {
@@ -762,12 +762,36 @@ struct Read {
 fn post_id(post: &Value) -> Option<u64> {
     post["remoteId"].as_str()?.parse().ok()
 }
-async fn read(t: &Transport, site: &Site, query: &[String], at: &Position) -> Result<Read> {
+/// How long a search's page stands for the site's: reopening the feed soon after asks no site.
+const PAGE_KEPT_SECONDS: i64 = 5 * 60;
+async fn read(
+    db: &Database,
+    t: &Transport,
+    site: &Site,
+    query: &[String],
+    at: &Position,
+) -> Result<Read> {
     let by_id = booru_engines::pages_by_id(site);
     let mut page = at.page.clone();
     for pass in 0..=MAX_SKIPPED_PAGES {
         let (raw, more, next) = if site.engine == "furaffinity" {
-            let (posts, next) = remote::page(t, site, page.as_deref()).await?;
+            let (held, held_site, held_page) = (t.clone(), site.clone(), page.clone());
+            let answer = crate::cache::remember(
+                db,
+                &format!("subscriptions:{}:{page:?}", site.id),
+                crate::cache::Keep::Fresh(PAGE_KEPT_SECONDS),
+                move || async move {
+                    let (posts, next) =
+                        remote::page(&held, &held_site, held_page.as_deref()).await?;
+                    Ok(serde_json::json!({"posts": posts, "next": next}))
+                },
+            )
+            .await?;
+            let damaged = || crate::Error::Storage("A cached feed page is damaged.".into());
+            let posts: Vec<Value> =
+                serde_json::from_value(answer["posts"].clone()).map_err(|_| damaged())?;
+            let next: Option<String> =
+                serde_json::from_value(answer["next"].clone()).map_err(|_| damaged())?;
             (posts, next.is_some(), next)
         } else {
             let number = match &page {
@@ -779,7 +803,8 @@ async fn read(t: &Transport, site: &Site, query: &[String], at: &Position) -> Re
                     "The feed reached the site's pagination limit. Narrow your subscribed searches.",
                 ));
             }
-            let posts = booru_engines::search(
+            let posts = crate::explore::cached_search(
+                db,
                 t,
                 site,
                 &Search {
@@ -789,6 +814,7 @@ async fn read(t: &Transport, site: &Site, query: &[String], at: &Position) -> Re
                     before: at.below.filter(|_| by_id),
                     ..Search::default()
                 },
+                crate::cache::Keep::Fresh(PAGE_KEPT_SECONDS),
             )
             .await?;
             let more = posts.len() >= PAGE_SIZE;
@@ -830,7 +856,12 @@ async fn read(t: &Transport, site: &Site, query: &[String], at: &Position) -> Re
         skipped: 0,
     })
 }
-async fn read_all(t: &Transport, sites: &[Site], streams: &[Stream]) -> Vec<Result<Read>> {
+async fn read_all(
+    db: &Database,
+    t: &Transport,
+    sites: &[Site],
+    streams: &[Stream],
+) -> Vec<Result<Read>> {
     let mut results = (0..streams.len()).map(|_| None).collect::<Vec<_>>();
     let mut queued = (0..streams.len()).collect::<std::collections::VecDeque<_>>();
     let mut running = vec![0; sites.len()];
@@ -846,13 +877,14 @@ async fn read_all(t: &Transport, sites: &[Site], streams: &[Stream]) -> Vec<Resu
             let index = queued.remove(at).unwrap();
             let stream = &streams[index];
             running[stream.site] += 1;
-            let (t, site, query, at) = (
+            let (db, t, site, query, at) = (
+                db.clone(),
                 t.clone(),
                 sites[stream.site].clone(),
                 stream.query.clone(),
                 stream.at.clone(),
             );
-            pending.spawn(async move { (index, read(&t, &site, &query, &at).await) });
+            pending.spawn(async move { (index, read(&db, &t, &site, &query, &at).await) });
         }
         let Some(done) = pending.join_next().await else {
             break;

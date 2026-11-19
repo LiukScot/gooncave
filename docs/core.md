@@ -38,7 +38,8 @@ The browser suite is `tests/`: `core-foundations`, `core-library` and
 The desktop stores its data in `app.gooncave.desktop` inside the user data
 directory (`$XDG_DATA_HOME`, which the Flatpak sandbox maps to
 `~/.var/app/app.gooncave.desktop/data`). The development command uses `storage/core/`.
-Each contains `library.sqlite` and the `thumbnails/` cache.
+Each contains `library.sqlite`, the `thumbnails/` cache of library files and
+the `cache/` folder described in [Cache of site answers](#cache-of-site-answers).
 
 The core embeds the SQL files in `core/migrations/`
 at compile time. It applies missing migrations before serving requests,
@@ -205,7 +206,9 @@ allowlist is enabled.
 | `GET /explore/posts` | Search selected enabled sites with `tags`, `sort` (`new`, `hot`, `popular`), `window`, UTC calendar `date`, `page` (1–1000), `limit` (1–100); errors are reported per site. Posts from e621-type sites and Philomena carry `description`, so opening one asks the site nothing for it; `/explore/post-text` remains for the others; e621 posts also carry `commentCount`, and a post with 0 asks nothing for its comments |
 | `POST /explore/vote` | Set an up/down vote or remove the current account's vote; repeated identical requests preserve its score |
 | `GET /explore/post`, `/post-tags`, `/post-text`, `/post-comments`, `/post-relations`, `/post-pools`, `/pool` | Single posts, categorized tags, descriptions, comments, related posts and pool pages in reading order. `/post-comments` lists a post's comments oldest first (`id`, `author`, `body` as the same Markdown subset, `score`, `createdAt`) for e621, Danbooru, Moebooru, Philomena and Gelbooru-type sites; `supported` is false for the others (FurAffinity, Sankaku, Shimmie, Szurubooru). `/post-text` returns the description as one Markdown subset (bold, italic, underline, strike, links, `\|\|spoiler\|\|`, nested `>` quotes); e621 DText is converted, Philomena Markdown is passed through |
-| `GET /explore/media/{filename}` | Signed media links, same-origin images and streamed video with byte ranges; at most four transfers, 25 MiB per image or 500 MiB per video. For a signed GIF, `motion=1` returns the platform video preview in one response, with two conversions at a time. |
+| `GET /explore/media/{filename}` | Signed media links: pictures are answered whole and kept in the cache; video streams with byte ranges and is not kept. At most four FurAffinity transfers and sixteen for other sites at once, 25 MiB per image or 500 MiB per video. For a signed GIF, `motion=1` returns the platform video preview in one response, with two conversions at a time, and keeps it |
+| `GET /cache` | `{ bytes }`: the size of the cache of site answers on this device |
+| `GET/PUT /settings/explore` | `recentSearches`: up to 20 Explore searches, newest first, 1–2000 characters each; shared between devices |
 | `POST /explore/gallery-matches` | `posts` (at most 100: `key`, signed `matchPreviewUrl`, `width`, `height`, `fileExt`) → `keys` of posts whose picture is a library favorite. Empty unless the duplicate policy is `favorite_all`; unsigned links, GIFs, videos and failed downloads are left out |
 | `POST /explore/favorite`, `/explore/unfavorite` | Change the remote favorite and save/remove its managed local copy; body contains `siteId` and `remoteId`. Media URLs are resolved from the original post. The request is recorded in `pending_favorites` before the site is asked and cleared once the file is in the library; the core finishes the leftover rows when it starts. Unsupported auto-voting returns `voteError` without undoing the favorite |
 | `GET /favorites/sync/status`, `POST /favorites/sync`, `/favorites/sync/cancel` | Background import, bounded pagination, progress, per-site errors and cancellation; optional `providers` selects site IDs or preset keys. `deleteMissing=true` removes only managed copies after a complete, error-free remote listing |
@@ -404,10 +407,10 @@ answers HTTP 502 with `code` `BOORU_CAPTCHA` or `BOORU_RATE_LIMITED` next to
 The SQLite database is private to the device owner on Unix. API keys and session
 cookies are never returned by the site endpoints or copied into media links.
 The media signing key lives in device-only `meta`. Outbound reads validate and
-pin public DNS addresses; redirects to another origin are refused. The browser
-loads previews, samples and files straight from each site's CDN, except
-FurAffinity's, whose Cloudflare refuses a burst of thumbnails: those go through
-the core's signed `/explore/media` links. Explore also signs `colorSourceUrl`
+pin public DNS addresses; redirects to another origin are refused. Previews and
+samples of every site go through the core's signed `/explore/media` links, so
+the cache keeps them; FurAffinity's files go through them too, because its
+Cloudflare refuses a burst of requests. Other sites' files stream from their CDN. Explore also signs `colorSourceUrl`
 (a page can read the pixels only of same-origin pictures) and `matchPreviewUrl`
 (read by gallery matching). Media requests through the core carry the
 provider's referrer without account credentials. Provider failures
@@ -535,6 +538,41 @@ counted and the run continues; Stop keeps completed updates. A disabled site is 
 with HTTP 400, so it receives no requests. Tests use neutral media, fake keys and loopback
 provider fixtures; they do not verify live-provider accounts or quotas.
 
+## Cache of site answers
+
+The core keeps what it loaded from the sites in `<data>/cache`, one file per
+entry, listed in `cache_entries` with its size, type and the times it was
+fetched and last used. `cache_usage` holds the total, kept by triggers.
+Library thumbnails and originals are not part of it.
+
+| Data | Kept for | When the site is asked again |
+| --- | --- | --- |
+| Previews, samples and GIF previews (`/explore/media`) | Until evicted | Never: a signed link names one file |
+| Post, tags, description, related posts and pools (Explore and library detail) | Until evicted | In the background once the copy is a day old; the new answer is shown next time |
+| Comments | Until evicted | In the background once the copy is an hour old |
+| Explore search pages and pool pages | Until evicted | Always; the copy answers only when the site cannot be reached |
+| Each Subscriptions search page | Until evicted | Once the copy is five minutes old; the feed is still merged live |
+
+A post the site removed is not answered from the cache. Settings → Extra
+limits the cache to 1, 3 (default), 5 or 10 GB, or leaves it unlimited
+(`extra.cacheLimitGb`, 0 for unlimited; it stays on the device). After every
+write, at start and when the limit changes, a cache over its limit removes
+the entries used least recently until it holds 90% of the limit. An entry's
+file is written before its row and removed before it, so a crash leaves at
+most a row without a file, which the next read forgets.
+
+Without a network the app still asks the core for Explore, Subscriptions and
+Pools: every site fails, so the core answers each request from the cache when
+it holds a copy. A page with nothing kept asks to reconnect.
+
+Opening a post in Explore also asks for the tags, description and related
+posts of the previous and next post. Pictures from the core are sent without
+a cache header, so the webview does not keep a second copy.
+
+```sh
+cargo test --locked -p gooncave-core --lib cache
+```
+
 ## Subscriptions
 
 Settings → Subscriptions stores searches on this device and mirrors each enabled
@@ -546,8 +584,9 @@ Other sites, Gelbooru included, search one tag at a time.
 A followed pool adds the search `pool:ID` on its own site only, sent alone.
 Followed pools stay on this device: each device gives a synced site its own ID.
 
-Nothing is saved: each feed page asks every search of every site for its next
-page, newest first, six searches at a time. e621, Danbooru and Gelbooru page by
+No feed is saved: each feed page asks every search of every site for its next
+page, newest first, six searches at a time. A search's page read in the last
+five minutes comes from the cache, so reopening the feed soon asks no site. e621, Danbooru and Gelbooru page by
 post ID (`page=b<id>`, `id:<N`), so posts added on top do not shift the pages
 below; other sites page by number and skip the posts already shown. A search
 that may have older posts sets a limit: posts older than its last one wait for

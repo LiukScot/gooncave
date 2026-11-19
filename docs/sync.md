@@ -75,7 +75,7 @@ The table maps each table of the current database
 | `read_marks`, scope `post` | Yes, with the post History shows | Site + `remote_id` | `read_at` |
 | `read_marks`, scope `opened` (files opened in the Gallery, for History) | Yes | File | `read_at` |
 | `favorite_items` (booru favorites) | Yes | `provider` + `remote_id` | `updated_at` |
-| `user_settings` | Only `blacklist.settings`, `duplicates.policy`, `shortcuts.bindings`, `subscriptions.tags`, `subscriptions.artists`, `source_targets`, `source_display`, `source_display_initialized`, `trash.enabled` | `key` | Stamped by the sync |
+| `user_settings` | Only `blacklist.settings`, `duplicates.policy`, `shortcuts.bindings`, `subscriptions.tags`, `subscriptions.artists`, `source_targets`, `source_display`, `source_display_initialized`, `trash.enabled`, `explore.recentSearches` | `key` | Stamped by the sync |
 | `user_settings` key `subscriptions.pools` (followed pools) | One record per pool, under its site's own ID on each device; a pool of a site this device lacks waits for the site | Site + `poolId` | Stamped by the sync |
 | `user_booru_sites` | Name, engine, address, enabled and order; no credentials and no per-site automation switches. A site whose address or engine changes loses the credentials saved on each device | `preset_key`, or `base_url` for a custom site | Stamped by the sync |
 | `tag_aliases` with source `custom` | Yes | `antecedent` | Stamped by the sync |
@@ -94,7 +94,8 @@ The table maps each table of the current database
 | Records of a file no other device can open | The file was not synced; see Media files. |
 | `duplicate_policy_runs`, `duplicate_policy_actions`, `duplicate_policy_requests` | Job history on one device. |
 | `users`, `sessions`, `meta` | Accounts and login are removed. |
-| `user_settings` keys not listed above (grid columns, WD14, the sync connection) | Chosen per device. |
+| `user_settings` keys not listed above (grid columns, the cache size, WD14, the sync connection) | Chosen per device. |
+| `cache_entries`, `cache_usage` and the `cache/` folder | What this device loaded from the sites; each device fills its own. |
 | Appearance (mode, accent, quick buttons) | Chosen per device; stored in the browser's local storage, not in the database. |
 
 The choice under **Matching images** (`duplicates.policy`) is one for the whole

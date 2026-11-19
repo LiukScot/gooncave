@@ -19,6 +19,7 @@ mod booru_http;
 mod booru_votes;
 mod boorus;
 pub mod browser;
+mod cache;
 pub mod db;
 pub mod decoder;
 mod duplicate_policy;

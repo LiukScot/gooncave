@@ -166,7 +166,13 @@ export type ExtraSettings = {
   maxGridColumns: number;
   /** How far a double tap on either side of a video jumps: 5, 10, 15 or 30. */
   videoSkipSeconds: number;
+  /** The most the cache of loaded posts and pictures may hold, in GB; 0 keeps everything. */
+  cacheLimitGb: CacheLimitGb;
 };
+
+/** The sizes the cache can be limited to, in GB, smallest first; 0 means no limit. */
+export const CACHE_LIMITS_GB = [1, 3, 5, 10, 0] as const;
+export type CacheLimitGb = (typeof CACHE_LIMITS_GB)[number];
 
 /**
  * Mirrors the backend defaults, used while the real settings are still in
@@ -183,7 +189,8 @@ export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   pullFullscreen: true,
   fullscreenActions: true,
   maxGridColumns: 0,
-  videoSkipSeconds: 10
+  videoSkipSeconds: 10,
+  cacheLimitGb: 3
 };
 
 export type BlacklistSettings = {
@@ -1619,6 +1626,24 @@ export const api = {
   getExtraSettings: async () => {
     const res = await apiFetch(`${API_BASE}/settings/extra`);
     return handle<ExtraSettings>(res);
+  },
+  /** Bytes the cache of loaded posts and pictures holds on this device. */
+  getCacheUsage: async () => {
+    const res = await apiFetch(`${API_BASE}/cache`);
+    return handle<{ bytes: number }>(res);
+  },
+  /** The last searches made in Explore, newest first; shared between devices. */
+  getRecentSearches: async () => {
+    const res = await apiFetch(`${API_BASE}/settings/explore`);
+    return (await handle<{ recentSearches: string[] }>(res)).recentSearches;
+  },
+  setRecentSearches: async (recentSearches: string[]) => {
+    const res = await apiFetch(`${API_BASE}/settings/explore`, {
+      method: 'PUT',
+      headers: jsonHeaders,
+      body: JSON.stringify({ recentSearches })
+    });
+    return (await handle<{ recentSearches: string[] }>(res)).recentSearches;
   },
   getBlacklist: async () => {
     const res = await apiFetch(`${API_BASE}/settings/blacklist`);

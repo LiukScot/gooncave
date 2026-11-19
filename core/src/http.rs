@@ -140,6 +140,14 @@ impl Server {
                 eprintln!("Cannot adopt the site keys of another device: {error}");
             }
         });
+        let trimming = {
+            let database = self.database.clone();
+            tokio::spawn(async move {
+                if let Err(error) = crate::cache::evict(&database).await {
+                    eprintln!("Cannot fit the cache to its limit: {error}");
+                }
+            })
+        };
         let importer = tokio::spawn(crate::tag_import::watch(self.database.clone()));
         let favorites = tokio::spawn(crate::favorites::watch(self.database.clone()));
         let sources = tokio::spawn(crate::source_jobs::watch(self.database.clone()));
@@ -153,6 +161,7 @@ impl Server {
         let _workers = Workers(
             [
                 &adopting,
+                &trimming,
                 &importer,
                 &favorites,
                 &sources,
@@ -238,6 +247,7 @@ fn routes(database: Database) -> Router {
         .merge(crate::native_share::routes())
         .merge(crate::backup::routes())
         .merge(crate::boorus::routes())
+        .merge(crate::cache::routes())
         .merge(crate::explore::routes())
         .merge(crate::tags::routes())
         .merge(crate::tag_import::routes())
@@ -307,11 +317,14 @@ async fn update_settings(
     let Json(patch) = payload.map_err(|_| {
         Error::Invalid("Send valid JSON settings with Content-Type application/json.".into())
     })?;
-    Ok(Json(
-        database
-            .call(move |connection| settings::update(connection, &section, patch))
-            .await?,
-    ))
+    let limit_changed = section == "extra" && patch.get("cacheLimitGb").is_some();
+    let updated = database
+        .call(move |connection| settings::update(connection, &section, patch))
+        .await?;
+    if limit_changed {
+        crate::cache::evict(&database).await?;
+    }
+    Ok(Json(updated))
 }
 
 pub async fn unavailable() -> Error {

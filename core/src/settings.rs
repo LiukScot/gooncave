@@ -25,12 +25,16 @@ const EXTRA_KEYS: &[(&str, &str, bool)] = &[
     ("fullscreenActions", "extra.fullscreenActions", true),
 ];
 
+/// How many searches Explore remembers.
+const RECENT_SEARCHES: usize = 20;
+
 pub fn read(connection: &Connection, section: &str) -> Result<Value> {
     let value = match section {
         "extra" => {
             let mut settings = json!({
                 "maxGridColumns": read_setting(connection, "extra.maxGridColumns", &json!(0))?,
                 "videoSkipSeconds": read_setting(connection, "extra.videoSkipSeconds", &json!(10))?,
+                "cacheLimitGb": read_setting(connection, "extra.cacheLimitGb", &json!(crate::cache::DEFAULT_LIMIT_GB))?,
             });
             settings["doubleTap"] = read_setting(connection, "extra.doubleTap", &json!("zoom"))?;
             for (name, key, default) in EXTRA_KEYS {
@@ -39,6 +43,7 @@ pub fn read(connection: &Connection, section: &str) -> Result<Value> {
             settings
         }
         "shortcuts" => json!({"bindings": read_setting(connection, "shortcuts.bindings", &json!({}))?}),
+        "explore" => json!({"recentSearches": read_setting(connection, "explore.recentSearches", &json!([]))?}),
         "blacklist" => {
             let mut value = read_setting(connection, "blacklist.settings", &json!({"tags": [], "applyToExplore": true, "applyToGallery": false, "applyToSubscriptions": false}))?;
             // Saved before Subscriptions had their own switch: off, like a new blacklist.
@@ -93,8 +98,14 @@ pub fn update(connection: &mut Connection, section: &str, patch: Value) -> Resul
                 &next["videoSkipSeconds"],
             )?;
             write_setting(&transaction, "extra.doubleTap", &next["doubleTap"])?;
+            write_setting(&transaction, "extra.cacheLimitGb", &next["cacheLimitGb"])?;
         }
         "shortcuts" => write_setting(&transaction, "shortcuts.bindings", &next["bindings"])?,
+        "explore" => write_setting(
+            &transaction,
+            "explore.recentSearches",
+            &next["recentSearches"],
+        )?,
         "blacklist" => {
             let tags = next["tags"].as_array().expect("validated tags");
             let mut normalized = Vec::new();
@@ -141,6 +152,9 @@ fn validate(section: &str, value: &Value) -> Result<()> {
             ("extra", "videoSkipSeconds") => value
                 .as_u64()
                 .is_some_and(|value| [5, 10, 15, 30].contains(&value)),
+            ("extra", "cacheLimitGb") => value
+                .as_u64()
+                .is_some_and(|value| crate::cache::LIMITS_GB.contains(&value)),
             ("extra", key) if EXTRA_KEYS.iter().any(|(name, _, _)| key == *name) => {
                 value.is_boolean()
             }
@@ -152,6 +166,14 @@ fn validate(section: &str, value: &Value) -> Result<()> {
                     && tags.iter().all(|tag| {
                         tag.as_str()
                             .is_some_and(|tag| !tag.is_empty() && tag.chars().count() <= 100)
+                    })
+            }),
+            ("explore", "recentSearches") => value.as_array().is_some_and(|searches| {
+                searches.len() <= RECENT_SEARCHES
+                    && searches.iter().all(|search| {
+                        search
+                            .as_str()
+                            .is_some_and(|search| (1..=2000).contains(&search.chars().count()))
                     })
             }),
             ("shortcuts", "bindings") => value.as_object().is_some_and(|bindings| {
@@ -179,6 +201,29 @@ fn validate(section: &str, value: &Value) -> Result<()> {
 mod tests {
     use super::*;
     use crate::db::Database;
+
+    #[tokio::test]
+    async fn the_cache_size_and_recent_searches_take_only_the_offered_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        db.call(|c| {
+            assert_eq!(read(c, "extra")?["cacheLimitGb"], 3);
+            assert_eq!(
+                update(c, "extra", json!({"cacheLimitGb": 0}))?["cacheLimitGb"],
+                0
+            );
+            assert!(update(c, "extra", json!({"cacheLimitGb": 2})).is_err());
+            assert_eq!(read(c, "explore")?["recentSearches"], json!([]));
+            update(c, "explore", json!({"recentSearches": ["fox"]}))?;
+            assert_eq!(read(c, "explore")?["recentSearches"], json!(["fox"]));
+            let many: Vec<String> = (0..=RECENT_SEARCHES).map(|n| n.to_string()).collect();
+            assert!(update(c, "explore", json!({"recentSearches": many})).is_err());
+            assert!(update(c, "explore", json!({"recentSearches": [""]})).is_err());
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
 
     #[tokio::test]
     async fn double_tap_in_fullscreen_zooms_unless_set_to_leave() {

@@ -30,6 +30,7 @@ import {
 } from './mergeStream';
 import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
+import { useRememberSearch } from './recentSearches';
 import { stackDuplicates } from './stackDuplicates';
 import { collectSubscriptionPosts } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
@@ -927,7 +928,11 @@ export function useExploreController({
     },
     [openPostLink, tagQuery]
   );
-  const submitSearch = useCallback(() => applySearch(tagInput), [applySearch, tagInput]);
+  const rememberSearch = useRememberSearch();
+  const submitSearch = useCallback(() => {
+    rememberSearch(tagInput);
+    applySearch(tagInput);
+  }, [applySearch, rememberSearch, tagInput]);
   const searchNow = useCallback(
     (value: string) => {
       setTagInput(value);
@@ -1345,12 +1350,14 @@ export function useExploreController({
         void navigate({ to: '/app/gallery', search: { fileId: post.libraryFileId, fs: undefined } });
         return;
       }
+      // A search whose results got opened is one worth offering again.
+      if (sort !== 'subscribed' && sort !== 'history') rememberSearch(tagQuery);
       // Opened from the results: whatever pool was being read is over.
       setPoolContext(null);
       useExploreUiStore.getState().setExcursionNav(null);
       stepTo(post);
     },
-    [navigate, setPoolContext, stepTo]
+    [navigate, rememberSearch, setPoolContext, sort, stepTo, tagQuery]
   );
 
   // The open post is mirrored into `?post=`, so the browser's back button

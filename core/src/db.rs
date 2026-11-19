@@ -60,6 +60,8 @@ pub struct LibraryPaths {
     /// For large temporary files: the system's temp folder can be RAM. Emptied at every start, so
     /// what a crash leaves behind does not stay.
     pub(crate) temp: PathBuf,
+    /// What the core keeps of what it loaded from the sites (`crate::cache`).
+    pub(crate) cache: PathBuf,
 }
 
 impl LibraryPaths {
@@ -139,6 +141,8 @@ impl Database {
             _ => {}
         }
         std::fs::create_dir_all(&temp)?;
+        let cache = data_directory.join("cache");
+        std::fs::create_dir_all(&cache)?;
         let database_path = data_directory.join("library.sqlite");
         let mut connection = connect(&database_path)?;
         #[cfg(unix)]
@@ -215,6 +219,7 @@ impl Database {
                 thumbnails,
                 models: data_directory.join("models"),
                 temp,
+                cache,
             }),
             favorites: Arc::new(crate::favorites::Job::default()),
             subscriptions: Arc::new(tokio::sync::Mutex::new(())),

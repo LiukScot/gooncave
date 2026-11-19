@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { thumbnailablePng, uploadSampleImages } from './helpers';
+import type { ExplorePost } from '../frontend/src/api';
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
@@ -217,6 +218,35 @@ test('Explore offers the downloaded files, which narrow the gallery', async ({ p
   const toggle = page.locator('.search-panel').getByRole('button', { name: 'Downloaded', exact: true });
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await expect(toggle).toBeDisabled();
+});
+
+test('offline, Explore shows the results the core kept and opens a post from them', async ({ page }) => {
+  const site = {
+    id: 'kept', name: 'Kept', engine: 'e621', baseUrl: 'https://kept.invalid', enabled: true,
+    username: null, hasApiKey: false, hasSessionCookie: false, engineCredentialSchema: 'username+apikey', sortOrder: 0
+  };
+  const post: ExplorePost = {
+    remoteId: '5', siteId: site.id, siteName: site.name, engine: 'e621',
+    previewUrl: '/favicon.png', sampleUrl: '/favicon.png', fileUrl: 'https://kept.invalid/5.png',
+    motionThumbnailUrl: null, width: 128, height: 96, score: 0, rating: null, md5: null, createdAt: null,
+    tags: [], favCount: null, uploader: null, fileExt: 'png', fileSize: null,
+    favorited: false, voted: null, sourceUrl: 'https://kept.invalid/posts/5',
+    parentId: null, hasChildren: false, poolIds: []
+  };
+  // The core answers from its cache when the sites cannot be reached; the app must still ask it.
+  await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [site] } }));
+  await page.route('**/explore/posts?*', (route) => route.fulfill({ json: { posts: [post], siteErrors: [], sites: [site.id] } }));
+  await page.goto('/app/explore');
+  await expect(page.getByRole('button', { name: /Open post 5 from Kept/ })).toBeVisible();
+  await setOffline(page, true);
+  await goTo(page, 'Gallery');
+  await goTo(page, 'Explore');
+
+  const card = page.getByRole('button', { name: /Open post 5 from Kept/ });
+  await expect(card).toBeVisible();
+  await expect(page.getByText(/No signal in the cave/)).toHaveCount(0);
+  await card.click();
+  await expect(page.getByRole('group', { name: 'Post actions' })).toBeVisible();
 });
 
 const openInGallery = async (page: Page, name: string) => {

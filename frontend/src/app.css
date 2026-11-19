@@ -2444,6 +2444,12 @@ html.panel-over-keyboard #root {
   font-variant-numeric: tabular-nums;
 }
 
+.gallery-tag-suggestions-caption {
+  padding: 0.25rem 0.5rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+}
+
 .settings-section + .settings-section {
   margin-top: 1.25rem;
   padding-top: 1.25rem;
@@ -4797,7 +4803,8 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 }
 
 .video-controls-btn:focus-visible,
-.video-range:focus-visible {
+.video-range:focus-visible,
+.settings-range:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
@@ -4816,8 +4823,10 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 }
 
 /* A slider in the Expressive shape: a thick track filled in the page's
-   colour up to a tall, thin handle. --progress is set inline. */
-.video-range {
+   colour up to a tall, thin handle. --progress is set inline. Video controls
+   and Settings share it. */
+.video-range,
+.settings-range {
   appearance: none;
   min-width: 0;
   height: 1.5rem;
@@ -4829,7 +4838,8 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   cursor: pointer;
 }
 
-.video-range::-webkit-slider-runnable-track {
+.video-range,
+.settings-range::-webkit-slider-runnable-track {
   height: 0.5rem;
   border-radius: 999px;
   background: linear-gradient(
@@ -4839,7 +4849,8 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   );
 }
 
-.video-range::-moz-range-track {
+.video-range,
+.settings-range::-moz-range-track {
   height: 0.5rem;
   border-radius: 999px;
   background: linear-gradient(
@@ -4849,7 +4860,8 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   );
 }
 
-.video-range::-webkit-slider-thumb {
+.video-range,
+.settings-range::-webkit-slider-thumb {
   appearance: none;
   width: 0.25rem;
   height: 1.25rem;
@@ -4858,12 +4870,19 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   background: hsl(var(--primary));
 }
 
-.video-range::-moz-range-thumb {
+.video-range,
+.settings-range::-moz-range-thumb {
   width: 0.25rem;
   height: 1.25rem;
   border: 0;
   border-radius: 999px;
   background: hsl(var(--primary));
+}
+
+/* On the page rather than over a picture, the unfilled track takes the text colour. */
+.settings-range {
+  --range-rest: hsl(var(--foreground) / 0.2);
+  width: 100%;
 }
 
 .video-controls-seek {

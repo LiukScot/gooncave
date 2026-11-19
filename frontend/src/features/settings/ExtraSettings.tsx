@@ -1,13 +1,21 @@
+import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { AutomaticTagging } from './AutomaticTagging';
 import { TrashToggle } from './TrashSettings';
 
 
-import { api, type DoubleTapAction, type ExtraSettings as ExtraSettingsValue } from '@/api';
+import {
+  api,
+  CACHE_LIMITS_GB,
+  type DoubleTapAction,
+  type ExtraSettings as ExtraSettingsValue
+} from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
 import { flushReadQueue } from '@/features/read-marks/readQueue';
 import { useExtraSettings, useUpdateExtraSettings } from '@/hooks/settings';
+import { formatBytes } from '@/lib/format';
+import { queryKeys } from '@/lib/query-keys';
 
 const DOUBLE_TAP_CHOICES: [DoubleTapAction, string][] = [
   ['zoom', 'Zoom in'],
@@ -15,7 +23,10 @@ const DOUBLE_TAP_CHOICES: [DoubleTapAction, string][] = [
 ];
 
 const TOGGLES: {
-  key: Exclude<keyof ExtraSettingsValue, 'maxGridColumns' | 'videoSkipSeconds' | 'doubleTap'>;
+  key: Exclude<
+    keyof ExtraSettingsValue,
+    'maxGridColumns' | 'videoSkipSeconds' | 'doubleTap' | 'cacheLimitGb'
+  >;
   label: string;
   description: string;
 }[] = [
@@ -61,6 +72,61 @@ const TOGGLES: {
       'Remember the posts you scroll past or open in Explore and the files you open in the Gallery: list them under History and offer "Unread only". Turning it off deletes them.'
   }
 ];
+
+const cacheLimitLabel = (gb: number): string => (gb === 0 ? 'Unlimited' : `${gb} GB`);
+
+function CacheLimit() {
+  const settings = useExtraSettings();
+  const updateSettings = useUpdateExtraSettings();
+  const usage = useQuery({
+    queryKey: queryKeys.settings.cacheUsage(),
+    queryFn: () => api.getCacheUsage()
+  });
+  const position = Math.max(0, CACHE_LIMITS_GB.indexOf(settings.cacheLimitGb));
+  const last = CACHE_LIMITS_GB.length - 1;
+  const used = usage.data
+    ? `${formatBytes(usage.data.bytes)} used.`
+    : usage.isError
+      ? 'The space used could not be read.'
+      : '';
+  return (
+    <div className="list-group-item flex flex-col gap-2">
+      <span className="flex items-baseline gap-3">
+        <label className="flex-1 min-w-0 font-medium" htmlFor="extra-cacheLimitGb">
+          Cache size
+        </label>
+        <output htmlFor="extra-cacheLimitGb" className="text-sm tabular-nums">
+          {cacheLimitLabel(settings.cacheLimitGb)}
+        </output>
+      </span>
+      <span className="block text-muted-foreground text-xs">
+        Thumbnails, post details and search pages already loaded open faster, and still
+        show when a site does not answer. Past the limit, what you opened longest ago goes
+        first. {used}
+      </span>
+      <input
+        id="extra-cacheLimitGb"
+        name="cacheLimitGb"
+        className="settings-range"
+        type="range"
+        min={0}
+        max={last}
+        step={1}
+        value={position}
+        aria-valuetext={cacheLimitLabel(settings.cacheLimitGb)}
+        style={{ '--progress': `${(position / last) * 100}%` } as React.CSSProperties}
+        onChange={(event) => {
+          const gb = CACHE_LIMITS_GB[Number(event.target.value)];
+          updateSettings.mutate(
+            { cacheLimitGb: gb },
+            // A smaller limit frees space at once.
+            { onSuccess: () => void usage.refetch() }
+          );
+        }}
+      />
+    </div>
+  );
+}
 
 export function ExtraSettings({
   photoLibraryAvailable = false
@@ -119,6 +185,7 @@ export function ExtraSettings({
           </div>
         ))}
         <TrashToggle />
+        <CacheLimit />
         <div className="list-group-item flex items-center gap-3">
           <span className="flex-1 min-w-0">
             <label className="block font-medium" htmlFor="extra-maxGridColumns">

@@ -27,7 +27,8 @@ export function TagSearchInput({
   scope,
   onSubmit,
   onClear,
-  onPick
+  onPick,
+  recent = []
 }: {
   value: string;
   onChange: (next: string) => void;
@@ -40,6 +41,8 @@ export function TagSearchInput({
   onClear?: () => void;
   /** Takes the new value when a suggestion is chosen, instead of onChange. */
   onPick?: (next: string) => void;
+  /** Whole searches offered while the box is empty, newest first. */
+  recent?: readonly string[];
 }): React.ReactElement {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
@@ -101,7 +104,20 @@ export function TagSearchInput({
     });
   };
 
-  const visible = open && suggestions.length > 0;
+  const showingRecent = value.trim() === '' && recent.length > 0;
+  const options = showingRecent
+    ? recent.map((search) => ({ label: search, files: 0 }))
+    : suggestions.map((suggestion) => ({ label: suggestion.tag, files: suggestion.files }));
+  const visible = open && options.length > 0;
+  const active = Math.min(highlighted, options.length - 1);
+  const choose = (index: number) => {
+    if (!showingRecent) {
+      apply(options[index].label);
+      return;
+    }
+    (onPick ?? onChange)(options[index].label);
+    setOpen(false);
+  };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (!visible) {
@@ -113,15 +129,13 @@ export function TagSearchInput({
     }
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      setHighlighted((current) => (current + 1) % suggestions.length);
+      setHighlighted((active + 1) % options.length);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      setHighlighted(
-        (current) => (current - 1 + suggestions.length) % suggestions.length
-      );
+      setHighlighted((active - 1 + options.length) % options.length);
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      apply(suggestions[highlighted].tag);
+      choose(active);
     } else if (event.key === 'Escape') {
       setOpen(false);
     }
@@ -145,7 +159,7 @@ export function TagSearchInput({
         aria-expanded={visible}
         aria-autocomplete="list"
         aria-controls={visible ? `${id}-suggestions` : undefined}
-        aria-activedescendant={visible ? `${id}-suggestion-${highlighted}` : undefined}
+        aria-activedescendant={visible ? `${id}-suggestion-${active}` : undefined}
         autoComplete="off"
         onChange={(event) => {
           onChange(event.target.value);
@@ -198,28 +212,34 @@ export function TagSearchInput({
           id={`${id}-suggestions`}
           className="gallery-tag-suggestions"
           role="listbox"
+          aria-label={showingRecent ? 'Recent searches' : 'Tag suggestions'}
         >
-          {suggestions.map((suggestion, index) => (
-            <li key={suggestion.tag} role="presentation">
+          {showingRecent ? (
+            <li role="presentation" className="gallery-tag-suggestions-caption">
+              Recent searches
+            </li>
+          ) : null}
+          {options.map((option, index) => (
+            <li key={option.label} role="presentation">
               <button
                 type="button"
                 role="option"
                 id={`${id}-suggestion-${index}`}
-                aria-selected={index === highlighted}
+                aria-selected={index === active}
                 className={`gallery-tag-suggestion${
-                  index === highlighted ? ' is-highlighted' : ''
+                  index === active ? ' is-highlighted' : ''
                 }`}
                 onMouseEnter={() => setHighlighted(index)}
-                onClick={() => apply(suggestion.tag)}
+                onClick={() => choose(index)}
               >
                 <span className="gallery-tag-suggestion-name">
-                  {suggestion.tag}
+                  {option.label}
                 </span>
                 {/* Vocabulary tags carry no count: the library holds none
                     of them yet, and a bare "0" reads as a broken number. */}
-                {suggestion.files > 0 ? (
+                {option.files > 0 ? (
                   <span className="gallery-tag-suggestion-count">
-                    {suggestion.files}
+                    {option.files}
                   </span>
                 ) : null}
               </button>
