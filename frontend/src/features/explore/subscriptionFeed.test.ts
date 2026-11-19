@@ -51,7 +51,7 @@ describe('collectSubscriptionPosts', () => {
     expect(result.hasMore).toBe(false);
   });
 
-  it('reads past pages of read posts until it finds one to show', async () => {
+  it('stops after three live pages of read posts and leaves the rest to Show more', async () => {
     let page = 0;
 
     const result = await collectSubscriptionPosts({
@@ -61,18 +61,18 @@ describe('collectSubscriptionPosts', () => {
       fetchPage: async () => {
         page += 1;
         return {
-          posts: [post(page < 6 ? `read-${page}` : `new-${page}`)],
+          posts: [post(`read-${page}`)],
           hasMore: true,
           nextCursor: `page-${page + 1}`,
           siteErrors: []
         };
       },
-      keep: (entry) => entry.remoteId.startsWith('new')
+      keep: () => false
     });
 
-    expect(page).toBe(6);
-    expect(result.posts.map((entry) => entry.remoteId)).toEqual(['new-6']);
-    expect(result.nextCursor).toBe('page-7');
+    expect(page).toBe(3);
+    expect(result.posts).toEqual([]);
+    expect(result.nextCursor).toBe('page-4');
     expect(result.hasMore).toBe(true);
   });
 
