@@ -29,6 +29,13 @@ test.describe('desktop video controls', () => {
       await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.paused)).toBe(false);
 
       const controls = page.locator('.video-controls');
+      // The handle's look belongs to the thumb only: on the whole slider it hides the track.
+      const sliders = controls.locator('.video-range');
+      await expect(sliders.first()).toBeVisible();
+      for (const slider of await sliders.all()) {
+        await expect(slider).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+        expect((await slider.boundingBox())?.width ?? 0).toBeGreaterThan(40);
+      }
       const fullscreen = page.locator('.file-detail-panel-current .file-detail-fullscreen-btn');
       await page.mouse.move(box.x + box.width * 0.25, box.y + box.height / 2);
       await page.clock.install();
