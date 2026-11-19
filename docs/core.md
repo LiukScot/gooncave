@@ -22,7 +22,9 @@ stays on the device in browser storage. Extra settings, keyboard shortcuts
 and the blacklist are saved in SQLite. Explore searches the nine booru engines;
 Accounts configures their addresses and device-only credentials. Favorites import and remote add/remove work for e621/e926, Danbooru,
 Gelbooru/Rule34, FurAffinity and Szurubooru. Remote votes work on e621/e926,
-Danbooru and Szurubooru. Subscriptions read followed searches and
+Danbooru and Szurubooru. e621-type sites are read in both post formats of
+their API, the wrapped v1 and the bare v2 that e621 and e926 send since
+November 2026, with `mode=extended` so tags keep their categories. Subscriptions read followed searches and
 FurAffinity's watchlist live from the sites in one feed. File source matching uses Fluffle
 and SauceNAO and refreshes tags from configured booru sites. Optional WD14
 tagging runs on Linux x86-64 computers with AVX2 and on the iPhone. The gallery stacks visual
@@ -540,15 +542,18 @@ provider fixtures; they do not verify live-provider accounts or quotas.
 
 ## Cache of site answers
 
-The core keeps what it loaded from the sites in `<data>/cache`, one file per
-entry, listed in `cache_entries` with its size, type and the times it was
+The core keeps what it loaded from the sites in `<data>/cache`, or on the
+iPhone in a folder of `Library/Caches`, which iOS may empty when space runs low and leaves
+out of backups. One file per entry, listed in `cache_entries` with its size, type and the times it was
 fetched and last used. `cache_usage` holds the total, kept by triggers.
-Library thumbnails and originals are not part of it.
+Library thumbnails and originals are not part of it. An entry whose file is gone reads as nothing
+kept.
 
 | Data | Kept for | When the site is asked again |
 | --- | --- | --- |
 | Previews, samples and GIF previews (`/explore/media`) | Until evicted | Never: a signed link names one file |
-| Post, tags, description, related posts and pools (Explore and library detail) | Until evicted | In the background once the copy is a day old; the new answer is shown next time |
+| Single post (opened by link, pool pages, library detail) | Until evicted | Every time, because it says whether you favorited or voted it; the copy answers only when the site does not |
+| Tags, description, related posts and pools (Explore and library detail) | Until evicted | In the background once the copy is a day old; the new answer is shown next time. A post the site removed is forgotten |
 | Comments | Until evicted | In the background once the copy is an hour old |
 | Explore search pages and pool pages | Until evicted | Always; the copy answers only when the site cannot be reached |
 | Each Subscriptions search page | Until evicted | Once the copy is five minutes old; the feed is still merged live |

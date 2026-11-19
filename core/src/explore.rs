@@ -388,7 +388,8 @@ pub(crate) async fn cached_search(
     .await?;
     serde_json::from_value(found).map_err(|_| Error::Storage("A cached search is damaged.".into()))
 }
-/// `booru_engines::single`, answered from the cache and refreshed after a day.
+/// `booru_engines::single`, asked of the site every time because it says whether the owner
+/// favorited or voted the post; the saved copy answers when the site cannot be reached.
 pub(crate) async fn cached_post(
     db: &Database,
     t: &Transport,
@@ -397,7 +398,7 @@ pub(crate) async fn cached_post(
 ) -> Result<Option<Value>> {
     let key = format!("post:{}:{id}", site.id);
     let (t, site, id) = (t.clone(), site.clone(), id.to_owned());
-    let post = cache::remember(db, &key, Keep::Revalidate(cache::DAY), move || async move {
+    let post = cache::remember(db, &key, Keep::Fallback, move || async move {
         Ok(json!(booru_engines::single(&t, &site, &id).await?))
     })
     .await?;
@@ -865,7 +866,7 @@ async fn media(
             .map_err(|_| booru_http::remote("The thumbnail request was cancelled."))?;
         let response = Transport::default().get(url, headers).await?;
         let (mime, bytes) = motion_preview(response, &db.library().temp).await?;
-        return Ok(kept(&db, &key, mime, bytes).await);
+        return Ok(kept(&db, &key, mime, bytes));
     }
     if let Some(range) = range.clone() {
         headers.insert(header::RANGE, range);
@@ -926,7 +927,7 @@ async fn media(
             bytes.extend_from_slice(&chunk);
         }
         drop(slot);
-        return Ok(kept(&db, &key, mime, bytes).await);
+        return Ok(kept(&db, &key, mime, bytes));
     }
     let stream = futures_util::stream::try_unfold(
         (response, 0usize, slot),
@@ -971,12 +972,16 @@ async fn media(
     Ok(result)
 }
 
-/// Answers with media and keeps it in the cache.
-async fn kept(db: &Database, key: &str, mime: String, bytes: Vec<u8>) -> Response {
-    // The picture still shows when it cannot be kept.
-    if let Err(error) = cache::put(db, key, "media", &mime, &bytes).await {
-        eprintln!("[developer] Cannot keep a picture in the cache: {error}");
-    }
+/// Answers with media and keeps it in the cache once the answer is on its way.
+fn kept(db: &Database, key: &str, mime: String, bytes: Vec<u8>) -> Response {
+    let bytes = axum::body::Bytes::from(bytes);
+    let (db, key, saved, kind) = (db.clone(), key.to_owned(), bytes.clone(), mime.clone());
+    tokio::spawn(async move {
+        // The picture still shows when it cannot be kept.
+        if let Err(error) = cache::put(&db, &key, "media", &kind, &saved).await {
+            eprintln!("[developer] Cannot keep a picture in the cache: {error}");
+        }
+    });
     ([(header::CONTENT_TYPE, mime)], bytes).into_response()
 }
 

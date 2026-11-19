@@ -128,6 +128,16 @@ impl Database {
     }
     /// Opens `library.sqlite` in `data_directory` and creates `library_root` when missing.
     pub fn open(data_directory: &Path, library_root: &Path) -> Result<Self> {
+        Self::open_with_cache(data_directory, library_root, &data_directory.join("cache"))
+    }
+    /// Like `open`, with what the core keeps of the sites in `cache_directory`: a folder the
+    /// system may empty and leaves out of backups, such as iOS's `Library/Caches`. It must be on
+    /// the same volume as `data_directory`, because entries are moved there from its temp folder.
+    pub fn open_with_cache(
+        data_directory: &Path,
+        library_root: &Path,
+        cache_directory: &Path,
+    ) -> Result<Self> {
         std::fs::create_dir_all(data_directory)?;
         crate::app_log::start(data_directory);
         std::fs::create_dir_all(library_root)?;
@@ -141,7 +151,7 @@ impl Database {
             _ => {}
         }
         std::fs::create_dir_all(&temp)?;
-        let cache = data_directory.join("cache");
+        let cache = cache_directory.to_path_buf();
         std::fs::create_dir_all(&cache)?;
         let database_path = data_directory.join("library.sqlite");
         let mut connection = connect(&database_path)?;

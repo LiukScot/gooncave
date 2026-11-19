@@ -143,8 +143,12 @@ impl Server {
         let trimming = {
             let database = self.database.clone();
             tokio::spawn(async move {
-                if let Err(error) = crate::cache::evict(&database).await {
-                    eprintln!("Cannot fit the cache to its limit: {error}");
+                let trimmed = match crate::cache::sweep(&database).await {
+                    Ok(()) => crate::cache::evict(&database).await,
+                    Err(error) => Err(error),
+                };
+                if let Err(error) = trimmed {
+                    eprintln!("[developer] Cannot fit the cache to its limit: {error}");
                 }
             })
         };
@@ -321,8 +325,11 @@ async fn update_settings(
     let updated = database
         .call(move |connection| settings::update(connection, &section, patch))
         .await?;
+    // The new limit is saved either way; the next write trims again.
     if limit_changed {
-        crate::cache::evict(&database).await?;
+        if let Err(error) = crate::cache::evict(&database).await {
+            eprintln!("[developer] Cannot fit the cache to its new limit: {error}");
+        }
     }
     Ok(Json(updated))
 }

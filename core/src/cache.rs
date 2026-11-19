@@ -11,7 +11,7 @@ use axum::{extract::State, Json, Router};
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{future::Future, path::PathBuf};
+use std::{collections::BTreeSet, future::Future, path::PathBuf, sync::Mutex};
 
 pub(crate) const HOUR: i64 = 60 * 60;
 pub(crate) const DAY: i64 = 24 * HOUR;
@@ -24,6 +24,8 @@ const KEEP_AFTER_EVICTION: f64 = 0.9;
 /// Use times closer than this are not written again: the order only needs to tell old from new.
 const TOUCH_AFTER: i64 = HOUR;
 static EVICTING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// Keys a background refresh is already asking the site for.
+static REFRESHING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 
 /// How long a saved answer stands for the site's.
 pub(crate) enum Keep {
@@ -156,10 +158,9 @@ pub(crate) async fn put(
 
 /// Removes the entries used least recently until the cache fits its limit.
 pub(crate) async fn evict(db: &Database) -> Result<()> {
-    // One eviction at a time: two would pick the same entries.
-    let Ok(_running) = EVICTING.try_lock() else {
-        return Ok(());
-    };
+    // One eviction at a time: two would pick the same entries. A later one waits rather than
+    // returning, because it may have been asked for by a lower limit the running one never read.
+    let _running = EVICTING.lock().await;
     let doomed = db
         .call(|c| {
             let limit = read_setting(c, "extra.cacheLimitGb", &json!(DEFAULT_LIMIT_GB))?
@@ -212,6 +213,69 @@ pub(crate) async fn evict(db: &Database) -> Result<()> {
     Ok(())
 }
 
+/// Removes the saved copy of `key`.
+async fn forget(db: &Database, key: &str) -> Result<()> {
+    let id = id(key);
+    match tokio::fs::remove_file(path(db, &id)).await {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error.into()),
+        _ => {}
+    }
+    db.call(move |c| {
+        c.execute("DELETE FROM cache_entries WHERE id = ?1", [&id])?;
+        Ok(())
+    })
+    .await
+}
+
+/// Removes files of the cache folder that no entry names. A `get` that finds a row before `put`
+/// has moved its file in forgets the row, and the file then arrives unlisted.
+pub(crate) async fn sweep(db: &Database) -> Result<()> {
+    let listed: BTreeSet<String> = db
+        .call(|c| {
+            let mut ids = c.prepare("SELECT id FROM cache_entries")?;
+            let ids = ids
+                .query_map([], |r| r.get::<_, String>(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(ids)
+        })
+        .await?;
+    let mut entries = tokio::fs::read_dir(&db.library().cache).await?;
+    let mut removed = 0;
+    while let Some(entry) = entries.next_entry().await? {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // Only names `id` makes: the folder is the cache's alone, but a stray file is not ours.
+        let ours = name.len() == 64 && name.bytes().all(|b| b.is_ascii_hexdigit());
+        if ours && !listed.contains(&name) {
+            tokio::fs::remove_file(entry.path()).await?;
+            removed += 1;
+        }
+    }
+    if removed > 0 {
+        eprintln!("[developer] Removed {removed} cache files that no entry listed");
+    }
+    Ok(())
+}
+
+/// Takes `key` for one background refresh; dropping the claim frees it.
+struct Refreshing(String);
+impl Refreshing {
+    fn claim(key: &str) -> Option<Self> {
+        REFRESHING
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(key.to_owned())
+            .then(|| Self(key.to_owned()))
+    }
+}
+impl Drop for Refreshing {
+    fn drop(&mut self) {
+        REFRESHING
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&self.0);
+    }
+}
+
 /// The site's answer for `key`, or the saved copy as `keep` allows. `fetch` asks the site.
 pub(crate) async fn remember<F, Fut>(
     db: &Database,
@@ -235,15 +299,22 @@ where
     };
     match (keep, saved) {
         (Keep::Revalidate(max), Some((value, age))) => {
-            if age > max {
+            if let Some(claim) = (age > max).then(|| Refreshing::claim(key)).flatten() {
                 let (db, key) = (db.clone(), key.to_owned());
                 tokio::spawn(async move {
+                    let _claim = claim;
                     match fetch().await {
                         Ok(fresh) => {
                             if let Err(error) = save(&db, &key, &fresh).await {
                                 eprintln!(
                                     "[developer] Cannot save a refreshed site answer: {error}"
                                 );
+                            }
+                        }
+                        // The site removed it: the copy must not keep showing it.
+                        Err(error) if crate::booru_http::is_not_found(&error) => {
+                            if let Err(error) = forget(&db, &key).await {
+                                eprintln!("[developer] Cannot forget a removed post's saved answer: {error}");
                             }
                         }
                         Err(error) => {
@@ -264,7 +335,16 @@ where
                 Ok(fresh)
             }
             // A post the site removed is gone; any other failure may pass.
-            Err(error) if crate::booru_http::is_not_found(&error) => Err(error),
+            Err(error) if crate::booru_http::is_not_found(&error) => {
+                if saved.is_some() {
+                    if let Err(error) = forget(db, key).await {
+                        eprintln!(
+                            "[developer] Cannot forget a removed post's saved answer: {error}"
+                        );
+                    }
+                }
+                Err(error)
+            }
             Err(error) => match saved {
                 Some((value, _)) => {
                     eprintln!("[developer] A site could not be reached; its saved answer is shown: {error}");
@@ -301,6 +381,30 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
         (dir, db)
+    }
+
+    #[tokio::test]
+    async fn a_cache_folder_the_system_emptied_reads_as_nothing_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let caches = dir.path().join("Caches");
+        let db = Database::open_with_cache(
+            &dir.path().join("data"),
+            &dir.path().join("library"),
+            &caches,
+        )
+        .unwrap();
+        put(&db, "post:1", "post", "application/json", b"{}")
+            .await
+            .unwrap();
+        let file = caches.join(id("post:1"));
+        assert!(file.is_file());
+        std::fs::remove_file(file).unwrap();
+        assert!(get(&db, "post:1").await.unwrap().is_none());
+        let used: i64 = db
+            .call(|c| Ok(c.query_row("SELECT bytes FROM cache_usage", [], |r| r.get(0))?))
+            .await
+            .unwrap();
+        assert_eq!(used, 0);
     }
 
     async fn age(db: &Database, key: &str, seconds: i64) {
@@ -405,6 +509,51 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
         panic!("the background refresh did not save the new answer");
+    }
+
+    #[tokio::test]
+    async fn a_post_the_site_removed_stops_answering_from_the_cache() {
+        let (_dir, db) = open();
+        let calls = Arc::new(AtomicUsize::new(0));
+        remember(
+            &db,
+            "text:a",
+            Keep::Revalidate(DAY),
+            answer(json!("old"), &calls),
+        )
+        .await
+        .unwrap();
+        age(&db, "text:a", DAY + 1).await;
+        let removed =
+            || std::future::ready(Err(crate::booru_http::remote(crate::booru_http::NOT_FOUND)));
+        let shown = remember(&db, "text:a", Keep::Revalidate(DAY), removed)
+            .await
+            .unwrap();
+        assert_eq!(shown, json!("old"));
+        for _ in 0..100 {
+            if get(&db, "text:a").await.unwrap().is_none() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("the copy of a removed post was kept");
+    }
+
+    #[tokio::test]
+    async fn the_sweep_removes_only_cache_files_no_entry_lists() {
+        let (_dir, db) = open();
+        put(&db, "post:1", "post", "application/json", b"{}")
+            .await
+            .unwrap();
+        let folder = db.library().cache.clone();
+        let unlisted = folder.join(id("post:2"));
+        std::fs::write(&unlisted, b"{}").unwrap();
+        let stray = folder.join("notes.txt");
+        std::fs::write(&stray, b"not the cache's").unwrap();
+        sweep(&db).await.unwrap();
+        assert!(!unlisted.exists());
+        assert!(stray.exists());
+        assert!(get(&db, "post:1").await.unwrap().is_some());
     }
 
     #[tokio::test]

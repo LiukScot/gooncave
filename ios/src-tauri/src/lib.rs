@@ -85,6 +85,8 @@ struct Serving {
 struct Core {
     runtime: tokio::runtime::Runtime,
     data: PathBuf,
+    /// `Library/Caches` on iOS: what the core keeps of the sites (`Database::open_with_cache`).
+    cache: PathBuf,
     database: Mutex<Option<Database>>,
     serving: Mutex<Option<Serving>>,
     /// The library's address. The saved port keeps it the same across restarts.
@@ -100,7 +102,11 @@ impl Core {
         let mut database = self.database.lock().unwrap_or_else(|p| p.into_inner());
         if database.is_none() {
             let library = self.data.join("library");
-            *database = Some(Database::open(&self.data, &library).map_err(|e| e.to_string())?);
+            // iOS may empty the cache folder when space runs low and keeps it out of backups.
+            *database = Some(
+                Database::open_with_cache(&self.data, &library, &self.cache)
+                    .map_err(|e| e.to_string())?,
+            );
         }
         let database = database.clone().expect("opened above");
         #[cfg(target_os = "ios")]
@@ -375,6 +381,9 @@ pub fn run() {
             #[cfg(target_os = "ios")]
             gooncave_core::decoder::register(Box::new(media::Native));
             let data = app.path().app_data_dir()?;
+            // A folder of its own: the cache removes files it does not list, and WebKit keeps
+            // its own caches in the same place.
+            let cache = app.path().app_cache_dir()?.join("sites");
             // Before the Swift library loads, so a failure to load it reaches Report issue.
             gooncave_core::app_log::start(&data);
             #[cfg(target_os = "ios")]
@@ -386,6 +395,7 @@ pub fn run() {
             let core = Arc::new(Core {
                 runtime: tokio::runtime::Runtime::new()?,
                 data,
+                cache,
                 database: Mutex::default(),
                 serving: Mutex::default(),
                 origin: OnceLock::new(),

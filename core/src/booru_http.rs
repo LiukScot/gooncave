@@ -132,7 +132,7 @@ pub(crate) fn url(raw: &str) -> Result<Url> {
     Ok(url)
 }
 
-const NOT_FOUND: &str =
+pub(crate) const NOT_FOUND: &str =
     "The post or API address was not found. Check the site address in Accounts.";
 /// Whether the site answered that the requested post does not exist.
 pub(crate) fn is_not_found(error: &Error) -> bool {
