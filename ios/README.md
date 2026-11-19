@@ -146,8 +146,8 @@ verify that taps and scrolling work.
 - iOS suspends web view JavaScript in the background. Background work runs in
   the Rust core.
 - While the app is closed to the Home Screen, iOS wakes it from time to time
-  (`Background.swift`). Each time the app reads new favorites, refreshes
-  subscriptions, and syncs the database with the WebDAV folder. iOS decides
+  (`Background.swift`). Each time the app reads new favorites and syncs the
+  database with the WebDAV folder. Subscriptions are read when you open them. iOS decides
   when and how often, and gives the longest runs while the phone charges;
   nothing runs after the app is force quit.
 - When the app leaves the screen, it uploads its last changes to the WebDAV

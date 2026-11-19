@@ -707,7 +707,8 @@ type SubscriptionFeedResponse = {
   posts: ExplorePost[];
   hasMore: boolean;
   nextCursor: string | null;
-  ready: boolean;
+  /** Sites that could not be read; they leave the feed until it is reloaded. */
+  siteErrors: ExploreSiteError[];
 };
 export type ProviderRun = {
   id: string;
@@ -1383,20 +1384,6 @@ export const api = {
       signal
     });
     return handle<{ keys: string[] }>(res);
-  },
-  /** Without `siteIds` every enabled site is refreshed. */
-  refreshExploreSubscriptions: async ({
-    rounds = 1,
-    siteIds,
-    signal
-  }: { rounds?: number; siteIds?: string[]; signal?: AbortSignal } = {}) => {
-    const res = await apiFetch(`${API_BASE}/explore/subscriptions/refresh`, {
-      method: 'POST',
-      headers: jsonHeaders,
-      body: JSON.stringify({ rounds, sites: siteIds }),
-      signal
-    });
-    return handle<{ errors: ExploreSiteError[] }>(res);
   },
   exploreVote: async (payload: {
     siteId: string;

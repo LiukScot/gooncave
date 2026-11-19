@@ -1,11 +1,11 @@
-import type { ExplorePost, PoolSubscription } from '@/api';
+import type { ExplorePost, ExploreSiteError, PoolSubscription } from '@/api';
 import { normalizeTag } from '@/features/settings/blacklist';
 
 type SubscriptionPage = {
   posts: ExplorePost[];
   hasMore: boolean;
   nextCursor: string | null;
-  ready?: boolean;
+  siteErrors: ExploreSiteError[];
 };
 
 /** Mirrors the backend's `normalizeSubscriptionSearch`: the form searches are stored in. */
@@ -44,111 +44,49 @@ export const subscriptionReasons = (
   ];
 };
 
+/** Feed pages one load may read: each page asks every site, so a feed of read posts stops here. */
+const MAX_PAGES_PER_LOAD = 3;
+
+/**
+ * Reads feed pages until `target` posts pass `keep`, the feed ends, or
+ * MAX_PAGES_PER_LOAD pages were read. Each page is read live from the sites.
+ */
 export const collectSubscriptionPosts = async (options: {
   cursor: string | null;
   target: number;
   signal: AbortSignal;
   fetchPage: (cursor: string | null) => Promise<SubscriptionPage>;
   keep: (post: ExplorePost) => boolean;
-  stopWhenNotReady?: boolean;
 }) => {
   const posts: ExplorePost[] = [];
+  const siteErrors: ExploreSiteError[] = [];
   let nextCursor = options.cursor;
   let hasMore = true;
-  const visitedCursors = new Set<string | null>();
-  while (
-    posts.length < options.target &&
-    hasMore &&
-    !visitedCursors.has(nextCursor)
+  for (
+    let pages = 0;
+    pages < MAX_PAGES_PER_LOAD && posts.length < options.target && hasMore;
+    pages += 1
   ) {
-    visitedCursors.add(nextCursor);
-    const page = await options.fetchPage(nextCursor);
+    let page: SubscriptionPage;
+    try {
+      page = await options.fetchPage(nextCursor);
+    } catch (error) {
+      // Posts already read stay on screen; Show more retries from the same cursor.
+      if (pages === 0 || options.signal.aborted) throw error;
+      siteErrors.push({
+        siteId: 'subscriptions',
+        siteName: 'Subscriptions',
+        error: error instanceof Error ? error.message : String(error)
+      });
+      break;
+    }
     if (options.signal.aborted) break;
-    if (options.stopWhenNotReady && page.ready === false) break;
     posts.push(...page.posts.filter(options.keep));
+    siteErrors.push(...page.siteErrors);
     nextCursor = page.nextCursor;
     hasMore = page.hasMore && nextCursor !== null;
   }
-  return { posts, nextCursor, hasMore };
-};
-
-type LoadOptions<RefreshResult> = Parameters<typeof collectSubscriptionPosts>[0] & {
-  refresh: () => Promise<RefreshResult>;
-};
-
-/** How many saved-feed reads, each with its backfill, one load may chain. */
-const MAX_LOADS = 3;
-
-/**
- * Reads the next posts, backfilling from the sites where the saved feed ends.
- * Below `minPosts` kept posts it reads on, up to MAX_LOADS times: with most
- * posts already read, one backfill can end with a single post on screen.
- */
-export const loadSubscriptionPosts = async <RefreshResult>(
-  options: LoadOptions<RefreshResult> & { minPosts?: number }
-) => {
-  let result = await loadSubscriptionPostsOnce(options);
-  const posts = [...result.posts];
-  let refreshError = result.refreshError;
-  for (
-    let load = 1;
-    load < MAX_LOADS &&
-    posts.length < (options.minPosts ?? 0) &&
-    result.hasMore &&
-    result.nextCursor !== null &&
-    !options.signal.aborted;
-    load += 1
-  ) {
-    result = await loadSubscriptionPostsOnce({
-      ...options,
-      cursor: result.nextCursor,
-      target: options.target - posts.length
-    });
-    posts.push(...result.posts);
-    refreshError ??= result.refreshError;
-  }
-  return { ...result, posts, refreshError };
-};
-
-const loadSubscriptionPostsOnce = async <RefreshResult>(
-  options: LoadOptions<RefreshResult>
-) => {
-  const probe = await options.fetchPage(options.cursor);
-  const collectFromProbe = (stopWhenNotReady: boolean) => {
-    let firstPage: SubscriptionPage | null = probe;
-    return collectSubscriptionPosts({
-      ...options,
-      stopWhenNotReady,
-      fetchPage: async (cursor) => {
-        if (!firstPage) return options.fetchPage(cursor);
-        const current = firstPage;
-        firstPage = null;
-        return current;
-      }
-    });
-  };
-  if (probe.ready !== false) {
-    return {
-      ...(await collectFromProbe(true)),
-      refreshed: null,
-      refreshError: null
-    };
-  }
-  let refreshed: RefreshResult;
-  try {
-    refreshed = await options.refresh();
-  } catch (error: unknown) {
-    return {
-      ...(await collectFromProbe(false)),
-      refreshed: null,
-      refreshError: error
-    };
-  }
-  const page = await collectSubscriptionPosts({
-    ...options,
-    stopWhenNotReady: true
-  });
-  return { ...page, refreshed, refreshError: null };
+  return { posts, nextCursor, hasMore, siteErrors };
 };
 
 export type FeedDay<T> = {

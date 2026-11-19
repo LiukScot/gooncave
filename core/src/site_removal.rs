@@ -11,7 +11,7 @@
 
 use crate::{
     db::{Database, OWNER_ID},
-    library, subscription_store, Error, Result,
+    library, Error, Result,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::PathBuf;
@@ -146,7 +146,6 @@ pub(crate) fn remove_site(
         "DELETE FROM declined_favorites WHERE site_id = ?1 AND user_id = ?2",
         params![id, OWNER_ID],
     )?;
-    subscription_store::reset(c, Some(&id), false)?;
     c.execute(
         "DELETE FROM user_booru_sites WHERE id = ?1 AND user_id = ?2",
         params![id, OWNER_ID],

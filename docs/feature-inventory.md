@@ -22,7 +22,7 @@ here in the same change.
 | Explore | `/app/explore`, `frontend/src/features/explore/` | `GET /explore/posts`, `GET /explore/post`, `GET /explore/post-tags`, `GET /explore/post-text`, `GET /explore/post-comments`, `POST /explore/gallery-matches` | Search configured sites, open posts, and load more without moving shown posts. Posts already in the library are marked. An open post lists its comments after its tags, on sites that publish them. A library file lists the comments of the post it was saved from (`GET /files/:id/comments`). |
 | Explore actions | `frontend/src/features/explore/` | `POST /explore/vote`, `POST /explore/favorite`, `POST /explore/unfavorite` | Vote on a post and add or remove a booru favorite where the engine supports it. |
 | Booru previews | `frontend/src/features/explore/` | `GET /explore/media` | Explore previews load through the local cache; old previews are removed. |
-| Subscriptions feed | `/app/explore?feed=subscribed`, `frontend/src/features/explore/` | `GET /explore/subscriptions`, `POST /explore/subscriptions/refresh` | Browse the feed of followed artists and tags, and refresh it. |
+| Subscriptions feed | `/app/explore?feed=subscribed`, `frontend/src/features/explore/` | `GET /explore/subscriptions` | Browse the feed of followed artists and tags, read live from the sites. |
 | Read marks and History | `/app/explore?feed=history`, `frontend/src/features/read-marks/`, `frontend/src/features/explore/` | `POST /read-marks`, `DELETE /read-marks`, `GET /read-marks/history` | Mark files and posts as read while scrolling or opening them; the Unread only filter hides them, and the History page lists the read posts and the files opened in the Gallery, newest first. Turning History off in Extra deletes them. |
 | Offline mode | `frontend/src/lib/online.ts`, `frontend/src/features/shell/OfflineChip.tsx`, `frontend/src/features/shell/OfflineView.tsx` | `GET /files?location=LOCAL` | Without a network the page heading says Offline and the Gallery shows only downloaded files. History marks what cannot open. Explore, Subscriptions and Pools ask to reconnect. |
 | Tag search and autocomplete | `frontend/src/features/library/` | `GET /tags/suggest` | Search with booru syntax (`a b`, `~a ~b`, `-a`, `score:>5`) and get suggestions from the library's tags. |
@@ -57,7 +57,6 @@ These jobs run in the core without a route of their own.
 | Tag database refresh | The alias, implication and category tables are imported again each week. |
 | WD14 backfill | Files without WD14 tags get them. |
 | Missing source scan | Files without a found source are matched with SauceNAO and Fluffle. |
-| Subscription feed refresh | The feed picks up new posts from followed artists and tags. |
 | Duplicate policy runs | A confirmed policy runs again when the library changes. |
 | Preview cache cleanup | Old and least recently viewed booru previews are removed. |
 

@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   collectSubscriptionPosts,
   groupFeedByDay,
-  loadSubscriptionPosts,
   subscriptionActionState,
   subscriptionReasons
 } from './subscriptionFeed';
@@ -15,17 +14,19 @@ const post = (remoteId: string): ExplorePost =>
   ({ remoteId }) as ExplorePost;
 
 describe('collectSubscriptionPosts', () => {
-  it('advances the index cursor until a filtered page is filled', async () => {
+  it('follows the cursor until a filtered page is filled', async () => {
     const pages = [
       {
         posts: [post('hidden'), post('first')],
         hasMore: true,
-        nextCursor: 'second-page'
+        nextCursor: 'second-page',
+        siteErrors: [{ siteId: 'broken', siteName: 'Broken', error: 'Offline' }]
       },
       {
         posts: [post('second')],
         hasMore: false,
-        nextCursor: 'end'
+        nextCursor: null,
+        siteErrors: []
       }
     ];
     const cursors: Array<string | null> = [];
@@ -46,10 +47,11 @@ describe('collectSubscriptionPosts', () => {
       'first',
       'second'
     ]);
+    expect(result.siteErrors.map((error) => error.siteId)).toEqual(['broken']);
     expect(result.hasMore).toBe(false);
   });
 
-  it('keeps reading the local index until it fills an unread page', async () => {
+  it('stops after three live pages of read posts and leaves the rest to Show more', async () => {
     let page = 0;
 
     const result = await collectSubscriptionPosts({
@@ -59,167 +61,40 @@ describe('collectSubscriptionPosts', () => {
       fetchPage: async () => {
         page += 1;
         return {
-          posts: [post(page < 7 ? `read-${page}` : `unread-${page}`)],
-          hasMore: page < 8,
-          nextCursor: page < 8 ? `page-${page + 1}` : null
-        };
-      },
-      keep: (entry) => entry.remoteId.startsWith('unread-')
-    });
-
-    expect(page).toBe(8);
-    expect(result.posts.map((entry) => entry.remoteId)).toEqual([
-      'unread-7',
-      'unread-8'
-    ]);
-    expect(result.hasMore).toBe(false);
-  });
-
-  it('refreshes before reading an existing partial index', async () => {
-    const calls: string[] = [];
-    let ready = false;
-
-    const result = await loadSubscriptionPosts({
-      cursor: null,
-      target: 40,
-      signal: new AbortController().signal,
-      refresh: async () => {
-        calls.push('refresh');
-        ready = true;
-        return { errors: [] };
-      },
-      fetchPage: async () => {
-        calls.push('read');
-        return {
-          posts: [post('booru'), post('furaffinity')],
-          hasMore: false,
-          nextCursor: null,
-          ready
-        };
-      },
-      keep: () => true
-    });
-
-    expect(calls).toEqual(['read', 'refresh', 'read']);
-    expect(result.posts.map((entry) => entry.remoteId)).toEqual([
-      'booru',
-      'furaffinity'
-    ]);
-    expect(result.refreshed).toEqual({ errors: [] });
-    expect(result.refreshError).toBeNull();
-  });
-
-  it('reads on while too few unread posts were found, within its cap', async () => {
-    const cursors: Array<string | null> = [];
-    let refreshes = 0;
-
-    const result = await loadSubscriptionPosts({
-      cursor: null,
-      target: 40,
-      minPosts: 3,
-      signal: new AbortController().signal,
-      refresh: async () => {
-        refreshes += 1;
-        return { errors: [] };
-      },
-      // Every read stops at a part of the feed not yet backfilled.
-      fetchPage: async (cursor) => {
-        cursors.push(cursor);
-        const n = cursors.length;
-        return {
-          posts: [post(`p${n}`)],
+          posts: [post(`read-${page}`)],
           hasMore: true,
-          nextCursor: `c${n}`,
-          ready: n % 2 === 1
+          nextCursor: `page-${page + 1}`,
+          siteErrors: []
         };
       },
-      keep: () => true
+      keep: () => false
     });
 
-    expect(result.posts.map((entry) => entry.remoteId)).toEqual(['p1', 'p3', 'p5']);
-    expect(refreshes).toBe(0);
-    expect(cursors.length).toBeLessThanOrEqual(9);
-  });
-
-  it('uses a ready local index without waiting for a remote refresh', async () => {
-    const calls: string[] = [];
-
-    const result = await loadSubscriptionPosts({
-      cursor: null,
-      target: 40,
-      signal: new AbortController().signal,
-      refresh: async () => {
-        calls.push('refresh');
-        return { errors: [] };
-      },
-      fetchPage: async () => {
-        calls.push('read');
-        return {
-          posts: [post('cached')],
-          hasMore: false,
-          nextCursor: null,
-          ready: true
-        };
-      },
-      keep: () => true
-    });
-
-    expect(calls).toEqual(['read']);
-    expect(result.posts.map((entry) => entry.remoteId)).toEqual(['cached']);
-    expect(result.refreshed).toBeNull();
-    expect(result.refreshError).toBeNull();
-  });
-
-  it('keeps the cursor before a page that is still not indexed deeply enough', async () => {
-    const cursors: Array<string | null> = [];
-
-    const result = await loadSubscriptionPosts({
-      cursor: 'cursor-before-gap',
-      target: 40,
-      signal: new AbortController().signal,
-      refresh: async () => ({ errors: [] }),
-      fetchPage: async (cursor) => {
-        cursors.push(cursor);
-        return {
-          posts: [post('furaffinity-only')],
-          hasMore: true,
-          nextCursor: 'cursor-after-gap',
-          ready: false
-        };
-      },
-      keep: () => true
-    });
-
-    expect(cursors).toEqual(['cursor-before-gap', 'cursor-before-gap']);
+    expect(page).toBe(3);
     expect(result.posts).toEqual([]);
-    expect(result.nextCursor).toBe('cursor-before-gap');
+    expect(result.nextCursor).toBe('page-4');
     expect(result.hasMore).toBe(true);
   });
 
-  it('keeps a partial local index visible when its refresh fails', async () => {
-    const failure = new Error('refresh unavailable');
+  it('keeps the posts already read when a later page fails', async () => {
+    let calls = 0;
 
-    const result = await loadSubscriptionPosts({
+    const result = await collectSubscriptionPosts({
       cursor: null,
-      target: 40,
+      target: 5,
       signal: new AbortController().signal,
-      refresh: async () => {
-        throw failure;
+      fetchPage: async () => {
+        calls += 1;
+        if (calls === 2) throw new Error('Network down');
+        return { posts: [post('first')], hasMore: true, nextCursor: 'second', siteErrors: [] };
       },
-      fetchPage: async () => ({
-        posts: [post('cached-furaffinity')],
-        hasMore: false,
-        nextCursor: null,
-        ready: false
-      }),
       keep: () => true
     });
 
-    expect(result.posts.map((entry) => entry.remoteId)).toEqual([
-      'cached-furaffinity'
-    ]);
-    expect(result.refreshed).toBeNull();
-    expect(result.refreshError).toBe(failure);
+    expect(result.posts.map((entry) => entry.remoteId)).toEqual(['first']);
+    expect(result.nextCursor).toBe('second');
+    expect(result.hasMore).toBe(true);
+    expect(result.siteErrors[0].error).toBe('Network down');
   });
 });
 

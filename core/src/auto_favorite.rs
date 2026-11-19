@@ -93,7 +93,6 @@ async fn favorite_best(
     }
     let _guard = db.favorites.writes.lock().await;
     remote::set(t, site, &post, true).await?;
-    crate::subscription_store::favorite_override(db, &site.id, &post, true).await?;
     let (path, key, remote_id) = (file.path.clone(), provider.clone(), post.clone());
     db.call(move |c| {
         c.execute(&format!("INSERT INTO favorite_items (user_id,provider,remote_id,file_path,source_url,file_url,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,NULL,{NOW},{NOW}) ON CONFLICT(user_id,provider,remote_id) DO UPDATE SET file_path=excluded.file_path,source_url=excluded.source_url,file_url=NULL,updated_at=excluded.updated_at"),params![OWNER_ID,key,remote_id,path,url])?;

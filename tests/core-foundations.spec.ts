@@ -17,11 +17,10 @@ test('opens the gallery without login and keeps a setting after reload', async (
   await expect(setting).toBeChecked({ checked: !initial });
 });
 
-test('Subscribed shows posts the background refresh found when the feed was empty', async ({ page }) => {
+test('Subscribed reads the feed live from the sites on screen', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.request.put('/settings/subscriptions/tags', { data: { tags: ['fixture_artist'] } });
-  let refreshed = false;
-  let refreshedSites: unknown = null;
+  let requestedSites: string | null = null;
   const posts: ExplorePost[] = ['7', '8'].map((id) => ({
     remoteId: id, siteId: 'fixture', siteName: 'Fixture', engine: 'moebooru',
     previewUrl: '/favicon.png', sampleUrl: '/favicon.png', fileUrl: '/favicon.png',
@@ -36,13 +35,11 @@ test('Subscribed shows posts the background refresh found when the feed was empt
     engineCredentialSchema: 'none', sortOrder: 0
   }] } }));
   await page.route('**/explore/posts?*', (route) => route.fulfill({ json: { posts: [], siteErrors: [], sites: ['fixture'] } }));
-  await page.route('**/explore/subscriptions?*', (route) => route.fulfill({ json: {
-    posts: refreshed ? posts : [], hasMore: false, nextCursor: null, ready: true
-  } }));
-  await page.route('**/explore/subscriptions/refresh', (route) => {
-    refreshed = true;
-    refreshedSites = route.request().postDataJSON().sites;
-    return route.fulfill({ json: { errors: [] } });
+  await page.route('**/explore/subscriptions?*', (route) => {
+    requestedSites = new URL(route.request().url()).searchParams.get('sites');
+    return route.fulfill({ json: { posts, hasMore: false, nextCursor: null, siteErrors: [
+      { siteId: 'fixture', siteName: 'Fixture', error: 'The site is limiting requests. Wait a moment and try again.' }
+    ] } });
   });
   await page.route(/\/explore\/post(?:-tags|-text|-relations|-pools)?\?/, (route) => route.fulfill({ json: {
     post: posts[1], tags: posts[1].tags, title: null, description: null, parent: null, children: [], pools: []
@@ -53,8 +50,10 @@ test('Subscribed shows posts the background refresh found when the feed was empt
     await page.getByRole('link', { name: 'Subscriptions', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Subscriptions', exact: true })).toBeVisible();
     await expect(page.locator('[data-test-id="explore-card"]')).toHaveCount(2);
-    // Only the sites on screen are refreshed; refreshing every site kept the feed loading.
-    expect(refreshedSites).toEqual(['fixture']);
+    // Only the sites on screen are read.
+    expect(requestedSites).toBe('fixture');
+    // A site the live feed could not read is reported, not hidden.
+    await expect(page.locator('[data-sonner-toast]')).toContainText('Fixture: The site is limiting requests.');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   } finally {
     await page.request.put('/settings/subscriptions/tags', { data: { tags: [] } });

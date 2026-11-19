@@ -93,7 +93,6 @@ The table maps each table of the current database
 | `sync_folder_originals` | What this device last saw in the folder. |
 | Records of a file no other device can open | The file was not synced; see Media files. |
 | `duplicate_policy_runs`, `duplicate_policy_actions`, `duplicate_policy_requests` | Job history on one device. |
-| `subscription_feed_items`, `subscription_feed_sync_state` | A cache of booru results; each device refreshes it. |
 | `users`, `sessions`, `meta` | Accounts and login are removed. |
 | `user_settings` keys not listed above (grid columns, WD14, the sync connection) | Chosen per device. |
 | Appearance (mode, accent, quick buttons) | Chosen per device; stored in the browser's local storage, not in the database. |

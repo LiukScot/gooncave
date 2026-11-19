@@ -22,8 +22,8 @@ stays on the device in browser storage. Extra settings, keyboard shortcuts
 and the blacklist are saved in SQLite. Explore searches the nine booru engines;
 Accounts configures their addresses and device-only credentials. Favorites import and remote add/remove work for e621/e926, Danbooru,
 Gelbooru/Rule34, FurAffinity and Szurubooru. Remote votes work on e621/e926,
-Danbooru and Szurubooru. Subscriptions collect followed searches and
-FurAffinity's watchlist in a persistent feed. File source matching uses Fluffle
+Danbooru and Szurubooru. Subscriptions read followed searches and
+FurAffinity's watchlist live from the sites in one feed. File source matching uses Fluffle
 and SauceNAO and refreshes tags from configured booru sites. Optional WD14
 tagging runs on Linux x86-64 computers with AVX2 and on the iPhone. The gallery stacks visual
 copies into one tile, and a confirmed duplicate policy resolves them. Device
@@ -214,8 +214,7 @@ allowlist is enabled.
 | `PUT/POST /settings/subscriptions/tags` | Replace searches (`tags`) with PUT, or add one entry with POST: a normalized tag (`tag`) or a search kept as typed (`search`); up to 500 searches of 100 characters. POST answers `tags` and `artists`. A single plain name (no spaces, `~`, `-` or `:`) that is an artist is followed as an artist, as `POST /settings/subscriptions/artists` does: it is an `artist` in `tag_categories`, an `artist` tag of a library file, or sent with `artist: true`. Every other entry is a saved search. Tags are never watched on FurAffinity |
 | `POST/DELETE /settings/subscriptions/artists` | Follow/unfollow an artist (`artist`) in GoonCave's list, then sync it to each enabled FurAffinity account (watch/unwatch, confirmed by rereading the artist page); returns the full settings response. Artists also run as searches on the other sites. The sync runs on `GET /settings/subscriptions`, on these calls and in every refresh: a change on FurAffinity since the last sync is copied into the list, a change in GoonCave is copied to FurAffinity, and the first sync only imports. A failed account keeps the change and retries on the next sync. An artist FurAffinity does not know (HTTP 400, "This user cannot be found.") moves from the artists to the saved searches, so the boorus keep searching it; it is no sync error |
 | `GET/POST/DELETE /settings/subscriptions/pools` | Followed pools of existing sites: `siteId`, `siteName`, `poolId`, `name`, `postCount`, `coverUrl`. POST/DELETE take `siteId` and `poolId`; POST reads the name, page count and first-page preview from the site (e621 and Danbooru only); up to 500 pools. Synced between devices |
-| `GET /explore/subscriptions` | Cached posts in descending upload/discovery order, `sites`, opaque `cursor`, `limit` 1–100; without a cursor it starts at the newest post |
-| `POST /explore/subscriptions/refresh` | Refresh and backfill enabled sites, `rounds` 1–4, optional `sites` list of site ids (up to 200) to refresh only those; returns the errors of the refreshed sites |
+| `GET /explore/subscriptions` | Posts read live from the sites, newest first: `sites`, opaque `cursor`, `limit` 1–100; returns `posts`, `hasMore`, `nextCursor` and `siteErrors`. Without a cursor it starts at the newest post; a cursor made for other searches is refused with 400 |
 | `POST /duplicates/scan/start`, `GET /duplicates/scan/status`, `POST /duplicates/scan/cancel` | Background scan for visual copies. Files of one media type whose shapes are within 3% are compared; copies at different resolutions use the site-preview tolerance, and the duplicate policy keeps the largest. Optional `mediaType`, `pixelThreshold` (0–1, default 0.0005; mean difference, and no single sample may differ by more than 10 of 255 levels), `sampleSize` (8–256), `videoFrames` (1–8), `maxComparisons` (1–100000). A running scan answers `busy` |
 | `GET /duplicates/favorites/recheck` | `{running, percent}`: whether the one-time repair of favorite links is running and how many of the files it must settle are settled (0 to 100, kept in `favorite_link_checks`, so it survives a restart). The core starts it at launch until it has run to the end (recorded in `meta` as `favorite_links.checked`). For each library image linked from more than one post it downloads every post's preview and removes the links whose picture is not the file's (same test as `/explore/gallery-matches`). Only posts of the file's exact width and height are judged; others stay, and a file where no linked post matches keeps all its links. Posts a site would not show are tried again after 30 minutes; after 4 rounds the repair is recorded as done anyway. A stop part way resumes on the next launch, skipping settled files. It starts a file only after the app has made no request for 3 seconds, so screens the person opens are not queued behind its downloads. After each round a full favorites sync starts, so posts that lost their link are downloaded again. Posts of sites read through the browser engine (FurAffinity, Gelbooru) and GIF or video posts are left alone. A picture counts as the same when its sample matches the file with no sharp difference. Migrations `0029` and `0030` clear earlier checks so the repair runs again. |
 | `GET/PUT /duplicates/settings` | Saved policy; PUT accepts only `{ "enabled": false }` |
@@ -547,26 +546,22 @@ Other sites, Gelbooru included, search one tag at a time.
 A followed pool adds the search `pool:ID` on its own site only, sent alone.
 Followed pools stay on this device: each device gives a synced site its own ID.
 
-The core refreshes on startup and every 15 minutes. These background cycles skip
-sites whose pages only GoonCave's browser can load, such as FurAffinity; opening the
-Subscribed feed refreshes every site. Each cycle reads the
-newest page of the next searches, up to 24 requests and stopping at the end of the
-list, then up to three pages of older posts, with four sites concurrently. Explicit refresh can request up to four cycles. Progress
-and indexed posts survive restart; closing the app cancels in-flight requests.
-Only complete pages are committed. Changing searches invalidates late responses
-and clears search-based feeds while retaining FurAffinity's indexed posts.
-Changing a site's address, engine or account clears that site's feed.
+Nothing is saved: each feed page asks every search of every site for its next
+page, newest first, six searches at a time. e621, Danbooru and Gelbooru page by
+post ID (`page=b<id>`, `id:<N`), so posts added on top do not shift the pages
+below; other sites page by number and skip the posts already shown. A search
+that may have older posts sets a limit: posts older than its last one wait for
+the next page. Posts from the highest limit up are merged by date. A post the
+sites add later is newer than everything shown, so it appears only at the top
+after a reload. A site that fails is reported and leaves the feed until it is
+reloaded. Opening the feed first syncs the FurAffinity watchlists. Search
+paging stops at 1,000 pages with recovery guidance.
 
-The feed keeps posts for 365 days and stops search backfill at 1,000 pages with
-recovery guidance. Cursors retain their sort and discovery dates when a post is
-refreshed, so new discoveries do not move the posts already displayed. Read
-marks and local favorite changes are applied to cached posts. Network errors
-retain saved posts and appear beside the affected site.
-
-The Subscriptions page always opens at the newest posts. If the first page is
-empty, the page loads it again once the background refresh has finished.
-The existing Unread only filter still applies. List restoration within an open app retains
-the existing scroll position and cards.
+The Subscriptions page always opens at the newest posts. Show more reads up to
+three feed pages. The existing Unread only filter still applies. List
+restoration within an open app retains the existing scroll position and cards.
+Settings filters searches by the sites where the feed has shown a match; this
+record stays on the device.
 
 ```sh
 cargo test --locked -p gooncave-core --test subscriptions
@@ -574,6 +569,6 @@ cargo test --locked -p gooncave-core --lib subscription
 ```
 
 These checks use fake credentials and loopback sites. They cover saved searches,
-stable cursors, late-response invalidation, search
-batching, backfill, and confirmed FurAffinity follow/unfollow. Live account
+search batching, the date merge across searches, paging past the first page,
+site errors, refused cursors, and confirmed FurAffinity follow/unfollow. Live account
 verification remains separate; the tests do not change real remote watchlists.

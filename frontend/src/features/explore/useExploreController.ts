@@ -31,7 +31,7 @@ import {
 import { explorePostKey } from './navSequence';
 import { shiftAnchor, todayIso } from './popularPeriod';
 import { stackDuplicates } from './stackDuplicates';
-import { loadSubscriptionPosts } from './subscriptionFeed';
+import { collectSubscriptionPosts } from './subscriptionFeed';
 import { useExploreSequence } from './useExploreSequence';
 import { useOpenPostLink } from './useOpenPostLink';
 import { useTagSubscriptionAction } from './useTagSubscriptionAction';
@@ -91,7 +91,6 @@ import { transitionView } from '@/lib/viewTransitions';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 
 const PAGE_SIZE = 40;
-const SUBSCRIPTION_BACKFILL_ROUNDS = 4;
 /**
  * How many pages one Load more may ask for. Sites ranked within a point of
  * each other release a post at a time; without a cap a search could keep
@@ -592,81 +591,38 @@ export function useExploreController({
       return;
     }
     if (sort === 'subscribed') {
-      const first = await loadSubscriptionPosts({
-        cursor: null,
-        target: PAGE_SIZE,
-        minPosts: MIN_POSTS_PER_LOAD,
-        signal: controller.signal,
-        refresh: () =>
-          api.refreshExploreSubscriptions({
-            siteIds: activeSiteIds,
-            signal: controller.signal
-          }),
-        fetchPage: (cursor) =>
-          api.exploreSubscriptions({
-            siteIds: activeSiteIds,
-            cursor: cursor ?? undefined,
-            limit: PAGE_SIZE,
-            signal: controller.signal
-          }),
-        keep: keepPost
-      });
-      if (controller.signal.aborted) return;
-      subscriptionCursorRef.current = first.nextCursor;
-      const prepared = await preparePosts(first.posts, controller.signal);
-      if (controller.signal.aborted) return;
-      setPosts(prepared);
-      setSiteErrors(
-        first.refreshError instanceof Error
-          ? [
-              {
-                siteId: 'subscriptions',
-                siteName: 'Subscriptions',
-                error: first.refreshError.message
-              }
-            ]
-          : (first.refreshed?.errors ?? [])
-      );
-      setHasMore(first.hasMore);
-      setLoading(false);
-      if (first.refreshed === null && first.refreshError === null) {
-        void api
-          .refreshExploreSubscriptions({
-            siteIds: activeSiteIds,
-            signal: controller.signal
-          })
-          .then(async (result) => {
-            if (controller.signal.aborted) return;
-            setSiteErrors(result.errors);
-            // The refresh may have saved newer posts. With nothing on screen, read again from the top.
-            if (!first.hasMore && !first.posts.length) {
-              const page = await api.exploreSubscriptions({
-                siteIds: activeSiteIds,
-                limit: PAGE_SIZE,
-                signal: controller.signal
-              });
-              const fresh = await preparePosts(
-                page.posts.filter(keepPost),
-                controller.signal
-              );
-              if (controller.signal.aborted) return;
-              setPosts(fresh);
-              subscriptionCursorRef.current = page.nextCursor;
-              setHasMore(page.hasMore);
-            }
-          })
-          .catch((error: Error) => {
-            if (!controller.signal.aborted) {
-              setSiteErrors([
-                {
-                  siteId: 'subscriptions',
-                  siteName: 'Subscriptions',
-                  error: error.message
-                }
-              ]);
-            }
-          });
+      try {
+        const first = await collectSubscriptionPosts({
+          cursor: null,
+          target: PAGE_SIZE,
+          signal: controller.signal,
+          fetchPage: (cursor) =>
+            api.exploreSubscriptions({
+              siteIds: activeSiteIds,
+              cursor: cursor ?? undefined,
+              limit: PAGE_SIZE,
+              signal: controller.signal
+            }),
+          keep: keepPost
+        });
+        if (controller.signal.aborted) return;
+        subscriptionCursorRef.current = first.nextCursor;
+        const prepared = await preparePosts(first.posts, controller.signal);
+        if (controller.signal.aborted) return;
+        setPosts(prepared);
+        setSiteErrors(first.siteErrors);
+        setHasMore(first.hasMore);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setSiteErrors([
+          {
+            siteId: 'subscriptions',
+            siteName: 'Subscriptions',
+            error: error instanceof Error ? error.message : String(error)
+          }
+        ]);
       }
+      setLoading(false);
       return;
     }
     const result = await openStreams(
@@ -886,17 +842,10 @@ export function useExploreController({
         return page.posts;
       }
       if (sort === 'subscribed') {
-        const result = await loadSubscriptionPosts({
+        const result = await collectSubscriptionPosts({
           cursor: subscriptionCursorRef.current,
           target: PAGE_SIZE,
-          minPosts: MIN_POSTS_PER_LOAD,
           signal: controller.signal,
-          refresh: () =>
-            api.refreshExploreSubscriptions({
-              rounds: SUBSCRIPTION_BACKFILL_ROUNDS,
-              siteIds: activeSiteIds,
-              signal: controller.signal
-            }),
           fetchPage: (cursor) =>
             api.exploreSubscriptions({
               siteIds: activeSiteIds,
@@ -911,6 +860,7 @@ export function useExploreController({
         const prepared = await preparePosts(result.posts, controller.signal);
         if (controller.signal.aborted) return [];
         setPosts((current) => [...current, ...prepared]);
+        setSiteErrors((current) => [...current, ...result.siteErrors]);
         setHasMore(result.hasMore);
         return result.posts;
       }
