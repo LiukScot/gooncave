@@ -23,6 +23,9 @@ pub(crate) struct Search {
     pub date: Date,
     pub page: usize,
     pub limit: usize,
+    /// Only posts with a lower ID, newest first; `page` is then ignored. Engines without
+    /// [`pages_by_id`] ignore it.
+    pub before: Option<u64>,
 }
 impl Default for Search {
     fn default() -> Self {
@@ -33,6 +36,7 @@ impl Default for Search {
             date: OffsetDateTime::now_utc().date(),
             page: 1,
             limit: 40,
+            before: None,
         }
     }
 }
@@ -701,6 +705,11 @@ async fn gel_window(t: &Transport, site: &Site, s: &Search) -> Result<Vec<String
     }
     Ok(tags)
 }
+/// Whether [`Search::before`] pages this site by post ID (e621 and Danbooru `page=b<id>`,
+/// Gelbooru `id:<N`), so posts added on top do not shift the pages below.
+pub(crate) fn pages_by_id(site: &Site) -> bool {
+    matches!(site.engine.as_str(), "e621" | "danbooru" | "gelbooru")
+}
 pub(crate) async fn search(t: &Transport, site: &Site, s: &Search) -> Result<Vec<Value>> {
     if matches!(site.engine.as_str(), "shimmie" | "furaffinity") && s.sort != "new" {
         return Err(booru_http::remote(
@@ -790,6 +799,12 @@ pub(crate) async fn search(t: &Transport, site: &Site, s: &Search) -> Result<Vec
         "shimmie" => "/api/danbooru/find_posts/index.xml",
         _ => return Err(booru_http::remote("Unknown engine.")),
     };
+    if let Some(id) = s
+        .before
+        .filter(|_| pages_by_id(site) && site.engine == "gelbooru")
+    {
+        tags.push(format!("id:<{id}"));
+    }
     let mut url = endpoint(site, path)?;
     if site.engine == "moebooru" {
         url.query_pairs_mut()
@@ -844,10 +859,11 @@ pub(crate) async fn search(t: &Transport, site: &Site, s: &Search) -> Result<Vec
                 } else {
                     "page"
                 },
-                &if site.engine == "gelbooru" {
-                    (s.page - 1).to_string()
-                } else {
-                    s.page.to_string()
+                &match (site.engine.as_str(), s.before) {
+                    ("gelbooru", Some(_)) => "0".into(),
+                    ("gelbooru", None) => (s.page - 1).to_string(),
+                    ("e621" | "danbooru", Some(id)) => format!("b{id}"),
+                    _ => s.page.to_string(),
                 },
             );
     }
@@ -1471,6 +1487,7 @@ mod tests {
                 date: date("2026-10-13").unwrap(),
                 page: 3,
                 limit: 20,
+                before: None,
             };
             search(&t, &site(engine, &f.base), &s).await.unwrap();
             let logs = f.requests.lock().unwrap();

@@ -1816,7 +1816,6 @@ fn apply(
                         crate::booru_http::url(cover).map_err(|_| invalid())?;
                     }
                     match position {
-                        // New details of a pool already followed leave the feed as it is.
                         Some(i) => pools[i] = followed,
                         None if pools.len() >= store::MAX_POOLS => {
                             return Err(Error::Remote(format!(
@@ -1824,15 +1823,11 @@ fn apply(
                                 store::MAX_POOLS
                             )))
                         }
-                        None => {
-                            pools.push(followed);
-                            store::reset(tx, Some(&site), false)?;
-                        }
+                        None => pools.push(followed),
                     }
                 }
                 (None, Some(i)) => {
                     pools.remove(i);
-                    store::reset(tx, Some(&site), false)?;
                 }
                 (None, None) => return Ok(true),
             }
@@ -3764,9 +3759,6 @@ pub(crate) mod tests {
             serde_json::from_str::<Value>(&format!("[{}]", pool("7", &site))).unwrap()
         );
 
-        // A new pool resets the feed of its site, as following it on this device does.
-        b.sql(&format!("INSERT INTO subscription_feed_items (user_id, site_id, remote_id, post_json, sort_at, discovered_at)
-            VALUES ('{OWNER_ID}', '{site}', '1', '{{}}', {NOW}, {NOW})")).await;
         a.sql(&follow(&[pool("7", "site-on-a"), pool("8", "site-on-a")]))
             .await;
         a.sync(Trigger::Change).await;
@@ -3775,11 +3767,6 @@ pub(crate) mod tests {
             pools_on_b().await,
             serde_json::from_str::<Value>(&format!("[{},{}]", pool("7", &site), pool("8", &site)))
                 .unwrap()
-        );
-        assert_eq!(
-            b.value("SELECT remote_id FROM subscription_feed_items")
-                .await,
-            None
         );
 
         a.sql(&follow(&[pool("8", "site-on-a")])).await;

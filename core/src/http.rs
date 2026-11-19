@@ -142,7 +142,6 @@ impl Server {
         });
         let importer = tokio::spawn(crate::tag_import::watch(self.database.clone()));
         let favorites = tokio::spawn(crate::favorites::watch(self.database.clone()));
-        let subscriptions = tokio::spawn(crate::subscriptions::watch(self.database.clone()));
         let sources = tokio::spawn(crate::source_jobs::watch(self.database.clone()));
         let tagging = tokio::spawn(crate::wd14::watch(self.database.clone()));
         let duplicates = tokio::spawn(crate::duplicate_policy::watch(self.database.clone()));
@@ -156,7 +155,6 @@ impl Server {
                 &adopting,
                 &importer,
                 &favorites,
-                &subscriptions,
                 &sources,
                 &tagging,
                 &duplicates,
@@ -179,7 +177,6 @@ impl Server {
         repair.abort();
         importer.abort();
         favorites.abort();
-        subscriptions.abort();
         sources.abort();
         let _ = sources.await;
         tagging.abort();
@@ -192,7 +189,6 @@ impl Server {
         syncing.abort();
         let _ = syncing.await;
         closing.upload_before_close().await;
-        let _ = subscriptions.await;
         let _ = favorites.await;
         let _ = importer.await;
         result

@@ -193,8 +193,8 @@ pub(crate) async fn page(
 ) -> Result<(Vec<Value>, Option<String>)> {
     require(site)?;
     if cursor.is_some_and(|s| !valid_cursor(s)) {
-        return Err(Error::Storage(
-            "Invalid saved FurAffinity feed cursor.".into(),
+        return Err(Error::Invalid(
+            "Invalid FurAffinity feed cursor. Reload the feed.".into(),
         ));
     }
     let html = t

@@ -3,7 +3,7 @@ use axum::{
     http::Request,
 };
 use gooncave_core::{
-    db::{Database, OWNER_ID},
+    db::Database,
     http::{Frontend, Server},
 };
 use serde_json::{json, Value};
@@ -45,27 +45,6 @@ async fn site(server: &Server, engine: &str) -> String {
     assert_eq!(status, 200, "{result}");
     result["site"]["id"].as_str().unwrap().into()
 }
-fn post(id: &str) -> Value {
-    json!({"remoteId":id,"previewUrl":"https://cdn.example.com/post.jpg","sampleUrl":null,"fileUrl":null,
-        "createdAt":"2026-10-12T00:00:00.000Z","tags":[{"tag":"fixture_artist","category":"artist"}],
-        "favorited":null,"fileExt":null})
-}
-async fn seed(db: &Database, site: &str, ids: &[&str]) {
-    let site = site.to_owned();
-    let posts = ids
-        .iter()
-        .map(|id| ((*id).to_owned(), post(id)))
-        .collect::<Vec<_>>();
-    db.call(move |c| {
-        for (id,post) in posts {c.execute("INSERT INTO subscription_feed_items
-            (user_id,site_id,remote_id,post_json,sort_at,discovered_at) VALUES (?1,?2,?3,?4,?5,?5)",
-            rusqlite::params![OWNER_ID,site,id,post.to_string(),"2026-10-12T00:00:00.000Z"])?;}
-        c.execute("INSERT INTO subscription_feed_sync_state(user_id,site_id,search_exhausted,updated_at) VALUES (?1,?2,1,?3)",
-            rusqlite::params![OWNER_ID,site,"2026-10-12T00:00:00.000Z"])?;
-        Ok(())
-    }).await.unwrap();
-}
-
 #[tokio::test]
 async fn searches_preserve_operators_validate_inputs_and_survive_restart() {
     let dir = tempfile::tempdir().unwrap();
@@ -148,43 +127,30 @@ async fn searches_preserve_operators_validate_inputs_and_survive_restart() {
 }
 
 #[tokio::test]
-async fn feed_cursor_is_stable_across_new_posts() {
+async fn the_feed_validates_its_inputs_and_reports_sites_it_cannot_read() {
     let dir = tempfile::tempdir().unwrap();
-    let data = dir.path().join("data");
-    let library = dir.path().join("library");
-    let db = Database::open(&data, &library).unwrap();
+    let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
     let s = server(db.clone()).await;
-    let id = site(&s, "e621").await;
-    seed(&db, &id, &["1", "2", "3"]).await;
-    let (status, first) = request(&s, "GET", "/explore/subscriptions?limit=1", Value::Null).await;
-    assert_eq!(status, 200, "{first}");
-    assert_eq!(first["posts"][0]["remoteId"], "1");
-    assert_eq!(first["hasMore"], true);
-    assert_eq!(first["ready"], true);
-    assert!(first["posts"][0]["previewUrl"]
-        .as_str()
-        .unwrap()
-        .starts_with("https://"));
-    let cursor = first["nextCursor"].as_str().unwrap();
-    let added_id = id.clone();
-    db.call(move |c| {
-        c.execute("INSERT INTO subscription_feed_items(user_id,site_id,remote_id,post_json,sort_at,discovered_at) VALUES (?1,?2,'4',?3,?4,?4)",
-            rusqlite::params![OWNER_ID,added_id,post("4").to_string(),"2026-10-13T00:00:00.000Z"])?;Ok(())
-    }).await.unwrap();
-    let next = request(
-        &s,
-        "GET",
-        &format!("/explore/subscriptions?limit=1&cursor={cursor}"),
-        Value::Null,
-    )
-    .await
-    .1;
-    assert_eq!(next["posts"][0]["remoteId"], "2");
     assert_eq!(
-        request(&s, "GET", "/explore/subscriptions?limit=1", Value::Null)
-            .await
-            .1["posts"][0]["remoteId"],
-        "4"
+        request(&s, "GET", "/explore/subscriptions", Value::Null).await,
+        (
+            200,
+            json!({"posts":[],"hasMore":false,"nextCursor":null,"siteErrors":[]})
+        ),
+        "with no searches there is nothing to read"
+    );
+    let search = site(&s, "danbooru").await;
+    let fa = site(&s, "furaffinity").await;
+    assert_eq!(
+        request(
+            &s,
+            "PUT",
+            "/settings/subscriptions/tags",
+            json!({"tags":["wolf"]})
+        )
+        .await
+        .0,
+        200
     );
     for query in ["cursor=garbage", "limit=0", "limit=101"] {
         assert_eq!(
@@ -199,33 +165,21 @@ async fn feed_cursor_is_stable_across_new_posts() {
             400
         );
     }
-}
-
-#[tokio::test]
-async fn search_edits_keep_furaffinity_feed_and_credentials_errors_are_visible() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-    let s = server(db.clone()).await;
-    let search = site(&s, "danbooru").await;
-    let fa = site(&s, "furaffinity").await;
-    seed(&db, &search, &["1"]).await;
-    seed(&db, &fa, &["2"]).await;
-    assert_eq!(
-        request(
-            &s,
-            "PUT",
-            "/settings/subscriptions/tags",
-            json!({"tags":["wolf"]})
-        )
-        .await
-        .0,
-        200
-    );
-    let posts = request(&s, "GET", "/explore/subscriptions", Value::Null)
-        .await
-        .1;
-    assert_eq!(posts["posts"].as_array().unwrap().len(), 1);
-    assert_eq!(posts["posts"][0]["siteId"], fa);
+    // Neither site answers: the danbooru address does not exist and FurAffinity has no login.
+    let (status, page) = request(&s, "GET", "/explore/subscriptions", Value::Null).await;
+    assert_eq!(status, 200, "{page}");
+    assert_eq!(page["posts"], json!([]));
+    assert_eq!(page["hasMore"], false);
+    let mut failed = page["siteErrors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["siteId"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    failed.sort();
+    let mut expected = vec![search, fa];
+    expected.sort();
+    assert_eq!(failed, expected);
     let settings = request(&s, "GET", "/settings/subscriptions", Value::Null)
         .await
         .1;
@@ -247,19 +201,6 @@ async fn search_edits_keep_furaffinity_feed_and_credentials_errors_are_visible()
         .as_str()
         .unwrap()
         .contains("Accounts"));
-    for rounds in [0, 5] {
-        assert_eq!(
-            request(
-                &s,
-                "POST",
-                "/explore/subscriptions/refresh",
-                json!({"rounds":rounds})
-            )
-            .await
-            .0,
-            400
-        );
-    }
 }
 
 #[tokio::test]
@@ -291,46 +232,5 @@ async fn pool_subscriptions_validate_targets_and_remove_idempotently() {
         )
         .await,
         (200, json!({"pools":[]}))
-    );
-}
-
-#[tokio::test]
-async fn the_end_of_the_saved_feed_asks_for_older_posts_while_a_site_has_more() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
-    let s = server(db.clone()).await;
-    let id = site(&s, "e621").await;
-    seed(&db, &id, &["1", "2"]).await;
-    let site_id = id.clone();
-    db.call(move |c| {
-        c.execute(
-            "UPDATE subscription_feed_sync_state SET search_exhausted=0,feed_exhausted=0 WHERE site_id=?1",
-            rusqlite::params![site_id],
-        )?;
-        Ok(())
-    })
-    .await
-    .unwrap();
-    let last = request(&s, "GET", "/explore/subscriptions?limit=2", Value::Null)
-        .await
-        .1;
-    assert_eq!(last["posts"].as_array().unwrap().len(), 2);
-    assert_eq!(
-        last["hasMore"], true,
-        "the site can still send older posts: {last}"
-    );
-    let cursor = last["nextCursor"].as_str().unwrap();
-    let past = request(
-        &s,
-        "GET",
-        &format!("/explore/subscriptions?limit=2&cursor={cursor}"),
-        Value::Null,
-    )
-    .await
-    .1;
-    assert_eq!(past["posts"], json!([]));
-    assert_eq!(
-        past["ready"], false,
-        "older posts have to be fetched first: {past}"
     );
 }

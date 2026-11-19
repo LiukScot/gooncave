@@ -34,9 +34,8 @@ async function mockSites(page: Page) {
   }));
   await page.route('**/settings/subscriptions/tags', (route) => route.fulfill({ json: { tags: ['fixture_tag'] } }));
   await page.route('**/explore/subscriptions?*', (route) => route.fulfill({
-    json: { posts: [post('2')], hasMore: false, nextCursor: null, ready: true }
+    json: { posts: [post('2')], hasMore: false, nextCursor: null, siteErrors: [] }
   }));
-  await page.route('**/explore/subscriptions/refresh', (route) => route.fulfill({ json: { errors: [] } }));
 }
 
 test.describe('on a phone', () => {
@@ -699,7 +698,7 @@ test.describe('on a phone', () => {
     const posts = (prefix: number, count: number) =>
       Array.from({ length: count }, (_, index) => post(String(prefix + index)));
     await page.route('**/explore/subscriptions?*', (route) => route.fulfill({
-      json: { posts: posts(100, 60), hasMore: false, nextCursor: null, ready: true }
+      json: { posts: posts(100, 60), hasMore: false, nextCursor: null, siteErrors: [] }
     }));
     // Taller than the window, and much shorter than where the feed was scrolled to.
     await page.route('**/explore/posts?*', (route) => route.fulfill({

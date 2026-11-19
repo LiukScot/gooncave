@@ -2,29 +2,19 @@ use crate::{
     booru_engines::{self, Search},
     booru_http::{Transport, USER_NOT_FOUND},
     boorus::{self, Site},
-    db::{write_setting, Database, OWNER_ID},
-    explore, subscription_remote as remote,
-    subscription_store::{self as store, Cursor, SyncState},
-    Error, Result,
+    db::{write_setting, Database},
+    explore, subscription_remote as remote, subscription_store as store, Error, Result,
 };
 use axum::{
     extract::{Query, State},
     routing::{get, post},
     Json, Router,
 };
-use rusqlite::{params, OptionalExtension};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde_json::{json, Value};
-use std::{
-    collections::{HashMap, HashSet},
-    time::Duration,
-};
+use std::collections::{HashMap, HashSet};
 
-const REFRESH_INTERVAL: Duration = Duration::from_secs(15 * 60);
-const RETENTION_DAYS: i64 = 365;
 const PAGE_SIZE: usize = 40;
-/// Newest-page queries per site in one refresh: 360 one-tag searches take 15 rounds, under 4 hours.
-const MAX_HEAD_QUERIES: usize = 24;
-const BACKFILL_QUERIES: usize = 3;
 const MAX_PAGE: usize = 1000;
 type Payload = std::result::Result<Json<Value>, axum::extract::rejection::JsonRejection>;
 
@@ -44,7 +34,6 @@ pub(crate) fn routes() -> Router<Database> {
             get(pools).post(follow_pool).delete(unfollow_pool),
         )
         .route("/explore/subscriptions", get(feed))
-        .route("/explore/subscriptions/refresh", post(refresh_route))
 }
 fn body(p: Payload) -> Result<Value> {
     let Json(v) = p.map_err(|_| Error::Invalid("Send a valid JSON object.".into()))?;
@@ -68,7 +57,8 @@ async fn tags(State(db): State<Database>) -> Result<Json<Value>> {
     Ok(Json(json!({"tags":tags,"artists":artists})))
 }
 async fn settings(State(db): State<Database>) -> Result<Json<Value>> {
-    // A running refresh syncs the watchlists itself; the page must not wait for it.
+    // A running sync (the feed's first page, or a follow) covers the watchlists; the page must
+    // not wait for it.
     let guard = db.subscriptions.try_lock().ok();
     overview(&db, guard.is_some()).await
 }
@@ -92,46 +82,31 @@ fn matches_search(entry: &str, post_tags: &HashSet<String>) -> bool {
     }
     positive && all && (any || !optional)
 }
-/// Newest saved posts per site that `site_hits` reads: the feed keeps a year of posts, and the
-/// settings page waits for this scan.
-const SITE_HITS_POSTS: i64 = 2000;
-/// The ids of the enabled sites where each saved search and artist has results among the newest
-/// `SITE_HITS_POSTS` saved posts, read without any request. FurAffinity sites count an artist from
+/// The ids of the enabled sites where each saved search and artist has had results in the feed
+/// (see [`record_site_hits`]), read without any request. FurAffinity sites count an artist from
 /// the watchlist snapshot.
 fn site_hits(
     c: &rusqlite::Connection,
     sites: &[Site],
     entries: &[&String],
 ) -> Result<HashMap<String, Vec<String>>> {
+    let seen = store::site_hits(c)?;
     let mut hits: HashMap<String, Vec<String>> = HashMap::new();
     for site in sites.iter().filter(|s| s.enabled) {
-        let mut found: HashSet<&String> = HashSet::new();
-        if site.engine == "furaffinity" {
-            let seen = store::seen_artists(c, &site.id)?.unwrap_or_default();
-            found.extend(entries.iter().filter(|e| seen.contains(**e)));
-        } else {
-            let mut statement = c.prepare(
-                "SELECT post_json FROM subscription_feed_items WHERE user_id=?1 AND site_id=?2
-                    ORDER BY sort_at DESC, discovered_at DESC LIMIT ?3",
-            )?;
-            let mut rows = statement.query(params![OWNER_ID, site.id, SITE_HITS_POSTS])?;
-            while let Some(row) = rows.next()? {
-                let post: Value = serde_json::from_str(&row.get::<_, String>(0)?)
-                    .map_err(|e| Error::Storage(format!("Invalid saved subscription post: {e}")))?;
-                let post_tags: HashSet<String> = post["tags"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|t| t["tag"].as_str().map(crate::tags::normalize))
-                    .collect();
-                found.extend(entries.iter().filter(|e| matches_search(e, &post_tags)));
-                if found.len() == entries.len() {
-                    break;
-                }
+        let fa = (site.engine == "furaffinity")
+            .then(|| store::seen_artists(c, &site.id))
+            .transpose()?
+            .map(Option::unwrap_or_default);
+        for entry in entries {
+            let found = match &fa {
+                Some(watched) => watched.contains(*entry),
+                None => seen.get(*entry).is_some_and(|ids| ids.contains(&site.id)),
+            };
+            if found {
+                hits.entry((*entry).clone())
+                    .or_default()
+                    .push(site.id.clone());
             }
-        }
-        for entry in found {
-            hits.entry(entry.clone()).or_default().push(site.id.clone());
         }
     }
     Ok(hits)
@@ -276,7 +251,6 @@ async fn sync_artists(db: &Database, t: &Transport, sites: &[Site]) -> Result<Ve
         }
         let id = site.id.clone();
         db.call(move |c| {
-            // The saved feed stays: watching an artist brings only their new posts into the inbox.
             let tx = c.transaction()?;
             // Device sync may have replaced the list during the requests above. Saving would
             // drop that change, and saving the watchlist alone would read its new artists as
@@ -298,7 +272,6 @@ async fn sync_artists(db: &Database, t: &Transport, sites: &[Site]) -> Result<Ve
                             &json!(store::normalize_searches(&json!(searches))?),
                         )?;
                     }
-                    store::reset(&tx, None, true)?;
                 }
                 store::save_seen_artists(&tx, &id, &now)?;
             }
@@ -364,7 +337,6 @@ async fn update_tags(db: &Database, mut tags: Vec<String>, append: bool) -> Resu
         }
         if previous != tags {
             write_setting(&tx, "subscriptions.tags", &json!(tags))?;
-            store::reset(&tx, None, true)?;
         }
         let artists = store::artists(&tx)?;
         tx.commit()?;
@@ -381,7 +353,7 @@ async fn unfollow(State(db): State<Database>, p: Payload) -> Result<Json<Value>>
 /// Adds or removes one artist in GoonCave's list; the sync then passes it on to FurAffinity.
 async fn set_artist(db: &Database, v: Value, desired: bool) -> Result<Json<Value>> {
     let artist = remote::artist(&text(&v, "artist", 50)?)?.to_lowercase();
-    // Serialize with refresh: a completed unfollow cannot be overwritten by an old page.
+    // Serialize with the watchlist sync: a completed unfollow cannot be overwritten by an old one.
     let _guard = db.subscriptions.lock().await;
     db.call(move |c| {
         let tx = c.transaction()?;
@@ -402,7 +374,6 @@ async fn set_artist(db: &Database, v: Value, desired: bool) -> Result<Json<Value
         }
         if artists.len() != before {
             store::save_artists(&tx, &artists)?;
-            store::reset(&tx, None, true)?;
         }
         tx.commit()?;
         Ok(())
@@ -462,10 +433,8 @@ async fn follow_pool(State(db): State<Database>, p: Payload) -> Result<Json<Valu
                     store::MAX_POOLS
                 )));
             }
-            let site = followed.site_id.clone();
             pools.push(followed);
             store::save_pools(&tx, &pools)?;
-            store::reset(&tx, Some(&site), false)?;
         }
         tx.commit()?;
         Ok(Json(json!({"pools":pools})))
@@ -481,13 +450,89 @@ async fn unfollow_pool(State(db): State<Database>, p: Payload) -> Result<Json<Va
         pools.retain(|p| !(p.site_id == site_id && p.pool_id == pool_id));
         if pools.len() != before {
             store::save_pools(&tx, &pools)?;
-            store::reset(&tx, Some(&site_id), false)?;
         }
         tx.commit()?;
         Ok(Json(json!({"pools":pools})))
     })
     .await
 }
+/// Where one search of one site has got to. `below` is the ID of the oldest post shown; `page`
+/// is the next page on sites that page by number or by link (FurAffinity). Posts on that page
+/// with an ID of `below` or higher were shown already; on sites whose IDs are not numbers,
+/// `skip` counts the posts of that page already shown instead.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Position {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    page: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    below: Option<u64>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    skip: usize,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    done: bool,
+}
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+/// Each site's searches, as `of` (a fingerprint of the searches) and one position per search.
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SitePositions {
+    of: String,
+    at: Vec<Position>,
+}
+type FeedCursor = std::collections::BTreeMap<String, SitePositions>;
+const MAX_CURSOR: usize = 100_000;
+
+fn invalid_cursor() -> Error {
+    Error::Invalid("The subscriptions changed since this feed was opened. Reload the feed.".into())
+}
+fn decode_cursor(raw: &str) -> Result<FeedCursor> {
+    if raw.len() > MAX_CURSOR {
+        return Err(invalid_cursor());
+    }
+    let bytes = URL_SAFE_NO_PAD.decode(raw).map_err(|_| invalid_cursor())?;
+    serde_json::from_slice(&bytes).map_err(|_| invalid_cursor())
+}
+/// Identifies one site's address, engine and searches, so a cursor made for others is refused.
+/// Stable across app versions, since the frontend keeps cursors while the app is open.
+fn fingerprint(site: &Site, searches: &[Vec<String>]) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(json!([site.engine, site.base, searches]).to_string());
+    digest[..8].iter().map(|b| format!("{b:02x}")).collect()
+}
+/// The searches the feed of `site` reads: one per batch of [`site_searches`], or one for the
+/// FurAffinity inbox, which holds the watched artists' posts.
+fn site_queries(
+    tags: &[String],
+    artists: &[String],
+    pools: &[store::PoolSubscription],
+    site: &Site,
+) -> Vec<Vec<String>> {
+    if site.engine == "furaffinity" {
+        return vec![vec![]];
+    }
+    let searches = site_searches(tags, artists, pools, site);
+    let mut queries = Vec::new();
+    let mut start = 0;
+    while !searches.is_empty() {
+        let (query, next, wrapped) = batch(&searches, start, batch_size(site));
+        queries.push(query);
+        if wrapped {
+            break;
+        }
+        start = next;
+    }
+    queries
+}
+
+/// One feed page read live from the sites: no post is saved.
+///
+/// Every search of every site reads its next page, newest first. A search that may have more
+/// posts sets a limit: posts older than its last one may still come from it, so they wait for
+/// the next feed page. Posts from the limit up are merged by date and shown. A post the sites
+/// add later is newer than everything shown, so it can only appear at the top after a reload.
 async fn feed(
     State(db): State<Database>,
     Query(q): Query<HashMap<String, String>>,
@@ -505,7 +550,7 @@ async fn feed(
     let cursor = q
         .get("cursor")
         .filter(|s| !s.is_empty())
-        .map(|s| Cursor::decode(s))
+        .map(|s| decode_cursor(s))
         .transpose()?;
     let wanted = match q.get("sites") {
         Some(raw) if raw.len() <= 2000 => Some(
@@ -522,229 +567,103 @@ async fn feed(
         .into_iter()
         .filter(|s| s.enabled && wanted.as_ref().is_none_or(|ids| ids.contains(&s.id)))
         .collect::<Vec<_>>();
-    let ids = sites.iter().map(|s| s.id.clone()).collect::<Vec<_>>();
-    let page = db
-        .call(move |c| store::list(c, &ids, cursor, limit))
+    feed_page(&db, &Transport::default(), sites, cursor, limit)
+        .await
+        .map(Json)
+}
+async fn feed_page(
+    db: &Database,
+    t: &Transport,
+    sites: Vec<Site>,
+    cursor: Option<FeedCursor>,
+    limit: usize,
+) -> Result<Value> {
+    if cursor.is_none() && sites.iter().any(|s| s.engine == "furaffinity") {
+        // The inbox follows the watchlist; a running sync (Settings) already covers it.
+        if let Ok(_guard) = db.subscriptions.try_lock() {
+            for error in sync_artists(db, t, &sites).await? {
+                eprintln!("[developer] FurAffinity watchlist sync failed: {error}");
+            }
+        }
+    }
+    let (tags, artists, pools) = db
+        .call(|c| Ok((store::searches(c)?, store::artists(c)?, store::pools(c)?)))
         .await?;
-    let key = explore::media_key(&db).await?;
-    let mut grouped = HashMap::<String, Vec<Value>>::new();
+    let mut streams = Vec::new();
+    let mut next_cursor = FeedCursor::new();
+    for (index, site) in sites.iter().enumerate() {
+        let queries = site_queries(&tags, &artists, &pools, site);
+        if queries.is_empty() {
+            continue;
+        }
+        let of = fingerprint(site, &queries);
+        let at = match &cursor {
+            None => vec![Position::default(); queries.len()],
+            Some(cursor) => match cursor.get(&site.id) {
+                Some(saved) if saved.of == of && saved.at.len() == queries.len() => {
+                    saved.at.clone()
+                }
+                _ => return Err(invalid_cursor()),
+            },
+        };
+        for (slot, (query, at)) in queries.into_iter().zip(&at).enumerate() {
+            if !at.done {
+                streams.push(Stream {
+                    site: index,
+                    slot,
+                    query,
+                    at: at.clone(),
+                });
+            }
+        }
+        next_cursor.insert(site.id.clone(), SitePositions { of, at });
+    }
+    let reads = read_all(t, &sites, &streams).await;
+    let page = merge(&streams, reads, limit);
+    let mut errors = Vec::new();
+    for (index, error) in page.failed {
+        let site = &sites[index];
+        errors.push(crate::booru_http::site_error(&site.id, &site.name, &error));
+        // A site that failed leaves the feed until it is reloaded: posts it would send later
+        // would land among older ones.
+        for at in &mut next_cursor.get_mut(&site.id).unwrap().at {
+            at.done = true;
+        }
+    }
+    for (stream, position) in streams.iter().zip(page.positions) {
+        let saved = &mut next_cursor.get_mut(&sites[stream.site].id).unwrap().at[stream.slot];
+        if !saved.done {
+            *saved = position;
+        }
+    }
+    let has_more = next_cursor.values().any(|s| s.at.iter().any(|at| !at.done));
+    // Only the Settings filter depends on it: a failure must not hide the feed.
+    if let Err(e) = record_site_hits(db, &sites, &tags, &artists, &page.posts).await {
+        eprintln!("[developer] The subscription site hits were not saved: {e}");
+    }
+    let key = explore::media_key(db).await?;
+    let mut grouped = HashMap::<usize, Vec<Value>>::new();
     let mut order = Vec::new();
-    for (site, post) in page.items {
-        order.push((site.clone(), post["remoteId"].as_str().unwrap().to_owned()));
-        grouped.entry(site).or_default().push(post);
+    for (index, post) in page.posts {
+        order.push((index, post["remoteId"].as_str().unwrap().to_owned()));
+        grouped.entry(index).or_default().push(post);
     }
     let mut decorated = HashMap::new();
-    for site in sites {
-        if let Some(posts) = grouped.remove(&site.id) {
-            for post in explore::decorate(&db, &site, posts, &key).await? {
-                decorated.insert(
-                    (
-                        site.id.clone(),
-                        post["remoteId"].as_str().unwrap().to_owned(),
-                    ),
-                    post,
-                );
-            }
+    for (index, posts) in grouped {
+        for post in explore::decorate(db, &sites[index], posts, &key).await? {
+            decorated.insert((index, post["remoteId"].as_str().unwrap().to_owned()), post);
         }
     }
     let posts = order
         .into_iter()
         .filter_map(|key| decorated.remove(&key))
         .collect::<Vec<_>>();
-    Ok(Json(
-        json!({"posts":posts,"hasMore":page.has_more,"nextCursor":page.next,"ready":page.ready}),
-    ))
-}
-async fn refresh_route(State(db): State<Database>, p: Payload) -> Result<Json<Value>> {
-    let v = body(p)?;
-    let rounds = match v.get("rounds") {
-        None => 1,
-        Some(n) => n
-            .as_u64()
-            .filter(|n| (1..=4).contains(n))
-            .ok_or_else(|| Error::Invalid("rounds must be from 1 through 4.".into()))?,
-    };
-    let sites = match v.get("sites") {
-        None => None,
-        Some(ids) => Some(
-            ids.as_array()
-                .filter(|ids| ids.len() <= 200)
-                .and_then(|ids| {
-                    ids.iter()
-                        .map(|id| id.as_str().map(str::to_owned))
-                        .collect::<Option<HashSet<_>>>()
-                })
-                .ok_or_else(|| {
-                    Error::Invalid("sites must be a list of at most 200 site ids.".into())
-                })?,
-        ),
-    };
-    Ok(Json(
-        refresh(&db, &Transport::default(), rounds, false, sites.as_ref()).await?,
-    ))
-}
-pub(crate) async fn watch(db: Database) {
-    let mut interval = tokio::time::interval(REFRESH_INTERVAL);
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        interval.tick().await;
-        match refresh(&db, &Transport::default(), 1, true, None).await {
-            Ok(result) => {
-                for error in result["errors"].as_array().into_iter().flatten() {
-                    eprintln!(
-                        "[developer] The subscriptions of {} did not refresh: {}",
-                        error["siteName"].as_str().unwrap_or("a site"),
-                        error["error"].as_str().unwrap_or("no reason given")
-                    );
-                }
-            }
-            Err(e) => eprintln!("Subscription refresh could not run: {e}"),
-        }
-    }
-}
-async fn saved_errors(db: &Database) -> Result<Value> {
-    db.call(|c| {
-        let mut s=c.prepare("SELECT site.id,site.name,state.last_error FROM subscription_feed_sync_state state
-            JOIN user_booru_sites site ON site.id=state.site_id WHERE state.user_id=?1 AND site.enabled=1 AND state.last_error IS NOT NULL")?;
-        let errors=s.query_map([OWNER_ID],|r| Ok(crate::booru_http::site_error(&r.get::<_,String>(0)?,&r.get::<_,String>(1)?,&r.get::<_,String>(2)?)))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(json!({"errors":errors}))
-    }).await
-}
-/// `background` leaves out sites whose pages only GoonCave's browser can load: each refresh
-/// would start a browser process, and the feed refreshes them when it opens. `only` limits the
-/// refresh to those site ids. Either way the result names only the errors of the sites refreshed.
-pub(crate) async fn refresh(
-    db: &Database,
-    t: &Transport,
-    rounds: u64,
-    background: bool,
-    only: Option<&HashSet<String>>,
-) -> Result<Value> {
-    let _guard = match db.subscriptions.try_lock() {
-        Ok(guard) => guard,
-        // The running refresh covers an automatic one; one the person asked for runs after it,
-        // since an automatic refresh leaves out the browser-only sites.
-        Err(_) if background => {
-            let _wait = db.subscriptions.lock().await;
-            return saved_errors(db).await;
-        }
-        Err(_) => db.subscriptions.lock().await,
-    };
-    let sites = boorus::sites(db)
-        .await?
-        .into_iter()
-        .filter(|s| {
-            s.enabled
-                && !(background && crate::browser::site(&s.base).is_some())
-                && only.is_none_or(|ids| ids.contains(&s.id))
-        })
-        .collect::<Vec<_>>();
-    for error in sync_artists(db, t, &sites).await? {
-        eprintln!("[developer] FurAffinity watchlist sync failed: {error}");
-    }
-    let (tags, artists, pools, generation) = db
-        .call(|c| {
-            let cutoff = (time::OffsetDateTime::now_utc() - time::Duration::days(RETENTION_DAYS))
-                .format(&time::format_description::well_known::Rfc3339)
-                .map_err(|e| Error::Storage(e.to_string()))?;
-            c.execute(
-                "DELETE FROM subscription_feed_items WHERE user_id=?1 AND sort_at<?2",
-                params![OWNER_ID, store::timestamp(&cutoff)?],
-            )?;
-            Ok((
-                store::searches(c)?,
-                store::artists(c)?,
-                store::pools(c)?,
-                store::generation(c)?,
-            ))
-        })
-        .await?;
-    for round in 0..rounds {
-        let mut queued = sites.iter();
-        let mut pending = tokio::task::JoinSet::new();
-        loop {
-            while pending.len() < 4 {
-                let Some(site) = queued.next().cloned() else {
-                    break;
-                };
-                let db = db.clone();
-                let t = t.clone();
-                let tags = site_searches(&tags, &artists, &pools, &site);
-                pending.spawn(async move {
-                    let result = refresh_site(&db, &t, &site, &tags, generation, round == 0).await;
-                    (site, result)
-                });
-            }
-            let Some(result) = pending.join_next().await else {
-                break;
-            };
-            let (site, result) =
-                result.map_err(|e| Error::Storage(format!("Subscription task failed: {e}")))?;
-            if let Err(e) = result {
-                let error = match e {
-                    Error::Invalid(_) | Error::Remote(_) | Error::Refused { .. } => e.to_string(),
-                    _ => {
-                        eprintln!("Subscription storage failed: {e}");
-                        "The feed could not be saved. Check disk space and folder permissions, then retry.".into()
-                    }
-                };
-                db.call(move |c| {
-                    if store::generation(c)? == generation && site_current(c, &site)? {
-                        store::save_state(c, &site.id, &store::state(c, &site.id)?, Some(&error))?;
-                    }
-                    Ok(())
-                })
-                .await?;
-            }
-        }
-    }
-    let mut result = saved_errors(db).await?;
-    if background || only.is_some() {
-        // A site left out keeps the error of its last refresh in the feed; reporting it again
-        // would name a failure that did not happen now.
-        let refreshed = sites.iter().map(|s| s.id.as_str()).collect::<HashSet<_>>();
-        if let Some(errors) = result["errors"].as_array_mut() {
-            errors.retain(|e| {
-                e["siteId"]
-                    .as_str()
-                    .is_some_and(|id| refreshed.contains(id))
-            });
-        }
-    }
-    Ok(result)
-}
-fn site_current(c: &rusqlite::Connection, site: &Site) -> Result<bool> {
-    let updated: Option<String> = c
-        .query_row(
-            "SELECT updated_at FROM user_booru_sites WHERE user_id=?1 AND id=?2 AND enabled=1",
-            params![OWNER_ID, site.id],
-            |r| r.get(0),
-        )
-        .optional()?;
-    Ok(updated.as_deref() == site.public["updatedAt"].as_str())
-}
-async fn commit(
-    db: &Database,
-    site: &Site,
-    posts: Vec<Value>,
-    state: Option<SyncState>,
-    generation: u64,
-) -> Result<bool> {
-    let site = site.clone();
-    db.call(move |c| {
-        let tx = c.transaction()?;
-        if store::generation(&tx)? != generation || !site_current(&tx, &site)? {
-            return Ok(false);
-        }
-        store::insert(&tx, &site.id, &posts)?;
-        if let Some(state) = state {
-            store::save_state(&tx, &site.id, &state, None)?;
-        }
-        tx.commit()?;
-        Ok(true)
-    })
-    .await
+    Ok(json!({
+        "posts": posts,
+        "hasMore": has_more,
+        "nextCursor": has_more.then(|| URL_SAFE_NO_PAD.encode(serde_json::to_vec(&next_cursor).unwrap())),
+        "siteErrors": errors,
+    }))
 }
 /// The saved searches, then each followed artist, then `pool:ID` for each pool followed on the
 /// site. `batch` sends a `pool:` search alone, since it contains `:`.
@@ -814,169 +733,319 @@ fn any_of(site: &Site, tags: Vec<String>) -> Vec<String> {
         _ => tags,
     }
 }
-async fn search_page(
-    t: &Transport,
-    site: &Site,
-    tags: Vec<String>,
-    page: usize,
-) -> Result<Vec<Value>> {
-    booru_engines::search(
-        t,
-        site,
-        &Search {
-            tags: any_of(site, tags),
-            page,
-            limit: PAGE_SIZE,
-            ..Search::default()
-        },
-    )
-    .await
+/// Searches read at once across all sites: each feed page asks every search for its next page.
+const PARALLEL_SEARCHES: usize = 6;
+/// Searches read at once on one site: e621 allows about two requests a second.
+const PARALLEL_SEARCHES_PER_SITE: usize = 2;
+/// Pages one search may pass in one feed page when every post on them was shown already.
+const MAX_SKIPPED_PAGES: usize = 3;
+
+struct Stream {
+    /// Index into the feed's sites.
+    site: usize,
+    /// Index of this search among its site's searches.
+    slot: usize,
+    query: Vec<String>,
+    at: Position,
 }
-async fn refresh_site(
-    db: &Database,
-    t: &Transport,
-    site: &Site,
-    tags: &[String],
-    generation: u64,
-    first_round: bool,
-) -> Result<()> {
-    let id = site.id.clone();
-    let mut state = db.call(move |c| store::state(c, &id)).await?;
-    if site.engine == "furaffinity" {
-        return refresh_fa(db, t, site, state, generation, first_round).await;
-    }
-    if tags.is_empty() {
-        state.exhausted = true;
-        commit(db, site, vec![], Some(state), generation).await?;
-        return Ok(());
-    }
-    let size = batch_size(site);
-    // The newest page of every tag is read once per sweep; a round stops at the end of the list.
-    for _ in 0..MAX_HEAD_QUERIES {
-        let (head, next, wrapped) = batch(tags, state.head, size);
-        let posts = search_page(t, site, head, 1).await?;
-        state.head = next;
-        if !commit(db, site, posts, None, generation).await? {
-            return Ok(());
-        }
-        if wrapped {
-            break;
-        }
-    }
-    for _ in 0..BACKFILL_QUERIES {
-        if state.exhausted {
-            break;
-        }
-        if state.page > MAX_PAGE {
-            return Err(crate::booru_http::remote(
-                "The feed reached the site's pagination limit. Narrow your subscribed searches.",
-            ));
-        }
-        let (tags, next, wrapped) = batch(tags, state.tag, size);
-        let posts = search_page(t, site, tags, state.page).await?;
-        state.page_had_posts |= !posts.is_empty();
-        state.tag = next;
-        if wrapped {
-            state.exhausted = !state.page_had_posts;
-            if !state.exhausted {
-                state.page += 1;
-            }
-            state.page_had_posts = false;
-        }
-        if !commit(db, site, posts, Some(state.clone()), generation).await? {
-            return Ok(());
-        }
-        if wrapped {
-            break;
-        }
-    }
-    commit(db, site, vec![], Some(state), generation).await?;
-    Ok(())
+/// One search's next posts, newest first, without those already shown.
+struct Read {
+    posts: Vec<Value>,
+    /// Whether the site may have older posts than these.
+    more: bool,
+    /// The page these posts came from, and the one after it, on sites that page by number or link.
+    page: Option<String>,
+    next: Option<String>,
+    /// Posts of `page` left out by [`Position::skip`].
+    skipped: usize,
 }
-async fn known(db: &Database, site: &Site, posts: Option<Vec<Value>>) -> Result<bool> {
-    let id = site.id.clone();
-    db.call(move |c| store::has_posts(c, &id, posts.as_deref()))
-        .await
+fn post_id(post: &Value) -> Option<u64> {
+    post["remoteId"].as_str()?.parse().ok()
 }
-/// `first_round` reads the newest page and catches up to the saved feed; every round then reads
-/// up to `BACKFILL_QUERIES` older pages. A later round of the same refresh skips the newest page,
-/// since each FurAffinity page is a browser request on iPhone.
-async fn refresh_fa(
-    db: &Database,
-    t: &Transport,
-    site: &Site,
-    mut state: SyncState,
-    generation: u64,
-    first_round: bool,
-) -> Result<()> {
-    let backfill_start = state.cursor.is_none() && !state.feed_exhausted;
-    if first_round || backfill_start {
-        let had_posts = known(db, site, None).await?;
-        let (posts, next) = remote::page(t, site, None).await?;
-        let reached = known(db, site, Some(posts.clone())).await?;
-        eprintln!(
-            "[developer] FurAffinity feed: {} posts on the newest page, {}; older pages {}",
-            posts.len(),
-            if !had_posts {
-                "first read"
-            } else if reached {
-                "joins the saved feed"
-            } else {
-                "a gap to the saved feed"
-            },
-            if state.feed_exhausted {
-                "all read"
-            } else {
-                "still to read"
-            }
-        );
-        if !commit(db, site, posts, None, generation).await? {
-            return Ok(());
-        }
-        if state.head_cursor.is_none() && had_posts && !reached {
-            state.head_cursor = next.clone();
-        }
-        if backfill_start {
-            state.cursor = next;
-            state.feed_exhausted = state.cursor.is_none();
-        }
-        let mut visited = HashSet::new();
-        for _ in 0..2 {
-            let Some(cursor) = state.head_cursor.clone() else {
-                break;
+async fn read(t: &Transport, site: &Site, query: &[String], at: &Position) -> Result<Read> {
+    let by_id = booru_engines::pages_by_id(site);
+    let mut page = at.page.clone();
+    for pass in 0..=MAX_SKIPPED_PAGES {
+        let (raw, more, next) = if site.engine == "furaffinity" {
+            let (posts, next) = remote::page(t, site, page.as_deref()).await?;
+            (posts, next.is_some(), next)
+        } else {
+            let number = match &page {
+                None => 1,
+                Some(p) => p.parse::<usize>().map_err(|_| invalid_cursor())?,
             };
-            if !visited.insert(cursor.clone()) {
+            if number > MAX_PAGE {
                 return Err(crate::booru_http::remote(
-                    "FurAffinity repeated its feed cursor. Try again later.",
+                    "The feed reached the site's pagination limit. Narrow your subscribed searches.",
                 ));
             }
-            let (posts, next) = remote::page(t, site, Some(&cursor)).await?;
-            let reached = known(db, site, Some(posts.clone())).await?;
-            state.head_cursor = if reached { None } else { next };
-            if !commit(db, site, posts, Some(state.clone()), generation).await? {
-                return Ok(());
+            let posts = booru_engines::search(
+                t,
+                site,
+                &Search {
+                    tags: any_of(site, query.to_vec()),
+                    page: number,
+                    limit: PAGE_SIZE,
+                    before: at.below.filter(|_| by_id),
+                    ..Search::default()
+                },
+            )
+            .await?;
+            let more = posts.len() >= PAGE_SIZE;
+            (
+                posts,
+                more,
+                (more && !by_id).then(|| (number + 1).to_string()),
+            )
+        };
+        let skipped = if pass == 0 { at.skip.min(raw.len()) } else { 0 };
+        // A page that moved since it was read repeats posts already shown.
+        let posts = raw
+            .into_iter()
+            .skip(skipped)
+            .filter(|p| {
+                at.below
+                    .is_none_or(|below| post_id(p).is_none_or(|id| id < below))
+            })
+            .collect::<Vec<_>>();
+        if posts.is_empty() && next.is_some() {
+            page = next;
+            continue;
+        }
+        return Ok(Read {
+            posts,
+            more,
+            page,
+            next,
+            skipped,
+        });
+    }
+    // shortcut: a search whose pages all repeat shown posts waits for the next feed page and
+    // sets no limit on this one, so its older posts may land just above the limit of the others.
+    Ok(Read {
+        posts: vec![],
+        more: true,
+        page,
+        next: None,
+        skipped: 0,
+    })
+}
+async fn read_all(t: &Transport, sites: &[Site], streams: &[Stream]) -> Vec<Result<Read>> {
+    let mut results = (0..streams.len()).map(|_| None).collect::<Vec<_>>();
+    let mut queued = (0..streams.len()).collect::<std::collections::VecDeque<_>>();
+    let mut running = vec![0; sites.len()];
+    let mut pending = tokio::task::JoinSet::new();
+    loop {
+        while pending.len() < PARALLEL_SEARCHES {
+            let Some(at) = queued
+                .iter()
+                .position(|i| running[streams[*i].site] < PARALLEL_SEARCHES_PER_SITE)
+            else {
+                break;
+            };
+            let index = queued.remove(at).unwrap();
+            let stream = &streams[index];
+            running[stream.site] += 1;
+            let (t, site, query, at) = (
+                t.clone(),
+                sites[stream.site].clone(),
+                stream.query.clone(),
+                stream.at.clone(),
+            );
+            pending.spawn(async move { (index, read(&t, &site, &query, &at).await) });
+        }
+        let Some(done) = pending.join_next().await else {
+            break;
+        };
+        match done {
+            Ok((index, result)) => {
+                running[streams[index].site] -= 1;
+                results[index] = Some(result);
+            }
+            // A task that panicked keeps its slot: its site has failed anyway.
+            Err(e) => eprintln!("[developer] A subscription search task failed: {e}"),
+        }
+    }
+    results
+        .into_iter()
+        .map(|r| r.unwrap_or_else(|| Err(Error::Storage("The search did not finish.".into()))))
+        .collect()
+}
+struct FeedPage {
+    /// (site index, post), newest first.
+    posts: Vec<(usize, Value)>,
+    /// Each stream's position after this page, in the order of the streams.
+    positions: Vec<Position>,
+    /// The first error of each site that failed.
+    failed: Vec<(usize, String)>,
+}
+/// Seconds since 1970 of `createdAt`, or None when the post has no readable date.
+fn posted(post: &Value) -> Option<i64> {
+    post["createdAt"]
+        .as_str()
+        .and_then(|s| {
+            time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+        })
+        .map(|d| d.unix_timestamp())
+}
+/// One search's dates, never rising, so each search stays a run in the merge: a post dated
+/// after the one above it takes that date, and a post without a date takes the date above it,
+/// or below it at the top of the page. A page without any date sorts first.
+fn run_dates(posts: &[Value]) -> Vec<i64> {
+    let first = posts.iter().find_map(posted).unwrap_or(i64::MAX);
+    let mut last = first;
+    posts
+        .iter()
+        .map(|p| {
+            last = posted(p).map_or(last, |d| d.min(last));
+            last
+        })
+        .collect()
+}
+/// Merges the reads by date down to the limit the searches with more posts set; see [`feed`].
+fn merge(streams: &[Stream], reads: Vec<Result<Read>>, limit: usize) -> FeedPage {
+    let mut failed: Vec<(usize, String)> = Vec::new();
+    for (stream, read) in streams.iter().zip(&reads) {
+        if let Err(e) = read {
+            if !failed.iter().any(|(site, _)| *site == stream.site) {
+                failed.push((stream.site, e.to_string()));
             }
         }
     }
-    for _ in 0..BACKFILL_QUERIES {
-        let Some(cursor) = state.cursor.clone().filter(|_| !state.feed_exhausted) else {
-            break;
-        };
-        if state.page > MAX_PAGE {
-            return Err(crate::booru_http::remote("The FurAffinity feed reached its pagination limit. Open older submissions on the original site."));
+    let ok = |stream: &Stream| !failed.iter().any(|(site, _)| *site == stream.site);
+    let dates = reads
+        .iter()
+        .map(|read| read.as_ref().map_or(vec![], |read| run_dates(&read.posts)))
+        .collect::<Vec<_>>();
+    let floor = streams
+        .iter()
+        .zip(&reads)
+        .zip(&dates)
+        .filter(|((stream, read), dates)| {
+            ok(stream) && read.as_ref().is_ok_and(|r| r.more) && !dates.is_empty()
+        })
+        .map(|(_, dates)| *dates.last().unwrap())
+        .max();
+    let mut candidates = Vec::new();
+    for (index, (stream, dates)) in streams.iter().zip(&dates).enumerate() {
+        if !ok(stream) {
+            continue;
         }
-        let (posts, next) = remote::page(t, site, Some(&cursor)).await?;
-        state.cursor = next;
-        state.feed_exhausted = state.cursor.is_none();
-        state.page += 1;
-        if !commit(db, site, posts, Some(state.clone()), generation).await? {
-            return Ok(());
+        for (position, date) in dates.iter().enumerate() {
+            if floor.is_some_and(|floor| *date < floor) {
+                break;
+            }
+            candidates.push((*date, index, position));
         }
     }
-    commit(db, site, vec![], Some(state), generation).await?;
-    Ok(())
+    // Stable: equal dates keep the order of the sites, then of each search.
+    candidates.sort_by_key(|c| std::cmp::Reverse(c.0));
+    let mut taken = vec![0; streams.len()];
+    let mut shown = HashSet::new();
+    let mut posts = Vec::new();
+    for (_, index, position) in candidates {
+        if posts.len() == limit {
+            break;
+        }
+        let read = reads[index].as_ref().unwrap();
+        let post = &read.posts[position];
+        taken[index] = position + 1;
+        let site = streams[index].site;
+        // A post that matches two searches of a site comes once.
+        if shown.insert((
+            site,
+            post["remoteId"].as_str().unwrap_or_default().to_owned(),
+        )) {
+            posts.push((site, post.clone()));
+        }
+    }
+    let positions = streams
+        .iter()
+        .zip(&reads)
+        .zip(taken)
+        .map(|((stream, read), taken)| {
+            let Ok(read) = read else {
+                return Position {
+                    done: true,
+                    ..stream.at.clone()
+                };
+            };
+            let last = read.posts[..taken].last();
+            let mut at = Position {
+                page: read.page.clone(),
+                below: last.and_then(post_id).or(stream.at.below),
+                // Without a numeric ID only the count of shown posts marks the place.
+                skip: if last.is_some_and(|p| post_id(p).is_none()) || taken == 0 {
+                    read.skipped + taken
+                } else {
+                    0
+                },
+                done: false,
+            };
+            if taken == read.posts.len() {
+                match &read.next {
+                    _ if !read.more => at.done = true,
+                    Some(next) => {
+                        at.page = Some(next.clone());
+                        at.skip = 0;
+                    }
+                    None => {}
+                }
+            }
+            at
+        })
+        .collect();
+    FeedPage {
+        posts,
+        positions,
+        failed,
+    }
 }
-
+/// Adds to `subscriptions.siteHits` the booru sites where the shown posts match a search, for
+/// the filter in Settings.
+async fn record_site_hits(
+    db: &Database,
+    sites: &[Site],
+    tags: &[String],
+    artists: &[String],
+    posts: &[(usize, Value)],
+) -> Result<()> {
+    let entries = tags.iter().chain(artists).cloned().collect::<Vec<_>>();
+    let mut found = HashSet::new();
+    for (index, post) in posts {
+        let site = &sites[*index];
+        if site.engine == "furaffinity" {
+            continue;
+        }
+        let post_tags: HashSet<String> = post["tags"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|t| t["tag"].as_str().map(crate::tags::normalize))
+            .collect();
+        for entry in entries.iter().filter(|e| matches_search(e, &post_tags)) {
+            found.insert((entry.clone(), site.id.clone()));
+        }
+    }
+    if found.is_empty() {
+        return Ok(());
+    }
+    db.call(move |c| {
+        let mut hits = store::site_hits(c)?;
+        let before = hits.clone();
+        for (entry, site) in found {
+            let sites = hits.entry(entry).or_default();
+            if !sites.contains(&site) {
+                sites.push(site);
+            }
+        }
+        if hits != before {
+            store::save_site_hits(c, &hits)?;
+        }
+        Ok(())
+    })
+    .await
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1003,21 +1072,48 @@ mod tests {
     use axum::{extract::Request, response::IntoResponse, routing::any};
     use std::sync::{Arc, Mutex};
 
-    async fn fixture() -> (String, Arc<Mutex<Vec<String>>>, tokio::task::JoinHandle<()>) {
+    use crate::db::OWNER_ID;
+
+    /// An e621 that holds `posts` as (id, tag, unix seconds) and answers `~a ~b` (any of),
+    /// `a b` (all of), `page=N` and `page=b<id>` as e621 does, newest ID first.
+    async fn booru(
+        posts: Vec<(u64, &'static str, i64)>,
+    ) -> (String, Arc<Mutex<Vec<String>>>, tokio::task::JoinHandle<()>) {
         let requests = Arc::new(Mutex::new(Vec::new()));
         let captured = requests.clone();
-        let app=Router::new().fallback(any(move |request:Request| {
-            let requests=captured.clone();
+        let app = Router::new().fallback(any(move |request: Request| {
+            let (requests, posts) = (captured.clone(), posts.clone());
             async move {
-                let query=request.uri().query().unwrap_or("").to_owned();
-                requests.lock().unwrap().push(query.clone());
-                let url=reqwest::Url::parse(&format!("https://fixture.example/?{query}")).unwrap();
-                let params=url.query_pairs().collect::<HashMap<_,_>>();
-                let page=params.get("page").map(|s| s.as_ref()).unwrap_or("1");
-                let rows=if page=="1" || page=="2" {vec![json!({"id":page.parse::<u64>().unwrap(),
-                    "file":{"url":"https://cdn.example.com/post.jpg","ext":"jpg"},
-                    "preview":{"url":"https://cdn.example.com/preview.jpg"},"tags":{"artist":["fixture_artist"]},
-                    "created_at":"2026-10-12T00:00:00Z","relationships":{},"pools":[]})]} else {vec![]};
+                let query = request.uri().query().unwrap_or("").to_owned();
+                let url = reqwest::Url::parse(&format!("https://fixture.example/?{query}")).unwrap();
+                let params = url.query_pairs().into_owned().collect::<HashMap<_, _>>();
+                requests.lock().unwrap().push(format!("{} page={}", params["tags"], params["page"]));
+                let terms = params["tags"].split(' ').collect::<Vec<_>>();
+                let any = terms.iter().filter_map(|t| t.strip_prefix('~')).collect::<Vec<_>>();
+                let all = terms.iter().filter(|t| !t.starts_with('~') && !t.contains(':')).collect::<Vec<_>>();
+                let limit: usize = params["limit"].parse().unwrap();
+                let mut rows = posts
+                    .iter()
+                    .filter(|(_, tag, _)| all.iter().all(|t| *t == tag) && (any.is_empty() || any.contains(tag)))
+                    .collect::<Vec<_>>();
+                rows.sort_by_key(|p| std::cmp::Reverse(p.0));
+                let rows = match params["page"].strip_prefix('b') {
+                    Some(below) => {
+                        let below: u64 = below.parse().unwrap();
+                        rows.into_iter().filter(|p| p.0 < below).take(limit).collect::<Vec<_>>()
+                    }
+                    None => {
+                        let page: usize = params["page"].parse().unwrap();
+                        rows.into_iter().skip((page - 1) * limit).take(limit).collect()
+                    }
+                };
+                let rows = rows.iter().map(|(id, tag, at)| {
+                    let at = time::OffsetDateTime::from_unix_timestamp(*at).unwrap()
+                        .format(&time::format_description::well_known::Rfc3339).unwrap();
+                    json!({"id":id,"file":{"url":"https://cdn.example.com/post.jpg","ext":"jpg"},
+                        "preview":{"url":"https://cdn.example.com/preview.jpg"},"tags":{"general":[tag]},
+                        "created_at":at,"relationships":{},"pools":[]})
+                }).collect::<Vec<_>>();
                 Json(json!({"posts":rows})).into_response()
             }
         }));
@@ -1028,6 +1124,166 @@ mod tests {
         });
         (base, requests, task)
     }
+    /// Reads the whole feed of `sites` `limit` posts at a time, as Show more does: the ids
+    /// shown and the site errors.
+    async fn read_feed(db: &Database, sites: &[Site], limit: usize) -> (Vec<String>, Vec<Value>) {
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let (mut ids, mut errors, mut cursor) = (vec![], vec![], None);
+        for _ in 0..100 {
+            let page = feed_page(db, &t, sites.to_vec(), cursor, limit)
+                .await
+                .unwrap();
+            ids.extend(
+                page["posts"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|p| p["remoteId"].as_str().unwrap().to_owned()),
+            );
+            errors.extend(page["siteErrors"].as_array().unwrap().iter().cloned());
+            let Some(next) = page["nextCursor"].as_str() else {
+                return (ids, errors);
+            };
+            assert_eq!(page["hasMore"], true);
+            cursor = Some(decode_cursor(next).unwrap());
+        }
+        panic!("the feed never ended");
+    }
+    fn ids(range: impl DoubleEndedIterator<Item = u64>) -> Vec<String> {
+        range.rev().map(|id| id.to_string()).collect()
+    }
+    #[tokio::test]
+    async fn every_post_of_a_search_comes_once_in_order_even_past_its_first_page() {
+        // 100 new posts on one search: the old refresh read only the newest 40 of them.
+        let (base, requests, task) = booru(
+            (1..=100)
+                .map(|id| {
+                    (
+                        id,
+                        if id % 2 == 0 { "fox" } else { "wolf" },
+                        1_800_000_000 + id as i64 * 60,
+                    )
+                })
+                .collect(),
+        )
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let site = setup(&db, base).await;
+        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox", "wolf"])))
+            .await
+            .unwrap();
+        let (shown, errors) = read_feed(&db, &[site], 30).await;
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(shown, ids(1..=100));
+        // One search, `~fox ~wolf`, paged by ID: posts added on top cannot shift the next page.
+        assert!(requests
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|r| r.starts_with("~fox ~wolf page=")));
+        task.abort();
+    }
+    #[tokio::test]
+    async fn searches_merge_by_date_and_an_older_post_never_follows_a_newer_one_later() {
+        // `fox score:>10` is searched alone: two searches, one busy and recent, one sparse.
+        let mut posts = (101..=160)
+            .map(|id| (id, "fox", 1_800_000_000 + id as i64 * 60))
+            .collect::<Vec<_>>();
+        posts.extend((1..=30).map(|id| (id, "wolf", 1_800_000_000 + id as i64 * 400)));
+        let (base, _, task) = booru(posts.clone()).await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let site = setup(&db, base).await;
+        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox score:>10", "wolf"])))
+            .await
+            .unwrap();
+        let (shown, _) = read_feed(&db, &[site], 25).await;
+        posts.sort_by_key(|p| std::cmp::Reverse(p.2));
+        assert_eq!(
+            shown,
+            posts.iter().map(|p| p.0.to_string()).collect::<Vec<_>>()
+        );
+        task.abort();
+    }
+    #[tokio::test]
+    async fn a_failing_site_is_reported_and_the_others_still_load() {
+        let (base, _, task) = booru(
+            (1..=3)
+                .map(|id| (id, "fox", 1_800_000_000 + id as i64))
+                .collect(),
+        )
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let site = setup(&db, base).await;
+        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox"])))
+            .await
+            .unwrap();
+        let broken = Site {
+            id: "broken".into(),
+            name: "Broken".into(),
+            base: "http://127.0.0.1:1".into(),
+            ..site.clone()
+        };
+        let (shown, errors) = read_feed(&db, &[site, broken], 40).await;
+        assert_eq!(shown, ["3", "2", "1"]);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0]["siteId"], "broken");
+        task.abort();
+    }
+    #[tokio::test]
+    async fn a_cursor_for_other_searches_is_refused() {
+        let (base, _, task) = booru(
+            (1..=50)
+                .map(|id| (id, "fox", 1_800_000_000 + id as i64))
+                .collect(),
+        )
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let site = setup(&db, base).await;
+        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox"])))
+            .await
+            .unwrap();
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let first = feed_page(&db, &t, vec![site.clone()], None, 10)
+            .await
+            .unwrap();
+        let cursor = decode_cursor(first["nextCursor"].as_str().unwrap()).unwrap();
+        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox", "wolf"])))
+            .await
+            .unwrap();
+        assert!(matches!(
+            feed_page(&db, &t, vec![site], Some(cursor), 10).await,
+            Err(Error::Invalid(_))
+        ));
+        task.abort();
+    }
+    #[tokio::test]
+    async fn the_shown_posts_record_where_each_search_has_results() {
+        let (base, _, task) = booru(vec![(1, "wolf", 1_800_000_000)]).await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let site = setup(&db, base).await;
+        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["wolf score:>5", "fox"])))
+            .await
+            .unwrap();
+        read_feed(&db, &[site], 40).await;
+        let sites = boorus::sites(&db).await.unwrap();
+        let (wolf, fox) = ("wolf score:>5".to_owned(), "fox".to_owned());
+        let hits = db
+            .call(move |c| site_hits(c, &sites, &[&wolf, &fox]))
+            .await
+            .unwrap();
+        assert_eq!(hits["wolf score:>5"], ["fixture"]);
+        assert!(!hits.contains_key("fox"));
+        task.abort();
+    }
     async fn setup(db: &Database, base: String) -> Site {
         db.call(|c| {
             c.execute("INSERT INTO user_booru_sites(id,user_id,name,engine,base_url,is_preset,enabled,sort_order,created_at,updated_at)
@@ -1036,173 +1292,6 @@ mod tests {
         let mut site = boorus::site(db, "fixture".into()).await.unwrap().unwrap();
         site.base = base;
         site
-    }
-    #[tokio::test]
-    async fn a_refresh_asked_for_during_an_automatic_one_still_reads_the_sites() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        // `.example` never answers, so a refresh that reads the site saves its error.
-        setup(&db, "https://fixture.example".into()).await;
-        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox"])))
-            .await
-            .unwrap();
-        // The automatic refresh holds the lock, and it leaves out browser-only sites.
-        let automatic = db.subscriptions.clone().lock_owned().await;
-        let asked = tokio::spawn({
-            let db = db.clone();
-            async move { refresh(&db, &Transport::default(), 1, false, None).await }
-        });
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        drop(automatic);
-        let result = asked.await.unwrap().unwrap();
-        assert_eq!(
-            result["errors"][0]["siteId"], "fixture",
-            "the refresh the person asked for read the site: {result}"
-        );
-    }
-    #[tokio::test]
-    async fn a_refresh_for_some_sites_leaves_the_others_alone() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        // `.example` never answers, so a refresh that reads the site saves its error.
-        setup(&db, "https://fixture.example".into()).await;
-        db.call(|c| write_setting(c, "subscriptions.tags", &json!(["fox"])))
-            .await
-            .unwrap();
-        let other = HashSet::from(["another-site".to_owned()]);
-        let result = refresh(&db, &Transport::default(), 1, false, Some(&other))
-            .await
-            .unwrap();
-        assert_eq!(result["errors"], json!([]), "{result}");
-        let read: i64 = db
-            .call(|c| {
-                Ok(c.query_row(
-                    "SELECT count(*) FROM subscription_feed_sync_state WHERE site_id='fixture'",
-                    [],
-                    |r| r.get(0),
-                )?)
-            })
-            .await
-            .unwrap();
-        assert_eq!(read, 0, "the site left out was not read");
-    }
-    #[tokio::test]
-    async fn subscription_refresh_keeps_compound_searches_and_backfills_without_moving_posts() {
-        let (base, requests, task) = fixture().await;
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        let site = setup(&db, base).await;
-        let t = Transport {
-            allow_loopback: true,
-        };
-        let tags = vec![
-            "fixture_artist score:>10".into(),
-            "fox".into(),
-            "wolf".into(),
-        ];
-        refresh_site(&db, &t, &site, &tags, 0, true).await.unwrap();
-        let state = db.call(|c| store::state(c, "fixture")).await.unwrap();
-        assert_eq!(state.page, 3);
-        assert_eq!(state.head, 0);
-        let queries = requests.lock().unwrap().clone();
-        let decoded = queries
-            .iter()
-            .map(|q| {
-                reqwest::Url::parse(&format!("https://fixture.example/?{q}"))
-                    .unwrap()
-                    .query_pairs()
-                    .find(|(k, _)| k == "tags")
-                    .unwrap()
-                    .1
-                    .into_owned()
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(
-            decoded,
-            vec![
-                "fixture_artist score:>10",
-                "~fox ~wolf",
-                "fixture_artist score:>10",
-                "~fox ~wolf"
-            ]
-        );
-        let first = db
-            .call(|c| store::list(c, &["fixture".into()], None, 10))
-            .await
-            .unwrap();
-        assert_eq!(first.items.len(), 2);
-        let cursor = first.next.clone();
-        refresh_site(&db, &t, &site, &tags, 0, true).await.unwrap();
-        let state = db.call(|c| store::state(c, "fixture")).await.unwrap();
-        assert!(state.exhausted);
-        let second = db
-            .call(|c| store::list(c, &["fixture".into()], None, 10))
-            .await
-            .unwrap();
-        assert_eq!(cursor, second.next);
-        assert_eq!(first.items, second.items);
-        task.abort();
-    }
-    #[tokio::test]
-    async fn subscription_reset_and_site_changes_refuse_late_pages_and_favorite_overrides_survive_refresh(
-    ) {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        let site = setup(&db, "https://fixture.example".into()).await;
-        let post = json!({"remoteId":"7","previewUrl":"https://cdn.example.com/post.jpg","sampleUrl":null,"fileUrl":null,
-            "createdAt":"2026-10-12T00:00:00Z","tags":[],"favorited":true});
-        assert!(commit(
-            &db,
-            &site,
-            vec![post.clone()],
-            Some(SyncState::default()),
-            0
-        )
-        .await
-        .unwrap());
-        store::favorite_override(&db, "fixture", "7", false)
-            .await
-            .unwrap();
-        assert!(commit(&db, &site, vec![post.clone()], None, 0)
-            .await
-            .unwrap());
-        let page = db
-            .call(|c| store::list(c, &["fixture".into()], None, 10))
-            .await
-            .unwrap();
-        assert_eq!(page.items[0].1["favorited"], false);
-        db.call(|c| {
-            let tx = c.transaction()?;
-            store::reset(&tx, None, true)?;
-            tx.commit()?;
-            Ok(())
-        })
-        .await
-        .unwrap();
-        assert!(!commit(
-            &db,
-            &site,
-            vec![post.clone()],
-            Some(SyncState::default()),
-            0
-        )
-        .await
-        .unwrap());
-        assert!(!known(&db, &site, None).await.unwrap());
-        db.call(|c| {
-            c.execute(
-                "UPDATE user_booru_sites SET updated_at='2026-10-13' WHERE id='fixture'",
-                [],
-            )?;
-            Ok(())
-        })
-        .await
-        .unwrap();
-        assert!(
-            !commit(&db, &site, vec![post], Some(SyncState::default()), 1)
-                .await
-                .unwrap()
-        );
     }
     #[test]
     fn subscription_batches_use_each_engines_or_and_one_tag_where_none_is_verified() {
@@ -1282,101 +1371,117 @@ mod tests {
         site.base = base;
         (site, requests, task)
     }
-    async fn saved_ids(db: &Database) -> Vec<String> {
-        db.call(|c| {
-            let mut s =
-                c.prepare("SELECT remote_id FROM subscription_feed_items ORDER BY remote_id")?;
-            let ids = s
-                .query_map([], |r| r.get(0))?
-                .collect::<rusqlite::Result<Vec<String>>>()?;
-            Ok(ids)
-        })
-        .await
-        .unwrap()
-    }
     #[tokio::test]
-    async fn subscription_fa_backfill_recovers_after_an_interrupted_first_page_or_initial_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        let (site, _, task) = fa_inbox(&db).await;
-        let t = Transport {
-            allow_loopback: true,
-        };
-        let (posts, _) = remote::page(&t, &site, None).await.unwrap();
-        assert!(commit(&db, &site, posts, None, 0).await.unwrap());
-        refresh_site(&db, &t, &site, &[], 0, true).await.unwrap();
-        assert_eq!(saved_ids(&db).await, ["7", "8", "9"]);
-        db.call(|c| {
-            let tx = c.transaction()?;
-            store::reset(&tx, None, false)?;
-            store::save_state(
-                &tx,
-                "fixture",
-                &SyncState::default(),
-                Some("Temporary network failure"),
-            )?;
-            tx.commit()?;
-            Ok(())
-        })
-        .await
-        .unwrap();
-        refresh_site(&db, &t, &site, &[], 1, true).await.unwrap();
-        assert_eq!(saved_ids(&db).await, ["7", "8", "9"]);
-        task.abort();
-    }
-    #[tokio::test]
-    async fn a_furaffinity_refresh_reads_older_pages_without_reading_the_newest_again() {
+    async fn the_furaffinity_inbox_carries_on_from_the_last_post_shown() {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
         let (site, requests, task) = fa_inbox(&db).await;
-        let t = Transport {
-            allow_loopback: true,
-        };
-        refresh_site(&db, &t, &site, &[], 0, true).await.unwrap();
-        assert_eq!(saved_ids(&db).await, ["7", "8", "9"]);
+        let (shown, errors) = read_feed(&db, &[site], 1).await;
+        assert_eq!(shown, ["9", "8", "7"]);
+        // The watchlist sync, then each page once: a page read whole is not read again.
+        let pages = requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|p| p.starts_with("/msg/"))
+            .cloned()
+            .collect::<Vec<_>>();
         assert_eq!(
-            *requests.lock().unwrap(),
+            pages,
             [
                 "/msg/submissions/",
                 "/msg/submissions/new~8@48/",
                 "/msg/submissions/new~7@48/"
             ]
         );
-        refresh_site(&db, &t, &site, &[], 0, false).await.unwrap();
-        assert_eq!(
-            requests.lock().unwrap().len(),
-            3,
-            "a later round reads nothing once the feed is read"
-        );
+        assert!(errors.is_empty(), "{errors:?}");
         task.abort();
     }
+    fn stream(site: usize) -> Stream {
+        Stream {
+            site,
+            slot: 0,
+            query: vec![],
+            at: Position::default(),
+        }
+    }
+    fn dated(id: &str, at: &str) -> Value {
+        json!({"remoteId":id,"createdAt":at})
+    }
+    #[test]
+    fn a_page_of_ids_that_are_not_numbers_carries_on_by_counting_the_posts_shown() {
+        let read = Read {
+            posts: ["c", "b", "a"]
+                .iter()
+                .map(|id| dated(id, "2026-10-12T00:00:00Z"))
+                .collect(),
+            more: true,
+            page: None,
+            next: Some("2".into()),
+            skipped: 0,
+        };
+        let page = merge(&[stream(0)], vec![Ok(read)], 2);
+        assert_eq!(page.posts.len(), 2);
+        assert_eq!(
+            page.positions,
+            [Position {
+                skip: 2,
+                ..Position::default()
+            }]
+        );
+    }
+    #[test]
+    fn a_post_without_a_date_stays_beside_its_neighbours() {
+        let posts = [
+            json!({"remoteId":"3"}),
+            dated("2", "2026-10-12T00:00:00Z"),
+            json!({"remoteId":"1"}),
+            dated("0", "2026-10-13T00:00:00Z"),
+        ];
+        let day = 1_791_763_200;
+        assert_eq!(run_dates(&posts), [day, day, day, day]);
+        assert_eq!(run_dates(&[json!({"remoteId":"1"})]), [i64::MAX]);
+    }
+    #[test]
+    fn a_cursor_belongs_to_one_address_and_engine() {
+        let site = |base: &str| Site {
+            id: "fixture".into(),
+            name: "Fixture".into(),
+            engine: "e621".into(),
+            base: base.into(),
+            username: None,
+            key: None,
+            cookie: None,
+            enabled: true,
+            public: Value::Null,
+        };
+        let searches = [vec!["fox".to_owned()]];
+        assert_eq!(
+            fingerprint(&site("https://e621.net"), &searches),
+            fingerprint(&site("https://e621.net"), &searches)
+        );
+        assert_ne!(
+            fingerprint(&site("https://e621.net"), &searches),
+            fingerprint(&site("https://e926.net"), &searches)
+        );
+    }
     #[tokio::test]
-    async fn a_site_that_keeps_failing_does_not_hide_the_feed_of_the_others() {
+    async fn site_hits_count_a_furaffinity_artist_from_the_watchlist() {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        setup(&db, "https://fixture.example".into()).await;
-        let page = db
-            .call(|c| {
-                let state = store::state(c, "fixture")?;
-                store::save_state(
-                    c,
-                    "fixture",
-                    &state,
-                    Some("The site returned an unexpected response."),
-                )?;
-                let first = store::list(c, &["fixture".into()], None, 10)?;
-                let cursor = store::Cursor {
-                    sort: "2026-10-01T00:00:00.000Z".into(),
-                    discovered: "2026-10-01T00:00:00.000Z".into(),
-                    site: "other".into(),
-                    remote: "1".into(),
-                };
-                let older = store::list(c, &["fixture".into()], Some(cursor), 10)?;
-                Ok((first.ready, older.ready))
-            })
+        let (_, _, task) = fa_inbox(&db).await;
+        db.call(|c| store::save_seen_artists(c, "fixture", &["rukis".to_owned()]))
             .await
             .unwrap();
-        assert_eq!(page, (true, true));
+        let sites = boorus::sites(&db).await.unwrap();
+        let (rukis, other) = ("rukis".to_owned(), "other".to_owned());
+        let hits = db
+            .call(move |c| site_hits(c, &sites, &[&rukis, &other]))
+            .await
+            .unwrap();
+        assert_eq!(hits["rukis"], ["fixture"]);
+        assert!(!hits.contains_key("other"));
+        task.abort();
     }
     #[test]
     fn a_followed_pool_is_searched_alone_and_only_on_its_own_site() {
@@ -1649,89 +1754,6 @@ mod tests {
         assert!(!matches_search("~c ~d", &post));
         assert!(matches_search("a -x score:>5", &post));
         assert!(!matches_search("-x score:>5", &post));
-    }
-    #[tokio::test]
-    async fn site_hits_lists_the_enabled_sites_with_results() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        let sites = db
-            .call(|c| {
-                c.execute("INSERT INTO user_booru_sites(id,user_id,name,engine,base_url,is_preset,enabled,sort_order,created_at,updated_at)
-                    VALUES ('fixture',?1,'Fixture','e621','https://fixture.example',0,1,0,'2026-10-12','2026-10-12')",[OWNER_ID])?;
-                store::insert(c, "fixture", &[json!({"remoteId":"7","tags":[{"tag":"wolf","category":"general"}],
-                    "previewUrl":null,"sampleUrl":null,"fileUrl":null})])?;
-                Ok(())
-            })
-            .await
-            .and(boorus::sites(&db).await)
-            .unwrap();
-        let (wolf, fox) = ("wolf score:>5".to_owned(), "fox".to_owned());
-        let hits = db
-            .call(move |c| site_hits(c, &sites, &[&wolf, &fox]))
-            .await
-            .unwrap();
-        assert_eq!(hits["wolf score:>5"], ["fixture"]);
-        assert!(!hits.contains_key("fox"));
-    }
-    #[tokio::test]
-    async fn site_hits_reads_only_the_newest_saved_posts() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        let sites = db
-            .call(|c| {
-                c.execute("INSERT INTO user_booru_sites(id,user_id,name,engine,base_url,is_preset,enabled,sort_order,created_at,updated_at)
-                    VALUES ('fixture',?1,'Fixture','e621','https://fixture.example',0,1,0,'2026-10-12','2026-10-12')",[OWNER_ID])?;
-                let post = |id: i64, tag: &str, at: &str| {
-                    json!({"remoteId":id.to_string(),"createdAt":at,"tags":[{"tag":tag,"category":"general"}],
-                        "previewUrl":null,"sampleUrl":null,"fileUrl":null})
-                };
-                let mut posts = vec![post(0, "cat", "2020-01-01T00:00:00.000Z")];
-                posts.extend((1..=SITE_HITS_POSTS).map(|id| post(id, "wolf", "2026-10-12T00:00:00.000Z")));
-                store::insert(c, "fixture", &posts)?;
-                Ok(())
-            })
-            .await
-            .and(boorus::sites(&db).await)
-            .unwrap();
-        let (wolf, cat) = ("wolf".to_owned(), "cat".to_owned());
-        let hits = db
-            .call(move |c| site_hits(c, &sites, &[&wolf, &cat]))
-            .await
-            .unwrap();
-        assert_eq!(hits["wolf"], ["fixture"]);
-        assert!(!hits.contains_key("cat"));
-    }
-    #[tokio::test]
-    async fn watching_a_new_artist_keeps_the_saved_furaffinity_feed() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        let (site, fa, task) = fake_fa(&["old"], &["old", "new"], None).await;
-        let t = Transport {
-            allow_loopback: true,
-        };
-        db.call(|c| {
-            c.execute("INSERT INTO user_booru_sites(id,user_id,name,engine,base_url,is_preset,enabled,sort_order,created_at,updated_at)
-                VALUES ('fixture',?1,'Fixture','furaffinity','https://fixture.example',0,1,0,'2026-10-12','2026-10-12')",[OWNER_ID])?;
-            store::insert(
-                c,
-                "fixture",
-                &[json!({"remoteId":"7","tags":[],
-                "previewUrl":null,"sampleUrl":null,"fileUrl":null})],
-            )?;
-            store::save_seen_artists(c, "fixture", &["old".to_owned()])
-        })
-        .await
-        .unwrap();
-        save_local(&db, &["old", "new"]).await;
-        let errors = sync_artists(&db, &t, &[site]).await.unwrap();
-        assert!(errors.is_empty());
-        assert_eq!(watching(&fa), ["new", "old"]);
-        let saved = db
-            .call(|c| store::has_posts(c, "fixture", None))
-            .await
-            .unwrap();
-        assert!(saved);
-        task.abort();
     }
     #[tokio::test]
     async fn a_list_emptied_at_once_is_imported_again_instead_of_unwatched() {
