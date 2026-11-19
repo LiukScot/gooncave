@@ -16,8 +16,9 @@ export default defineConfig({
       'src/**/*.test.ts',
       'src/**/*.test.tsx'
     ],
-    // Keep CI fast: tests are pure, no DOM, no global setup overhead.
+    // Keep CI fast: tests are pure and need no DOM unless a file asks for one.
     globals: false,
+    setupFiles: ['test/noNetwork.ts'],
     // This package imports its own files without extensions, which Node
     // refuses; inlined, Vite resolves them as it does in the app.
     server: { deps: { inline: ['@material/material-color-utilities'] } },
