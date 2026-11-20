@@ -34,6 +34,7 @@ const render = (value: string, onPick: (next: string) => void) => {
   const input = host.querySelector('input');
   if (!input) throw new Error('no input');
   act(() => input.focus());
+  act(() => input.click());
   return input;
 };
 
@@ -49,6 +50,23 @@ it('offers recent searches in an empty box and runs the whole search picked with
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   });
   expect(onPick).toHaveBeenCalledWith('wolf rating:s');
+});
+
+it('keeps recent searches closed while the box only has focus, as when the search panel opens', () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  root = createRoot(host);
+  act(() =>
+    root?.render(<TagSearchInput value="" onChange={() => undefined} recent={['fox']} placeholder="tags" />)
+  );
+  const input = host.querySelector('input');
+  if (!input) throw new Error('no input');
+  act(() => input.focus());
+  expect(document.querySelector('[role="option"]')).toBeNull();
+  act(() => {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+  });
+  expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual(['fox']);
 });
 
 it('submits an empty box on Enter instead of running a recent search', () => {
