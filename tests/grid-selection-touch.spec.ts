@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { serveFixtureSite, tile } from './gridSelectionFixtures';
+import { expectBarBesideCornerButton, serveFixtureSite, tile } from './gridSelectionFixtures';
 
 const PHONE = {
   hasTouch: true,
@@ -36,6 +36,9 @@ test('a long press selects a tile instead of opening it, and taps add more', asy
   const bar = page.getByRole('toolbar', { name: 'Selection' });
   await expect(bar).toContainText('1 selected');
   await expect(page.locator('.file-detail-panel-current')).toHaveCount(0);
+  expect(await expectBarBesideCornerButton(page)).toEqual({
+    centredOnButton: true, leftOfButton: true, inTheLeftHalf: true, besideTheMenu: true
+  });
 
   await tile(page, '2').tap();
   await expect(bar).toContainText('2 selected');

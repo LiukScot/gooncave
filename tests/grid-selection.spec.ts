@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { selectionPosts as posts, serveFixtureSite, tile } from './gridSelectionFixtures';
+import { expectBarBesideCornerButton, selectionPosts as posts, serveFixtureSite, tile } from './gridSelectionFixtures';
 
 test('Ctrl-click selects on desktop and Escape leaves', async ({ page }) => {
   await serveFixtureSite(page);
@@ -8,6 +8,9 @@ test('Ctrl-click selects on desktop and Escape leaves', async ({ page }) => {
   await tile(page, '1').click({ modifiers: ['Control'] });
   const bar = page.getByRole('toolbar', { name: 'Selection' });
   await expect(bar).toContainText('1 selected');
+  expect(await expectBarBesideCornerButton(page)).toEqual({
+    centredOnButton: true, leftOfButton: true, inTheLeftHalf: true, besideTheMenu: true
+  });
   await page.keyboard.press('Escape');
   await expect(bar).toHaveCount(0);
 });
