@@ -45,7 +45,7 @@ Your favorites are scattered across e621, Danbooru, Gelbooru and half a dozen ot
 ### Controls
 
 - Remappable keyboard shortcuts (Settings → Shortcuts)
-- Fullscreen: wheel, two-finger scroll or pinch to zoom, drag to pan, double-click to reset
+- Fullscreen: mouse wheel or pinch to zoom, two fingers or a drag to pan, double-click to reset
 
 ## Download
 

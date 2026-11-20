@@ -282,7 +282,7 @@ test('a file asks for its comments only when the reader gets near them', async (
   await expect.poll(() => asked).toBe(1);
 });
 
-test('in fullscreen the wheel and a pinch zoom, and dragging pans the picture instead of dragging the image out', async ({ page }) => {
+test('in fullscreen a mouse wheel and a pinch zoom, a touchpad slide does not, and dragging pans the picture instead of dragging the image out', async ({ page }) => {
   await page.goto('/app/gallery');
   await card(page, 'landscape.png').click();
   const wrap = page.locator('.file-detail-panel-current .file-detail-media-wrap');
@@ -297,8 +297,14 @@ test('in fullscreen the wheel and a pinch zoom, and dragging pans the picture in
   const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.move(center.x, center.y);
   const zoomed = () => wrap.evaluate((element) => (element as HTMLElement).style.getPropertyValue('--file-detail-zoom'));
-  // A mouse wheel notch, or two fingers sliding on a touchpad, zooms in.
-  await page.mouse.wheel(0, -100);
+  // Two fingers sliding on a touchpad send small wheel steps: they do not zoom.
+  const unzoomed = await zoomed();
+  for (const step of [-14, -26, -18]) await page.mouse.wheel(0, step);
+  await page.waitForTimeout(200);
+  await expect(wrap).not.toHaveClass(/is-zoomed/);
+  expect(await zoomed()).toBe(unzoomed);
+  // A mouse wheel notch is 120: it zooms in.
+  await page.mouse.wheel(0, -120);
   await expect(wrap).toHaveClass(/is-zoomed/);
   const wheeled = await zoomed();
   // A pinch: the touchpad sends it as a wheel with Ctrl held.
@@ -306,6 +312,13 @@ test('in fullscreen the wheel and a pinch zoom, and dragging pans the picture in
   await page.mouse.wheel(0, -150);
   await page.keyboard.up('Control');
   await expect.poll(zoomed).not.toBe(wheeled);
+  // A slide moves the zoomed picture and keeps its size.
+  const pinched = await zoomed();
+  const scaleOf = (transform: string) => transform.match(/scale\(([^)]+)\)/)?.[1];
+  await page.waitForTimeout(200);
+  await page.mouse.wheel(0, 20);
+  await expect.poll(zoomed).not.toBe(pinched);
+  expect(scaleOf(await zoomed())).toBe(scaleOf(pinched));
   // The thumbnail under the picture does not zoom, so panning would uncover it.
   expect(await wrap.evaluate((element) => getComputedStyle(element, '::before').display)).toBe('none');
   const zoom = () => wrap.evaluate((element) => (element as HTMLElement).style.getPropertyValue('--file-detail-zoom'));

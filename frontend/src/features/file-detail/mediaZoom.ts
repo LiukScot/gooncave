@@ -85,6 +85,14 @@ const WHEEL_NOTCH = 100;
 export const pinchWheelDelta = (deltaY: number): number =>
   clamp(deltaY * PINCH_WHEEL_RATE, -WHEEL_NOTCH, WHEEL_NOTCH);
 
+/**
+ * Whether a wheel event without Ctrl is a mouse wheel rather than two fingers sliding on a
+ * touchpad. Measured in the desktop app on Linux: a mouse notch reports `deltaY` of exactly ±120
+ * (more when notches coalesce), a touchpad slide small steps of 2–60 every few milliseconds.
+ */
+export const isMouseNotch = (event: Pick<WheelEvent, 'deltaX' | 'deltaY'>): boolean =>
+  event.deltaX === 0 && event.deltaY !== 0 && event.deltaY % 120 === 0;
+
 /** How far a double tap zooms in. */
 export const DOUBLE_TAP_ZOOM = 2.5;
 

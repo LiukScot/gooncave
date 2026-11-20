@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   DOUBLE_TAP_ZOOM,
+  isMouseNotch,
   isZoomed,
   NO_ZOOM,
   panBy,
@@ -38,6 +39,9 @@ const startPinch = (
   return { start, distance: distanceBetween(a, b), mid: midpoint(a, b, rect) };
 };
 
+// Longer than the few milliseconds between a touchpad slide's steps.
+const SLIDE_GAP_MS = 100;
+
 /**
  * Zoom for the fullscreen viewer: the wheel and a mouse drag on a computer,
  * a pinch and a one-finger drag on a touch screen.
@@ -69,11 +73,20 @@ export const useMediaZoom = (enabled: boolean, resetKey: string | null) => {
     // Registered by hand rather than through onWheel: React attaches wheel
     // listeners passively, and a passive listener cannot stop the page from
     // scrolling underneath the zoom.
-    // Every wheel zooms on the point under the pointer: a mouse notch, a touchpad pinch (a wheel
-    // with Ctrl held) and two fingers sliding on a touchpad. A left drag moves a zoomed picture.
+    // A mouse wheel and a touchpad pinch (a wheel with Ctrl held) zoom on the point under the
+    // pointer; two fingers sliding on a touchpad move a zoomed picture, as a left drag does.
+    // A slide can pass a step that looks like a notch, so the whole slide stays a slide.
+    let slidingUntil = 0;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const rect = wrap.getBoundingClientRect();
+      if (!event.ctrlKey && (event.timeStamp < slidingUntil || !isMouseNotch(event))) {
+        slidingUntil = event.timeStamp + SLIDE_GAP_MS;
+        setZoom((current) =>
+          isZoomed(current) ? panBy(current, { x: -event.deltaX, y: -event.deltaY }, rect) : current
+        );
+        return;
+      }
       setZoom((current) =>
         zoomAtPointer(
           current,
