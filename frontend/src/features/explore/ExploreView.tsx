@@ -1103,7 +1103,7 @@ export function ExploreCard({
     >
       {selected ? (
         <span className="selection-check" aria-hidden="true">
-          <Check className="size-4" />
+          <Check />
         </span>
       ) : null}
       <div ref={cardFaceRef} className="explore-card-face">

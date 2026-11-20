@@ -290,7 +290,7 @@ const GalleryCard = memo(function GalleryCard({
     >
       {selected ? (
         <span className="selection-check" aria-hidden="true">
-          <Check className="size-4" />
+          <Check />
         </span>
       ) : null}
       <button
