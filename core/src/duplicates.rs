@@ -387,7 +387,14 @@ async fn build_signature(db: &Database, file: &Candidate, options: &Options) -> 
             .ok()
             .map(Signature::Image),
         MediaKind::Video => {
-            let seconds = file.duration_ms.unwrap_or(0) as f64 / 1000.0;
+            // Probed again: a duration stored before the probe measured the picture's own length
+            // may include a longer sound track.
+            let duration_ms = media::probe(&path, MediaKind::Video)
+                .await
+                .ok()
+                .and_then(|probe| probe.duration_ms)
+                .or(file.duration_ms);
+            let seconds = duration_ms.unwrap_or(0) as f64 / 1000.0;
             let count = options.video_frames.max(1);
             let stamps: Vec<f64> = if seconds > 0.0 {
                 (1..=count)
@@ -676,6 +683,8 @@ pub(crate) async fn find(
             let ratio = (a.width as f64 / a.height as f64) / (b.width as f64 / b.height as f64);
             let same = if (a.width, a.height) == (b.width, b.height) {
                 same_picture(left, right, options.pixel_threshold)
+                    // Two encodings of one clip at one size differ as much as two sizes do.
+                    || (matches!(left, Signature::Video(_)) && same_rescaled_picture(left, right))
             } else {
                 (ratio - 1.0).abs() <= gallery_matches::MAX_RATIO_DIFFERENCE
                     && same_rescaled_picture(left, right)
@@ -875,6 +884,39 @@ mod tests {
             .collect();
         names.sort_unstable();
         assert_eq!(names, ["large.jpg", "small.png"]);
+    }
+
+    #[tokio::test]
+    async fn two_encodings_of_one_clip_with_sound_of_different_lengths_are_one_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let root = db.library().root.clone();
+        // A cut right after the middle frame, as in a real clip: a frame taken a moment later
+        // than the middle shows the other scene.
+        let clip = |quality: &str, sound: &str, name: &str| {
+            let status = std::process::Command::new("ffmpeg")
+                .args(["-v", "error", "-y"])
+                .args(["-f", "lavfi", "-i", "testsrc2=s=320x240:r=12"])
+                .args(["-f", "lavfi", "-i", "smptebars=s=320x240:r=12"])
+                .args(["-f", "lavfi", "-i", &format!("sine=d={sound}")])
+                .args(["-filter_complex", "[0:v]trim=end_frame=76,setpts=PTS-STARTPTS[a];[1:v]trim=end_frame=74,setpts=PTS-STARTPTS[b];[a][b]concat=n=2:v=1:a=0[v]"])
+                .args(["-map", "[v]", "-map", "2:a", "-c:v", "libx264", "-crf", quality])
+                .args(["-pix_fmt", "yuv420p", "-c:a", "aac"])
+                .arg(root.join(name))
+                .status()
+                .unwrap();
+            assert!(status.success());
+        };
+        clip("18", "12.5", "sharp.mp4");
+        // The same 150 frames, encoded smaller, with a sound track 0.1 s longer.
+        clip("30", "12.6", "small.mp4");
+        crate::library::scan(&db).await.unwrap();
+        let result = find(&db, &Options::default(), |_| {}, &AtomicBool::new(false))
+            .await
+            .unwrap();
+        let groups = result["groups"].as_array().unwrap();
+        assert_eq!(groups.len(), 1, "{result}");
+        assert_eq!(groups[0]["files"].as_array().unwrap().len(), 2);
     }
 
     #[tokio::test]
