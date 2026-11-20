@@ -66,9 +66,9 @@ Use the shared classes (`.btn`, `.btn-group`, `.list-group-segmented`,
 | Pool bar (`.pool-nav`) | `--section` panel, no outline; Prev/Next tonal pills |
 | Picture buttons, video bar (`.file-detail-overlay-btn`, `.video-controls-bar`) | Tonal fill |
 | Choice menu (`.confirm-menu`) | One joined group above the destructive action |
-| Messages (toasts, `.file-detail-vote-undo`) | Accent fill |
+| Messages (toasts, `.file-detail-star-undo`) | Accent fill |
 
-Favourited and voted controls fill with the accent and draw a solid icon
+Favourited, starred and voted controls fill with the accent and draw a solid icon
 (`.is-on`, `.is-active`, `.is-voted`); card videos show only play/pause and a
 time track; tapping the open view in the menu clears its search and glides to the top.
 
@@ -83,7 +83,7 @@ controls below the media. Leaving the view also starts a fresh timer.
 Mouse hover, keyboard focus and paused custom video playback keep controls
 visible. Hidden controls do not take
 taps. In inline and fullscreen video views, playback and fullscreen share the
-bottom row. Fullscreen shows no other button: votes, favourites, arrows and
+bottom row. Fullscreen shows no other button: stars, votes, favourites, arrows and
 the actions menu stay in the normal view, and keyboard shortcuts still work.
 Elapsed time and duration stay on one line; the seek track shrinks to make room.
 Delete stays in file info. Controls respect device safe areas without reserving
@@ -101,7 +101,7 @@ In fullscreen the app scales the picture itself, so the exit button stays on
 screen. One finger moves around a zoomed picture and swipes to the next file at
 1:1.
 
-On a phone (width under 768 px) the favourite and vote buttons leave the picture
+On a phone (width under 768 px) the favourite, star and vote buttons leave the picture
 and sit at the screen's bottom right (`PhoneActions`), always shown outside
 fullscreen. Toasts rise above them.
 

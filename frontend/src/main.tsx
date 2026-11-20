@@ -64,7 +64,7 @@ root.render(
       {/* No richColors: it replaces the token mapping in components/ui/sonner
           with sonner's own palette, and the toasts stopped looking like the
           app. The type still reads from the per-type icon declared there.
-          No closeButton either: a toast is the same capsule as the vote-undo
+          No closeButton either: a toast is the same capsule as the star-undo
           pill, which carries its action inside and nothing in its corner.
           They still go on a swipe, and none of them outlives its own
           timeout. */}

@@ -3299,7 +3299,7 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   display: none;
 }
 
-.file-detail-vote-score {
+.file-detail-star-count {
   font-variant-numeric: tabular-nums;
 }
 
@@ -3307,7 +3307,7 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
    hidden while a file is open). The action is a text button: an outlined
    one inside a pill puts a rounded rectangle inside a capsule and the two
    profiles fight. */
-.file-detail-vote-undo {
+.file-detail-star-undo {
   bottom: var(--toast-offset-bottom);
   z-index: 600;
   display: flex;
@@ -3318,19 +3318,19 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   white-space: nowrap;
 }
 
-.file-detail-frame.is-fullscreen .file-detail-vote-undo {
+.file-detail-frame.is-fullscreen .file-detail-star-undo {
   bottom: calc(12px + env(safe-area-inset-bottom) + 2 * (var(--file-detail-overlay-size) + var(--file-detail-overlay-gap)));
 }
 
 /* A message like any toast, so it wears the toast's fill and its action
    the toast's underlined link (see the capsule rules above). */
-.file-detail-vote-undo {
+.file-detail-star-undo {
   border-color: hsl(var(--primary));
   background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
 }
 
-.file-detail-vote-undo .btn-link {
+.file-detail-star-undo .btn-link {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 4px;
@@ -6041,4 +6041,71 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 .explore-new-posts-button:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
+}
+
+/* Selection mode (features/selection). A long press selects, so the browser's own image
+   menu and text selection must not take it. */
+[data-select-key] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.gallery-thumb.is-selected {
+  outline: 3px solid hsl(var(--primary));
+  outline-offset: -3px;
+}
+
+/* Colour is not the only signal: a selected tile also carries a check. */
+.selection-check {
+  position: absolute;
+  z-index: 2;
+  top: 0.5rem;
+  left: 0.5rem;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  pointer-events: none;
+}
+
+/* Over the page, under menus and dialogs, like the phone actions. */
+.selection-bar {
+  position: fixed;
+  z-index: 600;
+  left: 50%;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: max-content;
+  max-width: calc(100vw - 2rem);
+  padding: 0.5rem 0.75rem;
+  border-radius: 1.5rem;
+  background: hsl(var(--section));
+  box-shadow: var(--floating-button-shadow);
+}
+
+.selection-bar-count {
+  font-weight: 600;
+  padding-inline: 0.25rem;
+}
+
+.selection-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.selection-bar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
 }

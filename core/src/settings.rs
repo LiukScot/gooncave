@@ -8,7 +8,8 @@ use crate::{
 
 const EXTRA_KEYS: &[(&str, &str, bool)] = &[
     ("gamesTabEnabled", "extra.gamesTabEnabled", true),
-    ("voteSystemEnabled", "extra.voteSystemEnabled", false),
+    // Stored under the name it had when stars were called votes; synced devices share it.
+    ("starsEnabled", "extra.voteSystemEnabled", false),
     ("autoVoteOnFavorite", "extra.autoVoteOnFavorite", true),
     (
         "readTrackingEnabled",

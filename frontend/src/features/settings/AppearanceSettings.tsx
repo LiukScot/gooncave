@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Rss,
   Share2,
+  Star,
   Sun,
   Trash2
 } from 'lucide-react';
@@ -74,8 +75,19 @@ const QUICK_ICONS: Record<Exclude<QuickAction, 'vote' | 'none'>, LucideIcon> = {
   favorite: Heart
 };
 
-function QuickActionIcon({ action }: { action: QuickAction }) {
+// The file page's `vote` is the Gallery star; the id stays `vote`, the name saved in settings.
+const quickLabel = (page: string, action: QuickAction) =>
+  page === 'file' && action === 'vote' ? 'Star' : QUICK_LABELS[action];
+
+function QuickActionIcon({ page, action }: { page: string; action: QuickAction }) {
   if (action === 'none') return <span className="quick-action-icon quick-action-none" />;
+  if (page === 'file' && action === 'vote') {
+    return (
+      <span className="quick-action-icon">
+        <Star aria-hidden="true" />
+      </span>
+    );
+  }
   if (action === 'vote') {
     return (
       <span className="quick-action-icon quick-action-pair">
@@ -101,7 +113,7 @@ function QuickActionPicker({ page, label }: (typeof QUICK_PAGES)[number]) {
     queryFn: api.getOriginals,
     enabled: chosen === 'keep'
   });
-  const { readTrackingEnabled, voteSystemEnabled, loaded } = useExtraSettings();
+  const { readTrackingEnabled, starsEnabled, loaded } = useExtraSettings();
   return (
     <div className="quick-action-page">
       <h3 id={titleId} className="quick-action-title">
@@ -118,8 +130,8 @@ function QuickActionPicker({ page, label }: (typeof QUICK_PAGES)[number]) {
               onChange={() => setQuickAction(page, action)}
               className="visually-hidden"
             />
-            <QuickActionIcon action={action} />
-            {QUICK_LABELS[action]}
+            <QuickActionIcon page={page} action={action} />
+            {quickLabel(page, action)}
           </label>
         ))}
       </div>
@@ -135,9 +147,9 @@ function QuickActionPicker({ page, label }: (typeof QUICK_PAGES)[number]) {
           <Link to="/app/settings/extra">Open Extra to turn on History</Link>.
         </p>
       ) : null}
-      {page === 'file' && chosen === 'vote' && loaded && !voteSystemEnabled ? (
+      {page === 'file' && chosen === 'vote' && loaded && !starsEnabled ? (
         <p className="appearance-group-description mb-0">
-          The Gallery vote system is off, so no button shows here.{' '}
+          Gallery stars are off, so no button shows here.{' '}
           <Link to="/app/settings/extra">Open Extra to turn it on</Link>.
         </p>
       ) : null}

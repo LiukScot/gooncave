@@ -248,8 +248,8 @@ async fn scanned_files_appear_in_the_gallery_with_thumbnails() {
     );
     assert_eq!(photo["phash"].as_str().unwrap().len(), 16);
     assert_eq!(photo["mediaType"], "IMAGE");
-    assert_eq!(photo["voteScore"], 0);
-    assert_eq!(photo["nextVoteAt"], Value::Null);
+    assert_eq!(photo["stars"], 0);
+    assert_eq!(photo["nextStarAt"], Value::Null);
     let clip = by_name("clip.mp4");
     assert_eq!(clip["mediaType"], "VIDEO");
     assert_eq!(clip["durationMs"], 2000);
@@ -363,7 +363,7 @@ async fn scanned_files_appear_in_the_gallery_with_thumbnails() {
 }
 
 #[tokio::test]
-async fn votes_respect_the_floor_and_the_daily_cooldown() {
+async fn stars_respect_the_floor_and_the_daily_cooldown() {
     let library = library();
     let database = Database::open(&library.data, &library.root).unwrap();
     library::scan(&database).await.unwrap();
@@ -377,45 +377,42 @@ async fn votes_respect_the_floor_and_the_daily_cooldown() {
     let (status, body) = server
         .send(
             reqwest::Method::POST,
-            &format!("/files/{second}/vote"),
+            &format!("/files/{second}/star"),
             json!({"value": -1}),
         )
         .await;
     assert_eq!(status, 409);
-    assert_eq!(
-        body["error"],
-        "This file is already at zero and cannot go lower."
-    );
+    assert_eq!(body["error"], "This file has no star to take back.");
     let (status, body) = server
         .send(
             reqwest::Method::POST,
-            &format!("/files/{second}/vote"),
+            &format!("/files/{second}/star"),
             json!({"value": 1}),
         )
         .await;
     assert_eq!(status, 200);
-    assert_eq!(body["voteScore"], 1);
-    let next = body["nextVoteAt"].as_str().unwrap().to_owned();
+    assert_eq!(body["stars"], 1);
+    let next = body["nextStarAt"].as_str().unwrap().to_owned();
     let (status, body) = server
         .send(
             reqwest::Method::POST,
-            &format!("/files/{second}/vote"),
+            &format!("/files/{second}/star"),
             json!({"value": 1}),
         )
         .await;
     assert_eq!(status, 409);
     assert_eq!(
         body["error"],
-        "This file was already voted in the last 24 hours."
+        "This file already got a star in the last 24 hours."
     );
     assert_eq!(
-        (body["voteScore"].as_i64(), body["nextVoteAt"].as_str()),
+        (body["stars"].as_i64(), body["nextStarAt"].as_str()),
         (Some(1), Some(next.as_str()))
     );
     let (status, _) = server
         .send(
             reqwest::Method::POST,
-            &format!("/files/{first}/vote"),
+            &format!("/files/{first}/star"),
             json!({"value": 2}),
         )
         .await;
@@ -424,7 +421,7 @@ async fn votes_respect_the_floor_and_the_daily_cooldown() {
         server
             .send(
                 reqwest::Method::POST,
-                "/files/missing/vote",
+                "/files/missing/star",
                 json!({"value": 1})
             )
             .await
@@ -436,7 +433,7 @@ async fn votes_respect_the_floor_and_the_daily_cooldown() {
     let (status, _) = server
         .send(
             reqwest::Method::POST,
-            &format!("/files/{first}/vote"),
+            &format!("/files/{first}/star"),
             json!({"value": 1}),
         )
         .await;
@@ -448,8 +445,8 @@ async fn votes_respect_the_floor_and_the_daily_cooldown() {
         (&rated[0]["id"], &rated[1]["id"]),
         (&json!(second), &json!(first))
     );
-    assert_eq!(rated[0]["voteScore"], 1);
-    assert_eq!(rated[0]["nextVoteAt"], next);
+    assert_eq!(rated[0]["stars"], 1);
+    assert_eq!(rated[0]["nextStarAt"], next);
     server.stop().await;
 }
 
@@ -483,12 +480,12 @@ async fn the_library_version_moves_with_gallery_writes_only() {
     let (status, _) = server
         .send(
             reqwest::Method::POST,
-            &format!("/files/{file}/vote"),
+            &format!("/files/{file}/star"),
             json!({"value": 1}),
         )
         .await;
     assert_eq!(status, 200);
-    assert_ne!(version().await, before, "a vote changes what a card shows");
+    assert_ne!(version().await, before, "a star changes what a card shows");
 }
 
 #[tokio::test]
@@ -900,7 +897,7 @@ async fn reopening_with_another_library_folder_updates_the_profile() {
         server
             .send(
                 reqwest::Method::POST,
-                &format!("/files/{id}/vote"),
+                &format!("/files/{id}/star"),
                 json!({"value": 1})
             )
             .await
@@ -961,7 +958,7 @@ async fn reopening_with_another_library_folder_updates_the_profile() {
     let restored = server.files("").await;
     assert_eq!(restored.len(), 1);
     assert_eq!(restored[0]["id"], original["id"]);
-    assert_eq!(restored[0]["voteScore"], 1);
+    assert_eq!(restored[0]["stars"], 1);
     server.stop().await;
 }
 
@@ -1055,7 +1052,7 @@ async fn library_boundaries_reject_replaced_directories_and_inactive_roots() {
         server
             .send(
                 reqwest::Method::POST,
-                &format!("/files/{id}/vote"),
+                &format!("/files/{id}/star"),
                 json!({"value": 1})
             )
             .await

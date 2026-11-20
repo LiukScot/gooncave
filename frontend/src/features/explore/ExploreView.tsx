@@ -1,21 +1,26 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
   ArrowUp,
+  ArrowDown,
+  Check,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   Compass,
   Heart,
+  HeartOff,
   History,
   Images,
   Play,
   Rss,
   Settings2,
+  Trash2,
   WifiOff
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { notifyActionError } from './actionToast';
 import { ExploreDetailPanel } from './ExploreDetailPanel';
 import { gridImageUrlFor, isGifPost, isGifUrl, isVideoUrl, mediaSrc } from './exploreMedia';
 import { loadFurAffinityGridPreview } from './explorePostDetails';
@@ -34,6 +39,7 @@ import { useSubscriptionProgress } from './useSubscriptionProgress';
 
 
 import { LIBRARY_SITE_ID, type ExploreFeed, type ExplorePost, type ExploreSort, type ExploreWindow } from '@/api';
+import { useConfirm } from '@/components/confirm-dialog';
 import { EyeToggleIcon } from '@/components/icons/EyeToggleIcon';
 import { ThumbnailMotion } from '@/components/ThumbnailMotion';
 import { WavyProgress } from '@/components/WavyProgress';
@@ -52,6 +58,9 @@ import {
 import { tagFilters } from '@/features/library/tagInputTokens';
 import { TagSearchInput } from '@/features/library/TagSearchInput';
 import { useScrolledPastRead } from '@/features/read-marks/useScrolledPastRead';
+import { runBulk } from '@/features/selection/runBulk';
+import { SelectionBar, type SelectionAction } from '@/features/selection/SelectionBar';
+import { useGridSelection } from '@/features/selection/useGridSelection';
 import { OfflineNotice } from '@/features/shell/OfflineNotice';
 import { PageTitle } from '@/features/shell/PageTitle';
 import {
@@ -89,6 +98,14 @@ const WINDOWS: { value: ExploreWindow; label: string }[] = [
   { value: 'week', label: 'Week' },
   { value: 'month', label: 'Month' },
   { value: 'year', label: 'Year' },
+  { value: 'all', label: 'All time' }
+];
+
+const HISTORY_PERIODS: { value: ExploreWindow; label: string }[] = [
+  { value: 'day', label: 'Last day' },
+  { value: 'week', label: 'Last week' },
+  { value: 'month', label: 'Last month' },
+  { value: 'year', label: 'Last year' },
   { value: 'all', label: 'All time' }
 ];
 
@@ -184,8 +201,17 @@ export function ExploreView({
     (site) => !ctl.disabledSiteIds.has(site.id)
   ).length;
   const query = ctl.tagInput.trim();
+  const isHistory = ctl.sort === 'history';
   const narrowed: ActiveFilter[] = [
     ...(isFeed ? [] : tagFilters(query, ctl.searchNow)),
+    ...(isHistory ? tagFilters(ctl.historyTagInput.trim(), ctl.searchHistoryNow) : []),
+    ...(isHistory && ctl.historyPeriod !== 'all'
+      ? [{
+          key: 'period',
+          label: HISTORY_PERIODS.find(({ value }) => value === ctl.historyPeriod)?.label ?? '',
+          clear: () => ctl.setHistoryPeriod('all')
+        }]
+      : []),
     ...(enabledSites < ctl.searchableSites.length
       ? [{
           key: 'sites',
@@ -272,11 +298,94 @@ export function ExploreView({
     }));
   }, [stacks, columnCount, ctl.sort]);
 
+  const confirm = useConfirm();
+  const selection = useGridSelection();
+  const { exit: exitSelection } = selection;
+  // Another feed or search lists other posts; a selection does not carry over.
+  useEffect(exitSelection, [ctl.sort, exitSelection]);
+  const selectedStacks = stacks.filter((stack) => selection.selected.has(explorePostKey(stack[0])));
+  const { active: selecting } = selection;
+  // History filters reload the list without changing the feed and can hide every selected post.
+  useEffect(() => {
+    if (selecting && selectedStacks.length === 0) exitSelection();
+  }, [selecting, selectedStacks.length, exitSelection]);
+  const selectedHeads = selectedStacks.map((stack) => stack[0]);
+  const onSite = selectedHeads.filter((post) => post.siteId !== LIBRARY_SITE_ID);
+  const favoritable = onSite.filter((post) => ctl.siteById.get(post.siteId)?.canFavorite);
+  const votable = onSite.filter((post) => ctl.siteById.get(post.siteId)?.canVote);
+  const selectionActions: SelectionAction[] = [
+    ...(favoritable.some((post) => !ctl.isFavorited(post))
+      ? [{
+          key: 'favorite',
+          label: 'Favorite',
+          icon: Heart,
+          run: () => runBulk('Favorited', favoritable.filter((post) => !ctl.isFavorited(post)), async (post) => {
+            if (!(await ctl.toggleFavorite(post, false))) throw new Error(`${post.siteName} did not take the favorite`);
+          })
+        }]
+      : []),
+    ...(favoritable.some(ctl.isFavorited)
+      ? [{
+          key: 'unfavorite',
+          label: 'Unfavorite',
+          icon: HeartOff,
+          danger: true,
+          run: async () => {
+            const targets = favoritable.filter(ctl.isFavorited);
+            const sure = await confirm(
+              `Unfavorite ${targets.length} ${targets.length === 1 ? 'post' : 'posts'}? Their saved copies leave the library.`,
+              { confirmLabel: 'Unfavorite', destructive: true }
+            );
+            if (!sure) return 'keep';
+            await runBulk('Unfavorited', targets, async (post) => {
+              if (!(await ctl.toggleFavorite(post, true))) throw new Error(`${post.siteName} did not drop the favorite`);
+            });
+          }
+        }]
+      : []),
+    ...([1, -1] as const).flatMap((score) =>
+      votable.some((post) => ctl.voteOf(post) !== score)
+        ? [{
+            key: score === 1 ? 'vote-up' : 'vote-down',
+            label: score === 1 ? 'Vote up' : 'Vote down',
+            icon: score === 1 ? ArrowUp : ArrowDown,
+            run: () => runBulk(score === 1 ? 'Voted up' : 'Voted down', votable.filter((post) => ctl.voteOf(post) !== score), async (post) => {
+              if (!(await ctl.votePost(post, score))) throw new Error(`${post.siteName} did not take the vote`);
+            })
+          }]
+        : []
+    ),
+    ...(ctl.sort === 'history'
+      ? [{
+          key: 'remove-history',
+          label: 'Remove from History',
+          icon: Trash2,
+          danger: true,
+          run: async () => {
+            const count = selectedStacks.length;
+            const sure = await confirm(
+              `Remove ${count} ${count === 1 ? 'post' : 'posts'} from History? They count as unread again.`,
+              { confirmLabel: 'Remove', destructive: true }
+            );
+            if (!sure) return 'keep';
+            try {
+              await ctl.removeFromHistory(selectedStacks.flat());
+              toast.success(`Removed ${count} from History`);
+            } catch (error) {
+              notifyActionError('Could not remove the posts from History', error);
+            }
+          }
+        }]
+      : [])
+  ];
+
   const renderCard = (post: ExplorePost) => {
     const key = explorePostKey(post);
     return (
       <ExploreCard
         key={key}
+        selectKey={key}
+        selected={selection.selected.has(key)}
         posts={stackByFirstKey.get(key) ?? [post]}
         hasRelations={(active) => Boolean(active.parentId) || active.hasChildren || parentIdsOnScreen.has(active.remoteId)}
         supportsVote={(active) => ctl.siteById.get(active.siteId)?.canVote ?? false}
@@ -371,16 +480,17 @@ export function ExploreView({
             <div className="col-12">
               <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
                 <div className="card-body">
-                  {ctl.sort === 'history' ? null : (
-                    <SearchPanel
+                  <SearchPanel
                       dismissed={Boolean(ctl.selectedPost)}
                       title={
-                        isFeed
-                          ? 'Filter this feed'
-                          : 'Search and filter Explore'
+                        isHistory
+                          ? 'Search History'
+                          : isFeed
+                            ? 'Filter this feed'
+                            : 'Search and filter Explore'
                       }
                       actions={
-                        (canSubscribe && quick !== 'subscribe') || (ctl.readTrackingEnabled && quick !== 'unread') ? (
+                        (canSubscribe && quick !== 'subscribe') || (ctl.readTrackingEnabled && !isHistory && quick !== 'unread') ? (
                           <div className="panel-pills">
                             {canSubscribe && quick !== 'subscribe' ? (
                               <button
@@ -392,7 +502,7 @@ export function ExploreView({
                                 {searchSubscribed ? 'Subscribed' : 'Subscribe'}
                               </button>
                             ) : null}
-                            {ctl.readTrackingEnabled && quick !== 'unread' ? (
+                            {ctl.readTrackingEnabled && !isHistory && quick !== 'unread' ? (
                               <PanelToggle
                                 pressed={ctl.unreadOnly}
                                 onToggle={ctl.toggleUnreadOnly}
@@ -405,7 +515,7 @@ export function ExploreView({
                         ) : null
                       }
                       floatingActions={
-                        quick === 'unread' && ctl.readTrackingEnabled ? (
+                        quick === 'unread' && ctl.readTrackingEnabled && !isHistory ? (
                           <button
                             type="button"
                             className="search-lens-action"
@@ -430,7 +540,18 @@ export function ExploreView({
                       }
                       filters={filters}
                       search={
-                        isFeed ? undefined : (
+                        isHistory ? (
+                          <TagSearchInput
+                            id="history-tag-search"
+                            scope="vocabulary"
+                            value={ctl.historyTagInput}
+                            onChange={ctl.setHistoryTagInput}
+                            onClear={() => ctl.searchHistoryNow('')}
+                            onPick={ctl.searchHistoryNow}
+                            onSubmit={() => ctl.searchHistoryNow(ctl.historyTagInput)}
+                            placeholder="tags"
+                          />
+                        ) : isFeed ? undefined : (
                           <TagSearchInput
                             id="explore-tag-search"
                             scope="vocabulary"
@@ -473,6 +594,16 @@ export function ExploreView({
                           </div>
                         )}
                       </PanelSection>
+                      {isHistory ? (
+                        <PanelSection label="Read in">
+                          <PanelChoice
+                            label="Read in"
+                            value={ctl.historyPeriod}
+                            options={HISTORY_PERIODS}
+                            onChange={ctl.setHistoryPeriod}
+                          />
+                        </PanelSection>
+                      ) : null}
                       {isFeed ? null : (
                         <PanelSection label="Order by">
                           <PanelChoice
@@ -532,7 +663,6 @@ export function ExploreView({
                         </PanelSection>
                       )}
                     </SearchPanel>
-                  )}
 
                   {ctl.newSubscriptionPosts > 0 ? (
                     // No height of its own: posts already on screen stay where they are.
@@ -665,6 +795,7 @@ export function ExploreView({
                     </p>
                   ) : (
                     <div
+                      {...selection.gridProps}
                       ref={(element) => {
                         readGridRef.current = element;
                         const detach = masonryRef(element);
@@ -706,6 +837,14 @@ export function ExploreView({
                       onNewest={() => ctl.setSort('new')}
                     />
                   ) : null}
+                  {selection.active && !detail ? (
+                    <SelectionBar
+                      count={selectedStacks.length}
+                      actions={selectionActions}
+                      onSelectAll={() => selection.selectAll(stacks.map((stack) => explorePostKey(stack[0])))}
+                      onCancel={selection.exit}
+                    />
+                  ) : null}
                   <ExploreReadFooter
                     posts={ctl.posts}
                     hasMore={ctl.hasMore}
@@ -728,6 +867,8 @@ export function ExploreView({
 }
 
 export function ExploreCard({
+  selectKey,
+  selected = false,
   posts,
   hasRelations,
   supportsVote,
@@ -742,6 +883,9 @@ export function ExploreCard({
   onVote,
   onFavorite
 }: {
+  /** Marks the tile for selection mode (`useGridSelection`). */
+  selectKey?: string;
+  selected?: boolean;
   posts: ExplorePost[];
   /** Part of a parent/child group; the detail view lists the rest of it. */
   hasRelations: (post: ExplorePost) => boolean;
@@ -944,7 +1088,8 @@ export function ExploreCard({
 
   return (
     <div
-      className={`gallery-thumb explore-thumb${thumbRatio ? ' is-sized' : ''}${unavailable ? ' is-offline' : ''}`}
+      className={`gallery-thumb explore-thumb${thumbRatio ? ' is-sized' : ''}${unavailable ? ' is-offline' : ''}${selected ? ' is-selected' : ''}`}
+      data-select-key={selectKey}
       style={
         {
           '--gallery-thumb-max': `${THUMB_SIZE}px`,
@@ -952,6 +1097,11 @@ export function ExploreCard({
         } as React.CSSProperties
       }
     >
+      {selected ? (
+        <span className="selection-check" aria-hidden="true">
+          <Check className="size-4" />
+        </span>
+      ) : null}
       <div ref={cardFaceRef} className="explore-card-face">
       <button
         type="button"

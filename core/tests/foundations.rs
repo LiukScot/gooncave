@@ -67,17 +67,17 @@ async fn settings_survive_a_full_core_restart_and_migrations_do_not_repeat() {
         .json()
         .await
         .unwrap();
-    assert_eq!(initial["voteSystemEnabled"], false);
+    assert_eq!(initial["starsEnabled"], false);
     let saved: Value = client
         .put(format!("{}/settings/extra", first.origin))
-        .json(&json!({"voteSystemEnabled": true, "maxGridColumns": 4, "videoSkipSeconds": 30}))
+        .json(&json!({"starsEnabled": true, "maxGridColumns": 4, "videoSkipSeconds": 30}))
         .send()
         .await
         .unwrap()
         .json()
         .await
         .unwrap();
-    assert_eq!(saved["voteSystemEnabled"], true);
+    assert_eq!(saved["starsEnabled"], true);
     assert_eq!(saved["autoVoteOnFavorite"], true);
     assert_eq!(saved["videoSkipSeconds"], 30);
     let first_origin = first.origin.clone();
@@ -158,7 +158,7 @@ async fn invalid_settings_are_rejected_without_partial_writes() {
         json!({"maxGridColumns": 1.5}),
         json!({"videoSkipSeconds": 7}),
         json!({"exploreStackDuplicates": "true"}),
-        json!({"voteSystemEnabled": true, "unknown": true}),
+        json!({"starsEnabled": true, "unknown": true}),
         json!(null),
     ] {
         assert_eq!(
@@ -180,7 +180,7 @@ async fn invalid_settings_are_rejected_without_partial_writes() {
         .json()
         .await
         .unwrap();
-    assert_eq!(loaded["voteSystemEnabled"], false);
+    assert_eq!(loaded["starsEnabled"], false);
     assert_eq!(
         client
             .put(format!("{}/settings/extra", server.origin))

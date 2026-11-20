@@ -1,6 +1,6 @@
 use crate::{tags, Error, Result};
 
-// SQLite permits 64 joined tables; reserve room for the file and vote tables.
+// SQLite permits 64 joined tables; reserve room for the file and star (`file_votes`) tables.
 const MAX_SEARCH_TERMS: usize = 60;
 use rusqlite::{types::Value, Connection};
 use std::collections::HashSet;
@@ -37,7 +37,11 @@ fn parse(input: &str) -> Result<Query> {
             query.pool = true;
             continue;
         }
-        if let Some(value) = lower.strip_prefix("score:") {
+        // `stars:` is the name the Gallery shows; `score:` is kept for searches saved before it.
+        if let Some(value) = lower
+            .strip_prefix("stars:")
+            .or_else(|| lower.strip_prefix("score:"))
+        {
             let op = [">=", "<=", ">", "<", "="]
                 .into_iter()
                 .find(|op| value.starts_with(op))
@@ -46,7 +50,7 @@ fn parse(input: &str) -> Result<Query> {
             let digits = number.strip_prefix('-').unwrap_or(number);
             if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
                 let value = number.parse().map_err(|_| {
-                    Error::Invalid("The score is outside the supported integer range.".into())
+                    Error::Invalid("The star count is outside the supported integer range.".into())
                 })?;
                 query.score.push((op.into(), value, negated));
             }

@@ -37,7 +37,7 @@ pub(crate) fn routes() -> Router<Database> {
     Router::new()
         .route("/files", get(list))
         .route("/files/{id}", delete(remove))
-        .route("/files/{id}/vote", post(vote))
+        .route("/files/{id}/star", post(star))
         .route("/files/{id}/relations", get(relations))
         .route("/files/{id}/pools", get(pools))
         .route("/files/{id}/comments", get(comments))
@@ -98,8 +98,8 @@ pub(crate) fn file_json(row: &Row) -> rusqlite::Result<Value> {
         "thumbUrl": thumb_url,
         "providerGif": provider_gif,
         "previewProblem": preview_problem,
-        "voteScore": row.get::<_, Option<i64>>("vote_score")?.unwrap_or(0),
-        "nextVoteAt": row.get::<_, Option<String>>("next_vote_at")?,
+        "stars": row.get::<_, Option<i64>>("vote_score")?.unwrap_or(0),
+        "nextStarAt": row.get::<_, Option<String>>("next_vote_at")?,
         "providers": {},
         "favoriteProviders": serde_json::from_str::<Value>(&row.get::<_, String>("favorite_providers")?).map_err(|e| rusqlite::Error::FromSqlConversionFailure(0,rusqlite::types::Type::Text,Box::new(e)))?,
         "hasRelations": row.get::<_, bool>("has_relations")?,
@@ -193,7 +193,7 @@ async fn list(
         // `gallery_at` and `sha256` are the same on every device, so the order is too.
         Some("mtime_desc") => "f.gallery_at DESC, f.sha256 DESC, f.id DESC",
         Some("mtime_asc") => "f.gallery_at ASC, f.sha256 ASC, f.id ASC",
-        // Ties break on who reached the score first; never-voted files keep newest-first order.
+        // Ties break on who reached the star count first; files without stars keep newest-first order.
         Some("rated") => "COALESCE(v.score, 0) DESC, CASE WHEN v.last_vote_at IS NULL THEN 1 ELSE 0 END ASC, v.last_vote_at ASC, f.gallery_at DESC, f.sha256 DESC, f.id DESC",
         Some("random") => match query.get("seed").map(|seed| seed.trim()).filter(|seed| !seed.is_empty()) {
             Some(seed) => {
@@ -248,7 +248,9 @@ pub(crate) fn file_exists(connection: &rusqlite::Connection, id: &str) -> Result
     )?)
 }
 
-async fn vote(
+/// Gives the file a star (`value` 1) or takes one back (-1), at most once a day.
+/// Stars are stored as the file's vote score in `file_votes`, the name synced devices share.
+async fn star(
     State(database): State<Database>,
     Path(id): Path<String>,
     payload: std::result::Result<Json<Value>, axum::extract::rejection::JsonRejection>,
@@ -274,18 +276,18 @@ async fn vote(
                 .optional()?;
             let score = current.as_ref().map_or(0, |current| current.0);
             let next = current.as_ref().map(|current| current.2.clone());
-            // A downvote at zero is never valid; the 24-hour cooldown is only about timing.
+            // Taking a star from a file with none is never valid; the 24-hour cooldown is only about timing.
             let refusal = if delta == -1 && score == 0 {
-                Some("This file is already at zero and cannot go lower.")
+                Some("This file has no star to take back.")
             } else if current.as_ref().is_some_and(|current| current.1) {
-                Some("This file was already voted in the last 24 hours.")
+                Some("This file already got a star in the last 24 hours.")
             } else {
                 None
             };
             if let Some(message) = refusal {
                 return Ok((
                     StatusCode::CONFLICT,
-                    Json(json!({"error": message, "voteScore": score, "nextVoteAt": next})),
+                    Json(json!({"error": message, "stars": score, "nextStarAt": next})),
                 )
                     .into_response());
             }
@@ -299,7 +301,7 @@ async fn vote(
                 |row| row.get(0),
             )?;
             transaction.commit()?;
-            Ok(Json(json!({"status": "ok", "voteScore": score + delta, "nextVoteAt": next})).into_response())
+            Ok(Json(json!({"status": "ok", "stars": score + delta, "nextStarAt": next})).into_response())
         })
         .await
 }
@@ -661,7 +663,7 @@ pub(crate) const WAITING_BY_CAUSE: &str = "
     FROM placed";
 
 /// How far the library scan is, and how many synced or imported records still wait for a file.
-/// A number that changes whenever the gallery's files, tags, votes or favorites change. Screens
+/// A number that changes whenever the gallery's files, tags, stars or favorites change. Screens
 /// compare it with the last one they read; its value means nothing on its own.
 async fn version(State(database): State<Database>) -> Json<Value> {
     Json(json!({"version": database.library_version.load(Ordering::Relaxed)}))

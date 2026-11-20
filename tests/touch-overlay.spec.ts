@@ -721,7 +721,7 @@ test.describe('phone media controls', () => {
   test('the gallery video bar stays beside fullscreen when it fits', async ({ page }) => {
     const settingsResponse = await page.request.get('/settings/extra');
     const settings = await settingsResponse.json();
-    await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, voteSystemEnabled: false } }));
+    await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, starsEnabled: false } }));
     const foldersResponse = await page.request.get('/folders');
     const { folders } = await foldersResponse.json() as { folders: { id: string }[] };
     const upload = await page.request.post(`/folders/${folders[0].id}/uploads`, {
@@ -804,7 +804,7 @@ test.describe('phone media controls', () => {
   test('a fullscreen gallery video shows only the exit button beside its playback bar', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 393, height: 852 });
     const settings = await (await page.request.get('/settings/extra')).json();
-    await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, voteSystemEnabled: true } }));
+    await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, starsEnabled: true } }));
     const { folders } = await (await page.request.get('/folders')).json() as { folders: { id: string }[] };
     const upload = await page.request.post(`/folders/${folders[0].id}/uploads`, {
       multipart: { files: { name: 'fullscreen-layout.mp4', mimeType: 'video/mp4', buffer: videoFixture() } }
@@ -813,11 +813,11 @@ test.describe('phone media controls', () => {
     const { uploaded } = await upload.json() as { uploaded: { fileId: string }[] };
     expect(uploaded).toHaveLength(1);
     try {
-      // A score shows the vote button, which fullscreen used to carry.
+      // A star count shows the star button, which fullscreen used to carry.
       await page.route(/\/files\?/, async (route) => {
         const response = await route.fetch();
-        const body = await response.json() as { files: { voteScore: number }[] };
-        for (const file of body.files) file.voteScore = 1;
+        const body = await response.json() as { files: { stars: number }[] };
+        for (const file of body.files) file.stars = 1;
         await route.fulfill({ response, json: body });
       });
       await page.goto(`/app/gallery?fileId=${uploaded[0].fileId}`);

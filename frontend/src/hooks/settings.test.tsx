@@ -112,7 +112,7 @@ it('distinguishes loading defaults from persisted extra settings', async () => {
   await act(async () => {
     resolveSettings(new Response(JSON.stringify({
       gamesTabEnabled: true,
-      voteSystemEnabled: false,
+      starsEnabled: false,
       autoVoteOnFavorite: true,
       readTrackingEnabled: false,
       exploreStackDuplicates: false

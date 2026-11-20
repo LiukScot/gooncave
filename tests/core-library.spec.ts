@@ -90,15 +90,15 @@ test('a provider-only GIF plays over an existing still poster in the phone Galle
   await expect.poll(() => tile.locator('video').evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0);
 });
 
-test('browses the library folder, votes a file and deletes another', async ({ page }) => {
+test('browses the library folder, stars a file and deletes another', async ({ page }) => {
   // Browsing local files must not start remote refresh work.
   const booruCalls: string[] = [];
   page.on('request', (request) => {
     if (/\/tags\/refresh|\/explore\/subscriptions\/refresh/.test(request.url())) booruCalls.push(request.url());
   });
   const original = await (await page.request.get('/settings/extra')).json();
-  const vote = await page.request.put('/settings/extra', { data: { voteSystemEnabled: true } });
-  expect(vote.ok(), 'failed to enable votes').toBeTruthy();
+  const stars = await page.request.put('/settings/extra', { data: { starsEnabled: true } });
+  expect(stars.ok(), 'failed to enable stars').toBeTruthy();
   try {
     // The playwright config put these two files in the library folder before the core started.
     await page.goto('/app/gallery');
@@ -112,16 +112,16 @@ test('browses the library folder, votes a file and deletes another', async ({ pa
     await page.goto('/app/gallery');
     await card(page, uploaded).click();
     await expect(page).toHaveURL(/fileId=/);
-    const votePosted = page.waitForResponse((res) => res.url().includes('/vote') && res.request().method() === 'POST');
+    const starPosted = page.waitForResponse((res) => res.url().includes('/star') && res.request().method() === 'POST');
     await page.getByRole('button', { name: 'More actions' }).click();
     // The one action that loses something comes last.
     await expect(page.locator('.more-actions-pills button').last()).toHaveText('Delete file');
-    await page.getByRole('button', { name: 'Vote up' }).click();
+    await page.getByRole('button', { name: 'Give a star' }).click();
     await page.getByRole('button', { name: 'Back to gallery' }).click();
-    expect((await votePosted).ok()).toBeTruthy();
+    expect((await starPosted).ok()).toBeTruthy();
     await page.reload();
-    const galleryVote = card(page, uploaded).locator('..').getByRole('button', { name: /Votable again in .*; score 1/ });
-    await expect(galleryVote).toHaveText('1');
+    const galleryStar = card(page, uploaded).locator('..').getByRole('button', { name: /Can get a star again in .*; 1 star$/ });
+    await expect(galleryStar).toHaveText('1');
 
     // The centre of a video tile is its inline play button; the rest of the tile opens the file.
     await card(page, 'clip.mp4').click({ position: { x: 8, y: 8 } });
