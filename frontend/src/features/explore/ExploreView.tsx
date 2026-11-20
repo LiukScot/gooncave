@@ -310,7 +310,8 @@ export function ExploreView({
     if (selecting && selectedStacks.length === 0) exitSelection();
   }, [selecting, selectedStacks.length, exitSelection]);
   const selectedHeads = selectedStacks.map((stack) => stack[0]);
-  const onSite = selectedHeads.filter((post) => post.siteId !== LIBRARY_SITE_ID);
+  // History only takes entries out; favorites and votes stay on the post itself.
+  const onSite = ctl.sort === 'history' ? [] : selectedHeads.filter((post) => post.siteId !== LIBRARY_SITE_ID);
   const favoritable = onSite.filter((post) => ctl.siteById.get(post.siteId)?.canFavorite);
   const votable = onSite.filter((post) => ctl.siteById.get(post.siteId)?.canVote);
   const selectionActions: SelectionAction[] = [

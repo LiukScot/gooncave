@@ -15,7 +15,7 @@ export async function serveFixtureSite(page: Page) {
   await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [{
     id: 'fixture', name: 'Fixture', engine: 'e621', baseUrl: 'https://fixture.invalid',
     enabled: true, username: 'fixture', hasApiKey: true, hasSessionCookie: false,
-    engineCredentialSchema: 'username_api_key', sortOrder: 0
+    engineCredentialSchema: 'username+apikey', sortOrder: 0
   }] } }));
   await page.route('**/explore/posts?*', (route) => route.fulfill({ json: { posts: selectionPosts, siteErrors: [], sites: ['fixture'] } }));
 }

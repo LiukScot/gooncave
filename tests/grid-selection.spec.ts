@@ -8,6 +8,7 @@ test('Ctrl-click selects on desktop and Escape leaves', async ({ page }) => {
   await tile(page, '1').click({ modifiers: ['Control'] });
   const bar = page.getByRole('toolbar', { name: 'Selection' });
   await expect(bar).toContainText('1 selected');
+  await expect(bar.getByRole('button')).toHaveText(['Favorite', 'Vote up', 'Vote down', 'Select all', 'Cancel']);
   expect(await expectBarBesideCornerButton(page)).toEqual({
     centredOnButton: true, leftOfButton: true, inTheLeftHalf: true, besideTheMenu: true
   });
@@ -27,6 +28,7 @@ test('selected History entries are removed with one request', async ({ page }) =
   await tile(page, '1').click({ modifiers: ['Control'] });
   await tile(page, '2').click();
   const bar = page.getByRole('toolbar', { name: 'Selection' });
+  await expect(bar.getByRole('button')).toHaveText(['Remove from History', 'Select all', 'Cancel']);
   await bar.getByRole('button', { name: 'Remove from History' }).click();
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(bar).toHaveCount(0);
