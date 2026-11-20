@@ -1,4 +1,6 @@
+import { Copy } from 'lucide-react';
 import * as React from 'react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -31,6 +33,8 @@ interface ChoiceOptions<T extends string> {
   cancelLabel?: string;
   /** Shown under the message, set apart: the values the action acts on. */
   details?: string;
+  /** A small button beside the title copies it, as the tag actions do with their tag. */
+  copyTitle?: boolean;
 }
 
 /**
@@ -47,10 +51,20 @@ interface PendingChoice {
   title: string;
   message: string;
   details?: string;
+  copyTitle: boolean;
   actions: ChoiceAction<string>[];
   cancelLabel: string;
   resolve: (answer: string | null) => void;
 }
+
+const copyText = async (text: string): Promise<void> => {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(`Copied ${text}`);
+  } catch {
+    toast.error(`Could not copy ${text}`);
+  }
+};
 
 const ChoiceContext = React.createContext<ChooseFn | null>(null);
 const DialogOpenContext = React.createContext(false);
@@ -78,6 +92,7 @@ export function ConfirmProvider({
           message,
           details: options.details,
           title: options.title ?? 'Are you sure?',
+          copyTitle: options.copyTitle ?? false,
           actions: options.actions as ChoiceAction<string>[],
           cancelLabel: options.cancelLabel ?? 'Cancel',
           resolve: resolve as (answer: string | null) => void
@@ -134,7 +149,20 @@ export function ConfirmProvider({
           className={isMenu ? 'sm:max-w-xs' : undefined}
         >
           <DialogHeader>
-            <DialogTitle>{pending?.title}</DialogTitle>
+            <DialogTitle className={pending?.copyTitle ? 'confirm-title-copy' : undefined}>
+              {pending?.title}
+              {pending?.copyTitle ? (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Copy ${pending.title}`}
+                  title="Copy"
+                  onClick={() => void copyText(pending.title)}
+                >
+                  <Copy aria-hidden="true" />
+                </Button>
+              ) : null}
+            </DialogTitle>
             {pending?.message ? (
               <DialogDescription>{pending.message}</DialogDescription>
             ) : null}

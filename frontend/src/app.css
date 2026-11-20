@@ -5276,6 +5276,21 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 /* A choice dialog with three actions or more reads as a menu: the plain
    actions stack as one segmented group, the settings list's shape, and a
    separated action (such as a destructive one) stands on its own below. */
+/* A tag's dialog: its name, and a small button that copies it beside the name. */
+.confirm-title-copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.confirm-title-copy > button {
+  flex: none;
+  color: hsl(var(--muted-foreground));
+}
+
 .confirm-menu {
   gap: 2px;
 }

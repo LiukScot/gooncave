@@ -734,6 +734,20 @@ test.describe('on a phone', () => {
     await expect(page.getByRole('button', { name: 'fixture_tag', exact: true })).toBeVisible();
   });
 
+  test("a tag's dialog copies the tag and stays open", async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await mockSites(page);
+    await page.route(/\/explore\/post(?:-tags|-text|-relations|-pools)?\?/, (route) => route.fulfill({ json: {
+      post: post('2'), tags: post('2').tags, title: null, description: null, parent: null, children: [], pools: []
+    } }));
+    await page.goto('/app/explore?feed=subscribed');
+    await page.locator('[data-read-key="one:2"]').click();
+    await page.locator('.file-detail-panel-current .file-tag-pill', { hasText: 'fixture_tag' }).locator('button').first().click();
+    await page.getByRole('button', { name: 'Copy fixture_tag' }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('fixture_tag');
+    await expect(page.getByRole('button', { name: 'Search tag' })).toBeVisible();
+  });
+
   test('History has no filters, and says how to turn it on when it is off', async ({ page }) => {
     const settings = await (await page.request.get('/settings/extra')).json();
     await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, readTrackingEnabled: false } }));

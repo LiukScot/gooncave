@@ -1008,6 +1008,7 @@ export function useExploreController({
     async (tag: string, category: string) => {
       const mode = await choose('', {
         title: tag,
+        copyTitle: true,
         actions: [
           { value: 'search', label: 'Search tag' },
           ...(subscriptionsAvailable ? [subscriptionActionFor(tag)] : []),

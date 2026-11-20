@@ -1173,6 +1173,7 @@ export function useFileDetailController(
     async (tag: string, category: string) => {
       const mode = await choose('', {
         title: tag,
+        copyTitle: true,
         actions: [
           { value: 'search', label: 'Search tag' },
           { value: 'explore', label: 'Search tag in Explore' },
