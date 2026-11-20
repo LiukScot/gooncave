@@ -113,11 +113,15 @@ const openWindow = () => {
     // corner, and the app's heading moves the window (see `.has-window-controls` in app.css).
     titleBarStyle: 'hidden',
     titleBarOverlay: { height: 44, color: TRANSPARENT },
+    // Shown wherever the page has not painted yet (a fast scroll, going back); white by default.
+    backgroundColor: '#000000',
     webPreferences: { spellcheck: false }
   });
   const contents = window.webContents;
   contents.on('did-change-theme-color', (_event, color) => {
-    if (/^#[0-9a-f]{6}$/i.test(color ?? '')) window?.setTitleBarOverlay(titleBarColors(color));
+    if (!/^#[0-9a-f]{6}$/i.test(color ?? '')) return;
+    window?.setTitleBarOverlay(titleBarColors(color));
+    window?.setBackgroundColor(color);
   });
   contents.setWindowOpenHandler(({ url }) => {
     follow(url);

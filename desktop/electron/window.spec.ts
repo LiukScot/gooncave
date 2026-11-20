@@ -133,6 +133,20 @@ test('the window has no system title bar and its heading moves the window', asyn
   expect(await link.evaluate((element) => getComputedStyle(element.closest('.app-menu-body')!).userSelect)).toBe('none');
 });
 
+test('the window behind the page has the page colour, not white', async () => {
+  await launch(CORE);
+  const page = await app.firstWindow();
+  await expect(page.locator('.page-header')).toBeVisible();
+  // Where the page has not painted yet (a fast scroll, going back) the window itself shows.
+  const pageColor = await page.evaluate(() => {
+    const [r, g, b] = getComputedStyle(document.body).backgroundColor.match(/\d+/g)!.map(Number);
+    return `#${[r, g, b].map((value) => value.toString(16).padStart(2, '0')).join('')}`.toUpperCase();
+  });
+  await expect
+    .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBackgroundColor().toUpperCase()))
+    .toBe(pageColor);
+});
+
 test("a pool's heading leaves room for the window buttons and moves the window", async () => {
   await launch(CORE);
   const page = await app.firstWindow();
