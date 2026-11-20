@@ -480,6 +480,8 @@ export function ExploreView({
             <div className="col-12">
               <div className="card bg-transparent text-foreground border-0 h-full content-shell-card">
                 <div className="card-body">
+                  {/* With History off there is nothing to search, only how to turn it on. */}
+                  {isHistory && !ctl.readTrackingEnabled ? null : (
                   <SearchPanel
                       dismissed={Boolean(ctl.selectedPost)}
                       title={
@@ -663,6 +665,7 @@ export function ExploreView({
                         </PanelSection>
                       )}
                     </SearchPanel>
+                  )}
 
                   {ctl.newSubscriptionPosts > 0 ? (
                     // No height of its own: posts already on screen stay where they are.
