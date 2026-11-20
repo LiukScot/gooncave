@@ -69,18 +69,11 @@ export const useMediaZoom = (enabled: boolean, resetKey: string | null) => {
     // Registered by hand rather than through onWheel: React attaches wheel
     // listeners passively, and a passive listener cannot stop the page from
     // scrolling underneath the zoom.
-    // Only a touchpad pinch, a wheel with Ctrl held, zooms on the point under the pointer. Any
-    // other wheel moves a zoomed picture, as a left drag does: a mouse notch cannot be told
-    // apart from two fingers sliding up a touchpad, which must not zoom.
+    // Every wheel zooms on the point under the pointer: a mouse notch, a touchpad pinch (a wheel
+    // with Ctrl held) and two fingers sliding on a touchpad. A left drag moves a zoomed picture.
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const rect = wrap.getBoundingClientRect();
-      if (!event.ctrlKey) {
-        setZoom((current) =>
-          isZoomed(current) ? panBy(current, { x: -event.deltaX, y: -event.deltaY }, rect) : current
-        );
-        return;
-      }
       setZoom((current) =>
         zoomAtPointer(
           current,
