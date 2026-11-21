@@ -17,6 +17,7 @@ describe('Explore snapshot', () => {
       hasMore: true,
       streams: new Map(),
       subscriptionCursor: 'next-page',
+      subscriptionNewestAt: 1_800_000_000,
       seen: { keys: new Set() },
       scrollY: 640
     };
@@ -25,6 +26,7 @@ describe('Explore snapshot', () => {
 
     expect(readExploreSnapshot('subscribed-search')).toMatchObject({
       subscriptionCursor: 'next-page',
+      subscriptionNewestAt: 1_800_000_000,
       scrollY: 640
     });
     expect(readExploreSnapshot('different-search')).toBeNull();
@@ -38,6 +40,7 @@ describe('Explore snapshot', () => {
       hasMore: false,
       streams: new Map(),
       subscriptionCursor: null,
+      subscriptionNewestAt: null,
       seen: { keys: new Set() },
       scrollY: 0
     });
