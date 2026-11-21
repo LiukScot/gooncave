@@ -962,6 +962,10 @@ async fn execute(db: &Database, id: &str) -> Result<()> {
                         *n = json!(n.as_i64().unwrap_or(0) + 1);
                     }
                 }
+                // A post the site deleted has no favorite to keep; the copies still merge.
+                Err(Error::Gone(reason)) if matches!(kind, "add_favorite" | "confirm_favorite") => {
+                    mark(action_id, "skipped", Some(format!("{message} {reason}"))).await?;
+                }
                 Err(error) => {
                     failed = true;
                     let reason = error.to_string();
