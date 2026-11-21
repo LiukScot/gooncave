@@ -263,32 +263,53 @@ async fn sync_row(db: &Database, t: &Transport, site: &Site, row: &Row) -> Resul
     head.truncate(HEAD_IDS);
     let oldest = posts.last().map(|(date, _)| *date);
     let (site_id, key, saved) = (site.id.clone(), query_key(&row.query), posts.clone());
-    db.call(move |c| {
-        let tx = c.transaction()?;
-        save_posts(&tx, &site_id, &saved)?;
-        tx.execute(
+    let kept = db
+        .call(move |c| {
+            let tx = c.transaction()?;
+            if !followed(&tx, &site_id, &key)? {
+                return Ok(false);
+            }
+            save_posts(&tx, &site_id, &saved)?;
+            tx.execute(
             "UPDATE subscription_searches SET head=?3, synced_at=?4 WHERE site_id=?1 AND query=?2",
             params![site_id, key, json!(head).to_string(), now()],
         )?;
-        if !reached || first {
-            // A first read, or more new posts than one sync reads: older posts carry on from here.
-            tx.execute(
-                "UPDATE subscription_searches SET tail=?3, tail_at=?4, done=?5
+            if !reached || first {
+                // A first read, or more new posts than one sync reads: older posts carry on from here.
+                tx.execute(
+                    "UPDATE subscription_searches SET tail=?3, tail_at=?4, done=?5
                  WHERE site_id=?1 AND query=?2",
-                params![
-                    site_id,
-                    key,
-                    serde_json::to_string(&at).map_err(|e| Error::Storage(e.to_string()))?,
-                    oldest.unwrap_or_else(now),
-                    at.done
-                ],
-            )?;
-        }
-        tx.commit()?;
-        Ok(())
-    })
-    .await?;
-    Ok(posts.into_iter().map(|(_, p)| p).collect())
+                    params![
+                        site_id,
+                        key,
+                        serde_json::to_string(&at).map_err(|e| Error::Storage(e.to_string()))?,
+                        oldest.unwrap_or_else(now),
+                        at.done
+                    ],
+                )?;
+            }
+            tx.commit()?;
+            Ok(true)
+        })
+        .await?;
+    Ok(saved_posts(kept, posts))
+}
+
+/// Whether `key` is still one of the site's searches. `prepare` drops a search whose
+/// subscription was removed, with its posts, while a sync may still be reading it.
+fn followed(c: &Connection, site: &str, key: &str) -> Result<bool> {
+    Ok(c.query_row(
+        "SELECT EXISTS(SELECT 1 FROM subscription_searches WHERE site_id=?1 AND query=?2)",
+        params![site, key],
+        |r| r.get(0),
+    )?)
+}
+fn saved_posts(kept: bool, posts: Vec<(i64, Value)>) -> Vec<Value> {
+    if kept {
+        posts.into_iter().map(|(_, p)| p).collect()
+    } else {
+        Vec::new()
+    }
 }
 
 /// Reads the next older page of `row`. Returns the posts saved.
@@ -302,20 +323,24 @@ async fn read_older(db: &Database, t: &Transport, site: &Site, row: &Row) -> Res
         serde_json::to_string(&row.tail).map_err(|e| Error::Storage(e.to_string()))?,
         serde_json::to_string(&next).map_err(|e| Error::Storage(e.to_string()))?,
     );
-    db.call(move |c| {
-        let tx = c.transaction()?;
-        // A sync that moved the tail meanwhile wins; these posts are saved either way.
-        save_posts(&tx, &site_id, &saved)?;
-        tx.execute(
-            "UPDATE subscription_searches SET tail=?4, tail_at=?5, done=?6
+    let kept = db
+        .call(move |c| {
+            let tx = c.transaction()?;
+            if !followed(&tx, &site_id, &key)? {
+                return Ok(false);
+            }
+            // A sync that moved the tail meanwhile wins; these posts are saved either way.
+            save_posts(&tx, &site_id, &saved)?;
+            tx.execute(
+                "UPDATE subscription_searches SET tail=?4, tail_at=?5, done=?6
              WHERE site_id=?1 AND query=?2 AND tail=?3",
-            params![site_id, key, from, to, oldest, next.done],
-        )?;
-        tx.commit()?;
-        Ok(())
-    })
-    .await?;
-    Ok(posts.into_iter().map(|(_, p)| p).collect())
+                params![site_id, key, from, to, oldest, next.done],
+            )?;
+            tx.commit()?;
+            Ok(true)
+        })
+        .await?;
+    Ok(saved_posts(kept, posts))
 }
 
 type Work = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<Value>>> + Send>>;
@@ -799,8 +824,6 @@ async fn page(db: &Database, t: &Transport, sites: Vec<Site>, q: FeedQuery) -> R
         "siteErrors": errors,
     }))
 }
-/// How many saved posts are newer than `after` (a feed's `newestAt`): what a sync found while
-/// the feed was open.
 /// The searches the running sync has read and has to read: `read` and `total`, both null when
 /// no sync runs. A failed site's searches never count as read.
 async fn progress(State(db): State<Database>) -> Json<Value> {
@@ -813,6 +836,8 @@ async fn progress(State(db): State<Database>) -> Json<Value> {
         None => json!({"read": null, "total": null}),
     })
 }
+/// How many saved posts are newer than `after` (a feed's `newestAt`): what a sync found while
+/// the feed was open.
 async fn new_posts(
     State(db): State<Database>,
     Query(q): Query<HashMap<String, String>>,
@@ -1175,6 +1200,35 @@ mod tests {
         );
         subscribe(&db, json!(["fox"])).await;
         assert_eq!(read_feed(&db, &[site], 40, false).await.0, ["1"]);
+        task.abort();
+    }
+    #[tokio::test]
+    async fn a_sync_still_reading_a_removed_search_does_not_bring_its_posts_back() {
+        let posts = vec![(1, "fox", 1_800_000_000), (2, "wolf", 1_800_000_100)];
+        let (base, _, task) = booru(Arc::new(Mutex::new(posts))).await;
+        let (_dir, db) = open();
+        let site = setup(&db, "e621", &base).await;
+        subscribe(&db, json!(["fox", "wolf"])).await;
+        let sites = vec![site.clone()];
+        let reading = prepare(&db, &t(), &sites).await.unwrap().remove(0);
+        // The feed opens after `wolf` is removed, while the sync still reads `~fox ~wolf`.
+        subscribe(&db, json!(["fox"])).await;
+        prepare(&db, &t(), &sites).await.unwrap();
+        assert!(sync_row(&db, &t(), &site, &reading)
+            .await
+            .unwrap()
+            .is_empty());
+        let mut older = reading.clone();
+        older.tail_at = Some(1_800_000_200);
+        assert!(read_older(&db, &t(), &site, &older)
+            .await
+            .unwrap()
+            .is_empty());
+        let saved: i64 = db
+            .call(|c| Ok(c.query_row("SELECT count(*) FROM subscription_posts", [], |r| r.get(0))?))
+            .await
+            .unwrap();
+        assert_eq!(saved, 0);
         task.abort();
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
