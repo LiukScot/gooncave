@@ -540,6 +540,7 @@ impl IntoResponse for Error {
                 eprintln!("A site request failed: {message}");
                 (StatusCode::BAD_GATEWAY, message.as_str())
             }
+            Error::Gone(message) => (StatusCode::GONE, message.as_str()),
             _ => {
                 eprintln!("Core storage operation failed: {self}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "GoonCave could not read or save data. Check free disk space and folder permissions, then try again.")

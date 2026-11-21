@@ -122,6 +122,11 @@ export function TagSearchInput({
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!visible && event.key === 'ArrowDown' && options.length > 0) {
+      event.preventDefault();
+      setOpen(true);
+      return;
+    }
     if (!visible || (active < 0 && event.key === 'Enter')) {
       if (event.key === 'Enter' && onSubmit) {
         event.preventDefault();
@@ -172,7 +177,10 @@ export function TagSearchInput({
           setOpen(true);
         }}
         onKeyUp={(event) => syncCaret(event.currentTarget)}
-        onClick={(event) => syncCaret(event.currentTarget)}
+        onClick={(event) => {
+          syncCaret(event.currentTarget);
+          setOpen(true);
+        }}
         onFocus={() => {
           // Cancels a close still pending from a blur a moment ago, which
           // would otherwise shut the list right after focus came back.
@@ -181,7 +189,8 @@ export function TagSearchInput({
             blurTimerRef.current = null;
           }
           setBrowsed(false);
-          setOpen(true);
+          // The search panel focuses the box as it opens; recent searches wait for a click on it.
+          if (!showingRecent) setOpen(true);
         }}
         onBlur={() => {
           blurTimerRef.current = window.setTimeout(() => {

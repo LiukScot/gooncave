@@ -96,7 +96,7 @@ export type GalleryControllerOutput = {
   showNewest: () => Promise<void>;
 
   /**
-   * Patch a file in place (vote, cooldown, whether its original is here)
+   * Patch a file in place (stars, cooldown, whether its original is here)
    * without a full refetch. Also updates the hand-rolled cache.
    */
   updateFile: (fileId: string, patch: Partial<FileItem>) => void;
@@ -121,7 +121,7 @@ export function useGalleryController(
 ): GalleryControllerOutput {
   const { authUser } = input;
 
-  const { voteSystemEnabled, maxGridColumns } = useExtraSettings();
+  const { starsEnabled, maxGridColumns } = useExtraSettings();
   const sourceSites = useBooruSites({ enabled: !!authUser }).data ?? NO_SITES;
   const blacklist = useBlacklistSettings();
 
@@ -521,13 +521,13 @@ export function useGalleryController(
     return () => observer.disconnect();
   }, [galleryHasMore, onGalleryRoute, loadGalleryPage]);
 
-  // "Rated" disappears with the vote system, so a stored preference for it
+  // "Most stars" disappears with the stars, so a stored preference for it
   // has to fall back to something that still exists.
   useEffect(() => {
-    if (!voteSystemEnabled && gallerySort === 'rated') {
+    if (!starsEnabled && gallerySort === 'rated') {
       setGallerySort('mtime_desc');
     }
-  }, [gallerySort, setGallerySort, voteSystemEnabled]);
+  }, [gallerySort, setGallerySort, starsEnabled]);
 
   // -------------------------------------------------------------------------
   // Handlers
@@ -593,14 +593,18 @@ export function useGalleryController(
     ]
   );
 
-  const onUpvote = useCallback(async (fileId: string) => {
-    try {
-      const vote = await api.voteFile(fileId);
-      updateFile(fileId, vote);
-    } catch (err) {
-      toast.error(`Could not upvote: ${(err as Error).message}`);
-    }
+  const starFile = useCallback(async (fileId: string) => {
+    const star = await api.starFile(fileId);
+    updateFile(fileId, star);
   }, [updateFile]);
+
+  const onGiveStar = useCallback(async (fileId: string) => {
+    try {
+      await starFile(fileId);
+    } catch (err) {
+      toast.error(`Could not give a star: ${(err as Error).message}`);
+    }
+  }, [starFile]);
 
   /** Remove a file from the gallery list and update the cache after delete */
   const removeFileFromGallery = useCallback(
@@ -725,7 +729,7 @@ export function useGalleryController(
     galleryFilesLocation,
     galleryPageState,
     gallerySort,
-    voteSystemEnabled,
+    starsEnabled,
     maxGridColumns,
     galleryFilters,
     galleryTagInput,
@@ -740,7 +744,9 @@ export function useGalleryController(
     onFilterChange: (patch) =>
       setGalleryFilters((prev) => ({ ...prev, ...patch })),
     onSortChange: applyGallerySort,
-    onUpvote,
+    onGiveStar,
+    onStarFile: starFile,
+    onFileDeleted: removeFileFromGallery,
     onLoadMore: () => void loadGalleryPage()
   };
 

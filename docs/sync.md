@@ -68,7 +68,7 @@ The table maps each table of the current database
 | `files` | Metadata only: `sha256`, `media_type`, `size_bytes`, `width`, `height`, `duration_ms`, `phash`, `gallery_at` (the Gallery date; the oldest one any device has wins, so every device shows the same order), `raised_at` (sent only when set: when the content was last uploaded or shared into GoonCave; the latest one wins over `gallery_at`, so content added again goes to the top of the Gallery on every device) | `sha256` | `updated_at` |
 | `file_tags` (sources `WD14`, `MANUAL` and booru sites) | Yes | File + `tag` + `source` | `updated_at` |
 | `file_tag_suppressions` (tags removed by hand) | Yes | File + `tag` | `created_at` |
-| `file_votes` | Yes | File | `last_vote_at` |
+| `file_votes` (Gallery stars) | Yes | File | `last_vote_at` |
 | `provider_runs` (found sources from SauceNAO and Fluffle) | Latest `COMPLETED` run, including runs with no match | File + `provider` | `completed_at` |
 | `file_post_relations` (parent, children and pools) | Yes | File + `source` | `updated_at` |
 | `read_marks`, scope `file` | Yes | File | `read_at` |
@@ -110,7 +110,7 @@ opposite ways. Custom sites in its preferred list travel by address.
 - **Sync pictures and videos** is a setting of each device. On, it uploads
   every original it has to the folder. It is off by default; the setting
   shows how much space the files need.
-- A file's records (its metadata, tags, votes, sources, read marks and WD14
+- A file's records (its metadata, tags, stars, sources, read marks and WD14
   results) leave the device only once another device can open the file: its
   original is in the folder, or it is a booru favorite. With the setting off,
   the other files and everything about them stay on the device. Settings,
@@ -123,7 +123,7 @@ opposite ways. Custom sites in its preferred list travel by address.
 ### On each device
 
 - Every device shows every file it can open in the Gallery, with its
-  thumbnail, tags, votes and sources, whether or not the original is on the
+  thumbnail, tags, stars and sources, whether or not the original is on the
   device. A tile whose original is not on the device carries a cloud mark.
 - For a GIF that is only online, the device can make an animated tile from
   a temporary copy from the sync folder or the favorite's provider. The
@@ -166,7 +166,7 @@ opposite ways. Custom sites in its preferred list travel by address.
 - Deleting a file removes it from the library on every device.
 - The trash is on by default; the setting is shared by every device. A
   deleted file moves to the trash: it leaves the Gallery on every device, and
-  keeps its originals, tags and votes. It can be restored for 14 days.
+  keeps its originals, tags and stars. It can be restored for 14 days.
 - Deleting a file removes it at once from the booru favorites where reverse
   sync is on. When a booru refuses, the delete fails with the booru's reason.
   Restoring the file does not add the favorite back.
@@ -239,6 +239,6 @@ stores the sync state beside them, in `sync_records`:
 - `provider_runs`: only the latest `COMPLETED` run per file and provider is
   shared. A `FAILED` run stays on its device, so other devices retry.
 - Copies of one file on a device share one record; the oldest copy, the
-  latest vote or the latest read mark speaks for them.
+  latest star or the latest read mark speaks for them.
 - A device connecting to a folder for the first time takes the folder's
   version of each shared record, then adds what only it has.

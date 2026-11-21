@@ -66,8 +66,8 @@ test('in a window narrow enough to reach the corner buttons, the toast stays abo
   expect(await toastGap(page)).toBeGreaterThanOrEqual(actions);
 });
 
-test('the vote clock sits with the Undo message above the buttons, then both leave until the next vote', async ({ page }) => {
-  const name = `vote-clock-${Date.now()}.png`;
+test('the star clock sits with the Undo message above the buttons, then both leave until the next star', async ({ page }) => {
+  const name = `star-clock-${Date.now()}.png`;
   await page.addInitScript(() =>
     localStorage.setItem('gooncave:appearance', JSON.stringify({ quickActions: { file: 'vote' } }))
   );
@@ -76,20 +76,20 @@ test('the vote clock sits with the Undo message above the buttons, then both lea
     base64: Buffer.concat([Buffer.from(thumbnailablePng, 'base64'), Buffer.from(name)]).toString('base64')
   });
   const settings = await (await page.request.get('/settings/extra')).json();
-  await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, voteSystemEnabled: true } }));
+  await page.route('**/settings/extra', (route) => route.fulfill({ json: { ...settings, starsEnabled: true } }));
   await page.reload();
   await page.locator('[data-test-id="file-card"]').and(page.locator(`[aria-label*="${name}"]`)).click({ position: { x: 8, y: 8 } });
 
   const clock = page.locator('.phone-actions .file-detail-overlay-cooldown');
-  const undo = page.locator('.file-detail-vote-undo');
-  const voteUp = page.getByRole('button', { name: 'Vote up', exact: true });
-  await voteUp.tap();
+  const undo = page.locator('.file-detail-star-undo');
+  const giveStar = page.getByRole('button', { name: 'Give a star', exact: true });
+  await giveStar.tap();
   await expect(clock).toBeVisible();
   await undo.getByRole('button', { name: 'Undo' }).tap();
   await expect(clock).toHaveCount(0);
-  await expect(voteUp).toBeVisible();
+  await expect(giveStar).toBeVisible();
 
-  await voteUp.tap();
+  await giveStar.tap();
   await expect(clock).toBeVisible();
   const message = (await undo.boundingBox())!;
   const buttons = (await page.locator('.phone-actions').boundingBox())!;
@@ -98,8 +98,8 @@ test('the vote clock sits with the Undo message above the buttons, then both lea
 
   await expect(undo).toHaveCount(0, { timeout: 10_000 });
   await expect(clock).toHaveCount(0);
-  await expect(voteUp).toHaveCount(0);
-  await expect(page.locator('[data-test-id="vote-cooldown-info"]').first()).toContainText('votable again in 24h');
+  await expect(giveStar).toHaveCount(0);
+  await expect(page.locator('[data-test-id="star-cooldown-info"]').first()).toContainText('can get a star again in 24h');
 
   const { files } = (await (await page.request.get('/files?limit=500')).json()) as { files: { id: string; path: string }[] };
   const uploaded = files.find((file) => file.path.endsWith(name));

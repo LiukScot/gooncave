@@ -269,7 +269,25 @@ fn fa_action(site: &Site, id: &str, html: &str) -> Result<(bool, Url)> {
         "The site did not expose a favorite action. Save a fresh session cookie in Accounts.",
     ))
 }
+/// Adds or removes the post from the account's favorites. Adding a post the site has deleted
+/// fails with [`Error::Gone`].
 pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> Result<()> {
+    match write(t, site, id, desired).await {
+        // A site refuses, or quietly ignores, a favorite on a post it has deleted.
+        Err(Error::Remote(message)) if desired => match engines::single(t, site, id).await {
+            Ok(None) => Err(gone(site)),
+            _ => Err(Error::Remote(message)),
+        },
+        other => other,
+    }
+}
+fn gone(site: &Site) -> Error {
+    Error::Gone(format!(
+        "The post was deleted on {}, so it cannot be favorited there.",
+        site.name
+    ))
+}
+async fn write(t: &Transport, site: &Site, id: &str, desired: bool) -> Result<()> {
     require(site, true)?;
     let id = engines::id(&json!(id))?;
     if site.engine == "szurubooru" {
@@ -326,8 +344,8 @@ pub(crate) async fn set(t: &Transport, site: &Site, id: &str, desired: bool) -> 
         let view = web(site, &format!("/view/{id}/"))?;
         let html = t.text(view.clone(), engines::web_headers(site)?).await?;
         // A submission its artist deleted is in nobody's favorites.
-        if !desired && fa_missing(&html) {
-            return Ok(());
+        if fa_missing(&html) {
+            return if desired { Err(gone(site)) } else { Ok(()) };
         }
         let (current, action) = fa_action(site, &id, &html)?;
         if current == desired {
@@ -547,6 +565,41 @@ mod tests {
                 );
             }
         }
+    }
+    #[tokio::test]
+    async fn favoriting_a_post_the_site_deleted_says_so_instead_of_blaming_the_account() {
+        let t = Transport {
+            allow_loopback: true,
+        };
+        // Post 9 was deleted; post 7 exists. e621 refuses a favorite on either with 422 here.
+        let app = Router::new().fallback(any(|request: Request| async move {
+            let path = request.uri().path().to_owned();
+            match path.as_str() {
+                "/favorites.json" => axum::http::StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+                "/posts/9.json" => axum::Json(json!({"post": {"id": 9, "flags": {"deleted": true}}})).into_response(),
+                "/posts/7.json" => axum::Json(json!({"post": {"id": 7, "flags": {"deleted": false}, "file": {"url": null}, "tags": {}, "pools": [], "relationships": {}}})).into_response(),
+                "/posts.json" => axum::Json(json!({"posts": []})).into_response(),
+                "/view/9/" => axum::response::Html("<p>The submission you are trying to find is not in our database.</p>").into_response(),
+                _ => axum::http::StatusCode::NOT_FOUND.into_response(),
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let e621 = site("e621", base.clone());
+        assert!(matches!(
+            set(&t, &e621, "9", true).await,
+            Err(Error::Gone(_))
+        ));
+        assert!(matches!(
+            set(&t, &e621, "7", true).await,
+            Err(Error::Remote(_))
+        ));
+        let fa = site("furaffinity", base);
+        assert!(matches!(set(&t, &fa, "9", true).await, Err(Error::Gone(_))));
+        // Removing a favorite from a deleted submission has nothing to do.
+        set(&t, &fa, "9", false).await.unwrap();
+        task.abort();
     }
     #[tokio::test]
     async fn a_gelbooru_unfavorite_sends_one_request_and_reports_an_ended_session() {

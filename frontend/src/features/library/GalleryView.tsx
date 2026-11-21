@@ -1,13 +1,20 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { FolderOpen, ImagePlus, RefreshCw } from 'lucide-react';
-import { useRef } from 'react';
+import { FolderOpen, ImagePlus, RefreshCw, Star, Tag, Tags as TagsIcon, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 import { tagFilters } from './tagInputTokens';
 import { TagSearchInput } from './TagSearchInput';
 import { VirtualGalleryMasonry } from './VirtualGalleryMasonry';
 
 import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
+import { api } from '@/api';
+import { useConfirm } from '@/components/confirm-dialog';
 import { WavyProgress } from '@/components/WavyProgress';
+import { runBulk } from '@/features/selection/runBulk';
+import { SelectionBar, type SelectionAction } from '@/features/selection/SelectionBar';
+import { TagPromptDialog } from '@/features/selection/TagPromptDialog';
+import { useGridSelection } from '@/features/selection/useGridSelection';
 import { FeatureUnavailable } from '@/features/shell/FeatureUnavailable';
 import {
   PanelChoice,
@@ -18,6 +25,7 @@ import {
   type FilterChip
 } from '@/features/shell/SearchPanel';
 import { useOnline } from '@/lib/online';
+import { queryKeys } from '@/lib/query-keys';
 import { useErrorToast } from '@/lib/useErrorToast';
 import { useAppearanceStore } from '@/stores/appearanceStore';
 
@@ -55,8 +63,8 @@ export interface GalleryViewProps {
   galleryFilesLocation?: string;
   galleryPageState: FetchState;
   gallerySort: GallerySort;
-  /** Gates the "Rated" sort and the per-card score chip. */
-  voteSystemEnabled: boolean;
+  /** Gates the "Most stars" sort and the per-card star chip. */
+  starsEnabled: boolean;
   maxGridColumns: number;
   galleryFilters: { photos: boolean; videos: boolean; downloaded: boolean };
   galleryTagInput: string;
@@ -72,14 +80,17 @@ export interface GalleryViewProps {
   ) => void;
   onSortChange: (sort: GallerySort) => void;
   onFileOpen: (file: FileItem) => void;
-  onUpvote: (fileId: string) => Promise<void>;
+  onGiveStar: (fileId: string) => Promise<void>;
+  /** Gives a star like `onGiveStar`, but throws on failure so a bulk action can count it. */
+  onStarFile: (fileId: string) => Promise<void>;
+  onFileDeleted: (fileId: string) => void;
   onLoadMore: () => void;
 }
 
 type GalleryMedia = 'all' | 'photos' | 'videos' | 'none';
 
 const SORT_LABELS: Record<GallerySort, string> = {
-  rated: 'Rated',
+  rated: 'Most stars',
   mtime_desc: 'Newest',
   mtime_asc: 'Oldest',
   random: 'Random'
@@ -103,7 +114,7 @@ export function GalleryView({
   galleryFilesLocation,
   galleryPageState,
   gallerySort,
-  voteSystemEnabled,
+  starsEnabled,
   maxGridColumns,
   galleryFilters,
   galleryTagInput,
@@ -113,9 +124,82 @@ export function GalleryView({
   onFilterChange,
   onSortChange,
   onFileOpen,
-  onUpvote,
+  onGiveStar,
+  onStarFile,
+  onFileDeleted,
   onLoadMore
 }: GalleryViewProps) {
+  const selection = useGridSelection();
+  const confirm = useConfirm();
+  const queryClient = useQueryClient();
+  const [tagPrompt, setTagPrompt] = useState<'add' | 'remove' | null>(null);
+  const selectedIds = galleryFiles.map((file) => file.id).filter((id) => selection.selected.has(id));
+  const { active: selecting, exit: exitSelection } = selection;
+  // A new search can hide every selected file; taps would keep selecting with no bar to say so.
+  useEffect(() => {
+    if (selecting && selectedIds.length === 0) exitSelection();
+  }, [selecting, selectedIds.length, exitSelection]);
+  const tagsChanged = () => void queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
+  const applyTags = async (mode: 'add' | 'remove', tags: string[]) => {
+    setTagPrompt(null);
+    await runBulk(mode === 'add' ? 'Tagged' : 'Untagged', selectedIds, async (id) => {
+      if (mode === 'add') {
+        for (const tag of tags) await api.addManualTag(id, tag, 'general');
+      } else {
+        await api.suppressFileTags(id, tags);
+      }
+    });
+    tagsChanged();
+    selection.exit();
+  };
+  const selectionActions: SelectionAction[] = [
+    ...(starsEnabled
+      ? [{
+          key: 'star',
+          label: 'Give a star',
+          icon: Star,
+          run: () => runBulk('Starred', selectedIds, onStarFile)
+        }]
+      : []),
+    {
+      key: 'add-tag',
+      label: 'Add tag',
+      icon: Tag,
+      run: async () => {
+        setTagPrompt('add');
+        return 'keep' as const;
+      }
+    },
+    {
+      key: 'remove-tag',
+      label: 'Remove tag',
+      icon: TagsIcon,
+      run: async () => {
+        setTagPrompt('remove');
+        return 'keep' as const;
+      }
+    },
+    {
+      key: 'delete',
+      label: 'Delete',
+      icon: Trash2,
+      danger: true,
+      run: async () => {
+        const count = selectedIds.length;
+        const sure = await confirm(
+          `Delete ${count} ${count === 1 ? 'file' : 'files'} from every device? Posts they came from may also leave your favorites on sites that sync deletions.`,
+          { title: 'Delete files', confirmLabel: 'Delete', destructive: true }
+        );
+        if (!sure) return 'keep';
+        await runBulk('Deleted', selectedIds, async (id) => {
+          const result = await api.deleteFile(id);
+          if (result.errors?.length) throw new Error(result.errors.join('; '));
+          onFileDeleted(id);
+        });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.duplicates.all });
+      }
+    }
+  ];
   const pickerRef = useRef<HTMLInputElement>(null);
   const pickFiles = () => (onAddFromPhotos ? onAddFromPhotos() : pickerRef.current?.click());
   const quick = useAppearanceStore((state) => state.quickActions.gallery);
@@ -264,7 +348,7 @@ export function GalleryView({
                 onClear={clearSearch}
                 onPick={onTagSearchNow}
                 onSubmit={() => onTagSearchNow(galleryTagInput)}
-                placeholder="tags · ~either · -not · score:>5"
+                placeholder="tags · ~either · -not · stars:>5"
               />
             }
           >
@@ -296,7 +380,7 @@ export function GalleryView({
                 label="Order by"
                 value={gallerySort}
                 options={(Object.keys(SORT_LABELS) as GallerySort[])
-                  .filter((sort) => sort !== 'rated' || voteSystemEnabled)
+                  .filter((sort) => sort !== 'rated' || starsEnabled)
                   .map((sort) => ({ value: sort, label: SORT_LABELS[sort] }))}
                 onChange={onSortChange}
               />
@@ -357,17 +441,19 @@ export function GalleryView({
           ) : (
             <>
               <VirtualGalleryMasonry
+                selected={selection.selected}
+                gridProps={selection.gridProps}
                 files={galleryFiles}
                 duplicateGroups={duplicateGroups ?? undefined}
                 sourceSites={sourceSites}
-                voteSystemEnabled={voteSystemEnabled}
+                starsEnabled={starsEnabled}
                 maxGridColumns={maxGridColumns}
                 openFileId={openFileId}
                 location={galleryLocation}
                 filesLocation={galleryFilesLocation}
                 hasMore={galleryHasMore}
                 onLoadMore={onLoadMore}
-                onUpvote={onUpvote}
+                onGiveStar={onGiveStar}
                 onFileOpen={onFileOpen}
               />
               {galleryHasMore ? (
@@ -382,6 +468,22 @@ export function GalleryView({
                 </div>
               ) : null}
               <div ref={galleryLoadMoreRef} className="gallery-load-sentinel" />
+              {selection.active && !openFileId ? (
+                <SelectionBar
+                  count={selectedIds.length}
+                  actions={selectionActions}
+                  onSelectAll={() => selection.selectAll(galleryFiles.map((file) => file.id))}
+                  onCancel={selection.exit}
+                />
+              ) : null}
+              {tagPrompt ? (
+                <TagPromptDialog
+                  title={tagPrompt === 'add' ? `Add tags to ${selectedIds.length} files` : `Remove tags from ${selectedIds.length} files`}
+                  confirmLabel={tagPrompt === 'add' ? 'Add' : 'Remove'}
+                  onSubmit={(tags) => void applyTags(tagPrompt, tags)}
+                  onClose={() => setTagPrompt(null)}
+                />
+              ) : null}
             </>
           )}
         </div>

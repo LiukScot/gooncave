@@ -7,7 +7,7 @@ use crate::{
 };
 use axum::{
     extract::{Query, State},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use serde_json::{json, Map, Value};
@@ -15,7 +15,11 @@ use std::collections::{HashMap, HashSet};
 
 const PAGE_SIZE: usize = 40;
 const MAX_PAGE_SIZE: usize = 100;
-const MAX_SNAPSHOT_BYTES: usize = 4096;
+// Room for the tags, which History searches.
+const MAX_SNAPSHOT_BYTES: usize = 16384;
+const MAX_TAGS: usize = 512;
+const MAX_SEARCH_TAGS: usize = 16;
+const MAX_REMOVED: usize = 500;
 const MAX_URL_LENGTH: usize = 2048;
 const MAX_TEXT_LENGTH: usize = 256;
 const MAX_POOLS: usize = 64;
@@ -23,7 +27,9 @@ const MAX_POOLS: usize = 64;
 const LIBRARY_SITE: &str = "library";
 
 pub(crate) fn routes() -> Router<Database> {
-    Router::new().route("/read-marks/history", get(history))
+    Router::new()
+        .route("/read-marks/history", get(history))
+        .route("/read-marks/history/remove", post(remove))
 }
 
 /// The fields of a post that hold on any device, from an untrusted copy of one Explore showed.
@@ -96,8 +102,30 @@ pub(crate) fn snapshot(key: &[u8], site_id: &str, remote_id: &str, post: &Value)
         _ => return None,
     };
     kept.insert("poolIds".into(), pools);
+    // A post from Explore has `tags`; a snapshot synced from another device has `tagNames`.
+    let names: Vec<&str> = match (post.get("tagNames"), post.get("tags")) {
+        (Some(Value::Array(names)), _) => names.iter().map(Value::as_str).collect::<Option<_>>()?,
+        (_, Some(Value::Array(tags))) => tags
+            .iter()
+            .map(|tag| tag.get("tag").and_then(Value::as_str))
+            .collect::<Option<_>>()?,
+        (None | Some(Value::Null), None | Some(Value::Null)) => Vec::new(),
+        _ => return None,
+    };
+    // Tags only serve the search: ones that do not fit are left out, never the post.
+    let names: Vec<&str> = names
+        .into_iter()
+        .filter(|name| name.len() <= MAX_TEXT_LENGTH)
+        .take(MAX_TAGS)
+        .collect();
+    let without_tags = Value::Object(kept.clone()).to_string();
+    kept.insert("tagNames".into(), json!(names));
     let text = Value::Object(kept).to_string();
-    (text.len() <= MAX_SNAPSHOT_BYTES).then_some(text)
+    if text.len() <= MAX_SNAPSHOT_BYTES {
+        Some(text)
+    } else {
+        (without_tags.len() <= MAX_SNAPSHOT_BYTES).then_some(without_tags)
+    }
 }
 
 fn page_size(query: &HashMap<String, String>) -> Result<usize> {
@@ -109,6 +137,43 @@ fn page_size(query: &HashMap<String, String>) -> Result<usize> {
             .filter(|limit| (1..=MAX_PAGE_SIZE).contains(limit))
             .ok_or_else(|| Error::Invalid(format!("limit must be 1 through {MAX_PAGE_SIZE}."))),
     }
+}
+
+/// The tags every entry must have, from `tags` separated by spaces or commas.
+fn search_tags(query: &HashMap<String, String>) -> Result<Vec<String>> {
+    let mut tags: Vec<String> = query
+        .get("tags")
+        .map(|raw| {
+            raw.split([' ', ','])
+                .filter(|tag| !tag.is_empty())
+                .map(str::to_lowercase)
+                .collect()
+        })
+        .unwrap_or_default();
+    tags.sort();
+    tags.dedup();
+    if tags.len() > MAX_SEARCH_TAGS || tags.iter().any(|tag| tag.len() > MAX_TEXT_LENGTH) {
+        return Err(Error::Invalid(format!(
+            "Search at most {MAX_SEARCH_TAGS} tags of at most {MAX_TEXT_LENGTH} characters."
+        )));
+    }
+    Ok(tags)
+}
+
+/// `since` as the timestamp format of `read_at`, so the two compare as text.
+fn since(query: &HashMap<String, String>) -> Result<Option<String>> {
+    query
+        .get("since")
+        .map(|raw| {
+            chrono::DateTime::parse_from_rfc3339(raw)
+                .map(|at| {
+                    at.with_timezone(&chrono::Utc)
+                        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                        .to_string()
+                })
+                .map_err(|_| Error::Invalid("since must be an RFC 3339 time.".into()))
+        })
+        .transpose()
 }
 
 /// `readAt|entryKey` of the last entry of the previous page.
@@ -130,6 +195,8 @@ async fn history(
 ) -> Result<Json<Value>> {
     let limit = page_size(&query)?;
     let after = cursor(&query)?;
+    let tags = search_tags(&query)?;
+    let since = since(&query)?;
     let wanted: Option<HashSet<String>> = query.get("sites").map(|ids| {
         ids.split(',')
             .filter(|id| !id.is_empty())
@@ -146,17 +213,35 @@ async fn history(
     let site_ids: Vec<String> = sites.keys().cloned().collect();
     let rows: Vec<(String, String, Option<String>)> = db
         .call(move |c| {
-            let placeholders = (5..5 + site_ids.len())
-                .map(|index| format!("?{index}"))
-                .collect::<Vec<_>>()
-                .join(",");
+            let numbered = |from: usize, count: usize| {
+                (from..from + count)
+                    .map(|index| format!("?{index}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            };
+            // Gallery files match the way Gallery search does: through aliases, without tags removed by hand.
+            let mut canonical = tags
+                .iter()
+                .map(|tag| crate::tags::canonical(c, tag))
+                .collect::<Result<Vec<_>>>()?;
+            canonical.sort();
+            canonical.dedup();
+            let placeholders = numbered(8, site_ids.len());
+            let tag_placeholders = numbered(8 + site_ids.len(), tags.len());
+            let canonical_placeholders =
+                numbered(8 + site_ids.len() + tags.len(), canonical.len());
             let mut values: Vec<rusqlite::types::Value> = vec![
                 OWNER_ID.to_owned().into(),
                 after.as_ref().map(|(read_at, _)| read_at.clone()).into(),
                 after.as_ref().map(|(_, key)| key.clone()).into(),
                 ((limit + 1) as i64).into(),
+                since.into(),
+                (tags.len() as i64).into(),
+                (canonical.len() as i64).into(),
             ];
             values.extend(site_ids.into_iter().map(Into::into));
+            values.extend(tags.into_iter().map(Into::into));
+            values.extend(canonical.into_iter().map(Into::into));
             let mut statement = c.prepare(&format!(
                 // A limit per arm lets the post marks come ordered from their index and stop early;
                 // one ORDER BY over both would sort every mark for each page.
@@ -166,6 +251,9 @@ async fn history(
                         WHERE scope = 'post' AND user_id = ?1 AND post IS NOT NULL
                           AND (?2 IS NULL OR (read_at, item_key) < (?2, ?3))
                           AND substr(item_key, 1, instr(item_key, ':') - 1) IN ({placeholders})
+                          AND (?5 IS NULL OR read_at >= ?5)
+                          AND (?6 = 0 OR (SELECT count(DISTINCT lower(t.value)) FROM json_each(post, '$.tagNames') t
+                                          WHERE lower(t.value) IN ({tag_placeholders})) = ?6)
                         ORDER BY read_at DESC, item_key DESC LIMIT ?4)
                     UNION ALL
                     SELECT * FROM (
@@ -174,6 +262,11 @@ async fn history(
                         WHERE m.scope = 'opened' AND m.user_id = ?1
                           AND f.sha256 NOT IN (SELECT sha256 FROM trash)
                           AND (?2 IS NULL OR (m.read_at, '{LIBRARY_SITE}:' || m.item_key) < (?2, ?3))
+                          AND (?5 IS NULL OR m.read_at >= ?5)
+                          AND (?7 = 0 OR (SELECT count(DISTINCT ft.canonical_tag) FROM file_tags ft
+                                          WHERE ft.file_id = m.item_key AND ft.canonical_tag IN ({canonical_placeholders})
+                                            AND NOT EXISTS (SELECT 1 FROM file_tag_suppressions s
+                                                            WHERE s.file_id = ft.file_id AND s.tag = ft.tag)) = ?7)
                         ORDER BY m.read_at DESC, entry DESC LIMIT ?4)
                  ) ORDER BY read_at DESC, entry DESC LIMIT ?4"
             ))?;
@@ -232,6 +325,57 @@ async fn history(
         .filter_map(|(key, _, _)| shown.remove(key))
         .collect();
     Ok(Json(json!({"posts": posts, "nextCursor": next_cursor})))
+}
+
+/// Takes entries out of History by dropping their read marks, so the posts count as unread again.
+/// `entries` holds History keys: `site:remoteId`, or `library:fileId` for a Gallery file.
+async fn remove(
+    State(db): State<Database>,
+    payload: std::result::Result<Json<Value>, axum::extract::rejection::JsonRejection>,
+) -> Result<Json<Value>> {
+    let invalid = || {
+        Error::Invalid(format!(
+            "Send entries: 1 through {MAX_REMOVED} History keys of the form site:id."
+        ))
+    };
+    let Json(body) = payload.map_err(|_| invalid())?;
+    let entries: Vec<(String, String)> = body
+        .get("entries")
+        .and_then(Value::as_array)
+        .filter(|entries| (1..=MAX_REMOVED).contains(&entries.len()))
+        .and_then(|entries| {
+            entries
+                .iter()
+                .map(|entry| {
+                    let (site, id) = entry
+                        .as_str()
+                        .filter(|entry| entry.len() <= MAX_TEXT_LENGTH)?
+                        .split_once(':')?;
+                    (!site.is_empty() && !id.is_empty()).then(|| (site.to_owned(), id.to_owned()))
+                })
+                .collect()
+        })
+        .ok_or_else(invalid)?;
+    db.call(move |c| {
+        let tx = c.transaction()?;
+        let mut removed = 0;
+        for (site, id) in &entries {
+            removed += if site == LIBRARY_SITE {
+                tx.execute(
+                    "DELETE FROM read_marks WHERE scope IN ('opened', 'file') AND item_key = ?1 AND user_id = ?2",
+                    rusqlite::params![id, OWNER_ID],
+                )?
+            } else {
+                tx.execute(
+                    "DELETE FROM read_marks WHERE scope = 'post' AND item_key = ?1 AND user_id = ?2",
+                    rusqlite::params![format!("{site}:{id}"), OWNER_ID],
+                )?
+            };
+        }
+        tx.commit()?;
+        Ok(Json(json!({"removed": removed})))
+    })
+    .await
 }
 
 /// Gallery files as History entries, in the shape of a post so one grid shows both.
@@ -358,6 +502,125 @@ mod tests {
         )]);
         with_library_copies(&db, &mut shown).await.unwrap();
         assert!(shown["site:1"].get("libraryLocation").is_none());
+    }
+
+    async fn history_db() -> (tempfile::TempDir, Database) {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let site = "fixture";
+        db.call(move |c| {
+            let at = "2026-01-0";
+            c.execute_batch(&format!("
+                INSERT INTO user_booru_sites (id, user_id, name, engine, base_url, is_preset, enabled, sort_order, created_at, updated_at)
+                  VALUES ('{site}', '{OWNER_ID}', 'Fixture', 'e621', 'https://e621.net', 0, 1, 0, '{at}1T00:00:00Z', '{at}1T00:00:00Z');
+                INSERT INTO folders (id, user_id, path, type, status, created_at, updated_at)
+                  VALUES ('d', '{OWNER_ID}', '/library', 'LOCAL', 'ACTIVE', '{at}1T00:00:00Z', '{at}1T00:00:00Z');
+                INSERT INTO active_library_folders (id) VALUES ('d');
+                INSERT INTO files (id, folder_id, path, size_bytes, mtime, sha256, media_type, location_type, created_at, updated_at) VALUES
+                  ('fox-file', 'd', '/library/a.png', 1, '{at}1T00:00:00Z', 'a', 'IMAGE', 'LOCAL', '{at}1T00:00:00Z', '{at}1T00:00:00Z');
+                INSERT INTO file_tags (file_id, tag, canonical_tag, category, source, created_at, updated_at)
+                  VALUES ('fox-file', 'fox', 'fox', 'general', 'manual', '{at}1T00:00:00Z', '{at}1T00:00:00Z');
+                INSERT INTO tag_aliases (antecedent, consequent, source) VALUES ('vulpes', 'fox', 'custom');
+                INSERT INTO read_marks (scope, item_key, user_id, read_at, post) VALUES
+                  ('post', '{site}:1', '{OWNER_ID}', '{at}1T00:00:00.000Z', '{{\"remoteId\":\"1\",\"tagNames\":[\"Fox\",\"fox\",\"red\"]}}'),
+                  ('post', '{site}:2', '{OWNER_ID}', '{at}5T00:00:00.000Z', '{{\"remoteId\":\"2\",\"tagNames\":[\"wolf\"]}}');
+                INSERT INTO read_marks (scope, item_key, user_id, read_at) VALUES
+                  ('opened', 'fox-file', '{OWNER_ID}', '{at}3T00:00:00.000Z'),
+                  ('file', 'fox-file', '{OWNER_ID}', '{at}3T00:00:00.000Z');
+            "))?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        (dir, db)
+    }
+
+    fn ids(page: &Value) -> Vec<&str> {
+        page["posts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|post| post["remoteId"].as_str().unwrap())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn history_finds_posts_and_gallery_files_by_tag_and_period() {
+        let (_dir, db) = history_db().await;
+        let page = |pairs: &[(&str, &str)]| {
+            history(
+                State(db.clone()),
+                Query(
+                    pairs
+                        .iter()
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect(),
+                ),
+            )
+        };
+        let Json(all) = page(&[]).await.unwrap();
+        assert_eq!(ids(&all), ["2", "fox-file", "1"]);
+        let Json(foxes) = page(&[("tags", "fox")]).await.unwrap();
+        assert_eq!(ids(&foxes), ["fox-file", "1"]);
+        let Json(both) = page(&[("tags", "fox red")]).await.unwrap();
+        assert_eq!(ids(&both), ["1"]);
+        let Json(alias) = page(&[("tags", "vulpes")]).await.unwrap();
+        assert_eq!(ids(&alias), ["fox-file"]);
+        let Json(recent) = page(&[("since", "2026-01-03T00:00:00Z")]).await.unwrap();
+        assert_eq!(ids(&recent), ["2", "fox-file"]);
+        assert!(page(&[("since", "yesterday")]).await.is_err());
+        db.call(|c| {
+            c.execute(
+                "INSERT INTO file_tag_suppressions (file_id, tag, created_at) VALUES ('fox-file', 'fox', '2026-01-09T00:00:00Z')",
+                [],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let Json(removed_by_hand) = page(&[("tags", "fox")]).await.unwrap();
+        assert_eq!(ids(&removed_by_hand), ["1"]);
+    }
+
+    #[tokio::test]
+    async fn removing_entries_makes_them_unread_and_leaves_the_rest() {
+        let (_dir, db) = history_db().await;
+        let site = "fixture";
+        let Json(done) = remove(
+            State(db.clone()),
+            Ok(Json(
+                json!({"entries": [format!("{site}:1"), "library:fox-file"]}),
+            )),
+        )
+        .await
+        .unwrap();
+        assert_eq!(done["removed"], 3);
+        let Json(left) = history(State(db.clone()), Query(HashMap::new()))
+            .await
+            .unwrap();
+        assert_eq!(ids(&left), ["2"]);
+        assert!(remove(
+            State(db.clone()),
+            Ok(Json(json!({"entries": ["no-colon"]})))
+        )
+        .await
+        .is_err());
+    }
+
+    #[test]
+    fn a_snapshot_keeps_the_tag_names_to_search() {
+        let tagged = json!({"remoteId": "7", "tags": [{"tag": "fox", "category": "species"}]});
+        let kept: Value =
+            serde_json::from_str(&snapshot(b"key", "site", "7", &tagged).unwrap()).unwrap();
+        assert_eq!(kept["tagNames"], json!(["fox"]));
+        let again: Value =
+            serde_json::from_str(&snapshot(&[], "site", "7", &kept).unwrap()).unwrap();
+        assert_eq!(again["tagNames"], json!(["fox"]));
+        let crowded = json!({"remoteId": "7", "tagNames": vec!["t".repeat(200); 200]});
+        let kept: Value =
+            serde_json::from_str(&snapshot(&[], "site", "7", &crowded).unwrap()).unwrap();
+        assert_eq!(kept["remoteId"], "7");
+        assert!(kept.get("tagNames").is_none());
     }
 
     #[test]

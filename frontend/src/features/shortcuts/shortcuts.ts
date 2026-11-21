@@ -32,7 +32,7 @@ export const SHORTCUT_META: Record<
   close: { label: 'Close / leave fullscreen', context: 'detail' },
   fullscreen: { label: 'Toggle fullscreen', context: 'detail' },
   playPause: { label: 'Play / pause video', context: 'detail' },
-  voteUp: { label: 'Vote up', context: 'detail' },
+  voteUp: { label: 'Give a star (Gallery) or vote up (Explore)', context: 'detail' },
   voteDown: { label: 'Vote down (Explore posts)', context: 'detail' },
   favorite: { label: 'Favorite / remove favorite', context: 'detail' },
   delete: { label: 'Delete file', context: 'detail' },

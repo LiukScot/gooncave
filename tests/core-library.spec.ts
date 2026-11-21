@@ -90,15 +90,15 @@ test('a provider-only GIF plays over an existing still poster in the phone Galle
   await expect.poll(() => tile.locator('video').evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0);
 });
 
-test('browses the library folder, votes a file and deletes another', async ({ page }) => {
+test('browses the library folder, stars a file and deletes another', async ({ page }) => {
   // Browsing local files must not start remote refresh work.
   const booruCalls: string[] = [];
   page.on('request', (request) => {
     if (/\/tags\/refresh|\/explore\/subscriptions\/refresh/.test(request.url())) booruCalls.push(request.url());
   });
   const original = await (await page.request.get('/settings/extra')).json();
-  const vote = await page.request.put('/settings/extra', { data: { voteSystemEnabled: true } });
-  expect(vote.ok(), 'failed to enable votes').toBeTruthy();
+  const stars = await page.request.put('/settings/extra', { data: { starsEnabled: true } });
+  expect(stars.ok(), 'failed to enable stars').toBeTruthy();
   try {
     // The playwright config put these two files in the library folder before the core started.
     await page.goto('/app/gallery');
@@ -112,16 +112,16 @@ test('browses the library folder, votes a file and deletes another', async ({ pa
     await page.goto('/app/gallery');
     await card(page, uploaded).click();
     await expect(page).toHaveURL(/fileId=/);
-    const votePosted = page.waitForResponse((res) => res.url().includes('/vote') && res.request().method() === 'POST');
+    const starPosted = page.waitForResponse((res) => res.url().includes('/star') && res.request().method() === 'POST');
     await page.getByRole('button', { name: 'More actions' }).click();
     // The one action that loses something comes last.
     await expect(page.locator('.more-actions-pills button').last()).toHaveText('Delete file');
-    await page.getByRole('button', { name: 'Vote up' }).click();
+    await page.getByRole('button', { name: 'Give a star' }).click();
     await page.getByRole('button', { name: 'Back to gallery' }).click();
-    expect((await votePosted).ok()).toBeTruthy();
+    expect((await starPosted).ok()).toBeTruthy();
     await page.reload();
-    const galleryVote = card(page, uploaded).locator('..').getByRole('button', { name: /Votable again in .*; score 1/ });
-    await expect(galleryVote).toHaveText('1');
+    const galleryStar = card(page, uploaded).locator('..').getByRole('button', { name: /Can get a star again in .*; 1 star$/ });
+    await expect(galleryStar).toHaveText('1');
 
     // The centre of a video tile is its inline play button; the rest of the tile opens the file.
     await card(page, 'clip.mp4').click({ position: { x: 8, y: 8 } });
@@ -282,7 +282,7 @@ test('a file asks for its comments only when the reader gets near them', async (
   await expect.poll(() => asked).toBe(1);
 });
 
-test('in fullscreen a pinch zooms, the wheel does not, and dragging pans the picture instead of dragging the image out', async ({ page }) => {
+test('in fullscreen a mouse wheel and a pinch zoom, a touchpad slide does not, and dragging pans the picture instead of dragging the image out', async ({ page }) => {
   await page.goto('/app/gallery');
   await card(page, 'landscape.png').click();
   const wrap = page.locator('.file-detail-panel-current .file-detail-media-wrap');
@@ -297,17 +297,28 @@ test('in fullscreen a pinch zooms, the wheel does not, and dragging pans the pic
   const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.move(center.x, center.y);
   const zoomed = () => wrap.evaluate((element) => (element as HTMLElement).style.getPropertyValue('--file-detail-zoom'));
-  // A wheel without Ctrl may be two fingers sliding on a touchpad: it does not zoom.
+  // Two fingers sliding on a touchpad send small wheel steps: they do not zoom.
   const unzoomed = await zoomed();
-  await page.mouse.wheel(0, -100);
-  await page.waitForTimeout(100);
+  for (const step of [-14, -26, -18]) await page.mouse.wheel(0, step);
+  await page.waitForTimeout(200);
   await expect(wrap).not.toHaveClass(/is-zoomed/);
   expect(await zoomed()).toBe(unzoomed);
+  // A mouse wheel notch is 120: it zooms in.
+  await page.mouse.wheel(0, -120);
+  await expect(wrap).toHaveClass(/is-zoomed/);
+  const wheeled = await zoomed();
   // A pinch: the touchpad sends it as a wheel with Ctrl held.
   await page.keyboard.down('Control');
   await page.mouse.wheel(0, -150);
   await page.keyboard.up('Control');
-  await expect(wrap).toHaveClass(/is-zoomed/);
+  await expect.poll(zoomed).not.toBe(wheeled);
+  // A slide moves the zoomed picture and keeps its size.
+  const pinched = await zoomed();
+  const scaleOf = (transform: string) => transform.match(/scale\(([^)]+)\)/)?.[1];
+  await page.waitForTimeout(200);
+  await page.mouse.wheel(0, 20);
+  await expect.poll(zoomed).not.toBe(pinched);
+  expect(scaleOf(await zoomed())).toBe(scaleOf(pinched));
   // The thumbnail under the picture does not zoom, so panning would uncover it.
   expect(await wrap.evaluate((element) => getComputedStyle(element, '::before').display)).toBe('none');
   const zoom = () => wrap.evaluate((element) => (element as HTMLElement).style.getPropertyValue('--file-detail-zoom'));

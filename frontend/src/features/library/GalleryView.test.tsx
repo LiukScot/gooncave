@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, createRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -15,6 +16,7 @@ vi.mock('./VirtualGalleryMasonry', () => ({
 import { GalleryView, type GalleryViewProps } from './GalleryView';
 
 import type { FileItem } from '@/api';
+import { ConfirmProvider } from '@/components/confirm-dialog';
 import { DEFAULT_APPEARANCE, useAppearanceStore } from '@/stores/appearanceStore';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -41,7 +43,7 @@ const renderGallery = (overrides: Partial<GalleryViewProps>) => {
     galleryHasMore: false,
     galleryPageState: { loading: false, error: null },
     gallerySort: 'random',
-    voteSystemEnabled: false,
+    starsEnabled: false,
     maxGridColumns: 0,
     galleryFilters: { photos: true, videos: true, downloaded: false },
     galleryTagInput: '',
@@ -51,11 +53,21 @@ const renderGallery = (overrides: Partial<GalleryViewProps>) => {
     onFilterChange: vi.fn(),
     onSortChange: vi.fn(),
     onFileOpen: vi.fn(),
-    onUpvote: vi.fn(),
+    onGiveStar: vi.fn(),
+    onStarFile: vi.fn(),
+    onFileDeleted: vi.fn(),
     onLoadMore: vi.fn(),
     ...overrides
   };
-  act(() => root?.render(<GalleryView {...props} />));
+  act(() =>
+    root?.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ConfirmProvider>
+          <GalleryView {...props} />
+        </ConfirmProvider>
+      </QueryClientProvider>
+    )
+  );
   return container;
 };
 
@@ -74,8 +86,8 @@ const file: FileItem = {
   durationMs: null,
   thumbPath: null,
   thumbUrl: '/thumb.jpg',
-  voteScore: 0,
-  nextVoteAt: null,
+  stars: 0,
+  nextStarAt: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z'
 };
@@ -165,4 +177,26 @@ it('hands the files picked with "Add files" to the library, and lets the same on
   act(() => { input.dispatchEvent(new Event('change', { bubbles: true })); });
   expect(onAddFiles).toHaveBeenCalledWith([photo]);
   expect(document.querySelector('.search-lens-action[aria-label="Add files"]')).not.toBeNull();
+});
+
+it('keeps the selection when the tag dialog is cancelled', () => {
+  renderGallery({ galleryFiles: [file] });
+  const tile = document.createElement('div');
+  tile.dataset.selectKey = file.id;
+  const { gridProps } = masonryProps.mock.lastCall![0] as {
+    gridProps: { onClickCapture: (event: object) => void };
+  };
+  act(() => gridProps.onClickCapture({
+    target: tile, ctrlKey: true, metaKey: false, shiftKey: false,
+    preventDefault: vi.fn(), stopPropagation: vi.fn()
+  }));
+  const bar = () => document.querySelector('[data-test-id="selection-bar"]');
+  const button = (name: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === name)!;
+  expect(bar()?.textContent).toContain('1 selected');
+  act(() => button('Add tag').click());
+  const dialog = document.querySelector('[role="dialog"]')!;
+  act(() => [...dialog.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Cancel')!.click());
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(bar()?.textContent).toContain('1 selected');
 });

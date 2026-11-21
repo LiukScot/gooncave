@@ -15,11 +15,11 @@ const file = {
   width: 640,
   height: 480,
   durationMs: null,
-  voteScore: 3
+  stars: 3
 } as FileItem;
 
 const html = (siteInfo: Parameters<typeof FileInfoList>[0]['siteInfo']) =>
-  renderToStaticMarkup(<FileInfoList file={file} siteInfo={siteInfo} voteSystemEnabled />);
+  renderToStaticMarkup(<FileInfoList file={file} siteInfo={siteInfo} starsEnabled />);
 
 it('shows when the file was added and drops the file name and the modified date', () => {
   const out = html(null);
@@ -29,14 +29,14 @@ it('shows when the file was added and drops the file name and the modified date'
   expect(out).not.toContain('Modified');
 });
 
-it('lists what the site said and tells its score from GoonCave’s own', () => {
+it('lists what the site said and tells its score from GoonCave’s stars', () => {
   const out = html({ engine: 'e621', uploader: 'artist_1', rating: 'e', score: 22, favorites: 5 });
   expect(out).toContain('Uploader:');
   expect(out).toContain('artist_1');
   expect(out).toContain('Rating:');
   expect(out).toContain('Explicit');
   expect(out).toContain('Score (site):');
-  expect(out).toContain('Score (GoonCave):');
+  expect(out).toContain('Stars:');
   expect(out).toContain('Favorites:');
 });
 

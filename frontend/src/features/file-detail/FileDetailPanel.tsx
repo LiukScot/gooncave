@@ -1,9 +1,9 @@
 import {
   ChevronLeft,
-  ChevronUp,
   Clock,
   Pencil,
-  RefreshCw
+  RefreshCw,
+  Star
 } from 'lucide-react';
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -99,11 +99,11 @@ export type ProviderMeta = {
 export type Props = {
   // Core file
   selectedFile: FileItem;
-  /** Time left on the 24h cooldown, or null when a vote is allowed now. */
-  voteCooldownText: string | null;
-  voteSystemEnabled: boolean;
-  /** An upvote is still inside its undo window. */
-  pendingVote: boolean;
+  /** Time left on the 24h cooldown, or null when a star can be given now. */
+  starCooldownText: string | null;
+  starsEnabled: boolean;
+  /** A star is still inside its undo window. */
+  pendingStar: boolean;
 
   // Media
   mediaFullscreen: boolean;
@@ -130,7 +130,7 @@ export type Props = {
 
   // Action states
   shareState: FetchState;
-  voteState: FetchState;
+  starState: FetchState;
   deleteState: FetchState;
   tagState: FetchState;
   tagRefreshStatus: FileTagRefreshStatus | null;
@@ -162,8 +162,8 @@ export type Props = {
   // File actions
   shareSupported: boolean;
   onDownloadFile: () => void;
-  onVote: () => void;
-  onUndoVote: () => void;
+  onGiveStar: () => void;
+  onUndoStar: () => void;
   onDeleteFile: (id: string) => void;
   /** The original is on this device now, after "Keep on device" downloaded it. */
   onFileKept: (id: string, locationType: FileItem['locationType']) => void;
@@ -177,9 +177,9 @@ export type Props = {
 export function FileDetailPanel(props: Props): React.ReactElement {
   const {
     selectedFile,
-    voteCooldownText,
-    voteSystemEnabled,
-    pendingVote,
+    starCooldownText,
+    starsEnabled,
+    pendingStar,
     mediaFullscreen,
     onToggleFullscreen,
     hasPrev,
@@ -195,7 +195,7 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     onDetailTouchStart,
     onDetailTouchEnd,
     shareState,
-    voteState,
+    starState,
     deleteState,
     tagState,
     tagRefreshStatus,
@@ -221,8 +221,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     onRunAllProviders,
     shareSupported,
     onDownloadFile,
-    onVote,
-    onUndoVote,
+    onGiveStar,
+    onUndoStar,
     onDeleteFile,
     onFileKept,
     onClose,
@@ -264,25 +264,25 @@ export function FileDetailPanel(props: Props): React.ReactElement {
   const sourceTexts = useFileSourceText(selectedFile.id);
   const siteInfo = useFileSiteInfo(selectedFile.id);
   // A cooldown takes the pair's place as a clock, two buttons wide, only while
-  // the vote can be undone. After that the corner is free; File info says the time left.
-  const voteOverlay = !voteSystemEnabled || (voteCooldownText && !pendingVote) ? null : voteCooldownText ? (
+  // the star can be undone. After that the corner is free; File info says the time left.
+  const starOverlay = !starsEnabled || (starCooldownText && !pendingStar) ? null : starCooldownText ? (
     <div
       className="file-detail-overlay-btn file-detail-overlay-cooldown"
       role="group"
-      aria-label="Vote"
-      title={`Votable again in ${voteCooldownText}`}
+      aria-label="Star"
+      title={`Can get a star again in ${starCooldownText}`}
     >
       <Clock className="file-detail-overlay-icon" aria-hidden="true" />
-      {voteCooldownText}
+      {starCooldownText}
     </div>
   ) : (
-    <div className="file-detail-overlay-group" role="group" aria-label="Vote">
+    <div className="file-detail-overlay-group" role="group" aria-label="Star">
       <OverlayButton
-        icon={ChevronUp}
-        label="Vote up"
-        title={withShortcutHint('Vote up', shortcuts.voteUp)}
-        disabled={voteState.loading}
-        onClick={onVote}
+        icon={Star}
+        label="Give a star"
+        title={withShortcutHint('Give a star', shortcuts.voteUp)}
+        disabled={starState.loading}
+        onClick={onGiveStar}
       />
     </div>
   );
@@ -299,12 +299,12 @@ export function FileDetailPanel(props: Props): React.ReactElement {
     />
   );
 
-  // The file-level actions float at the screen's bottom right with the votes, not in a
+  // The file-level actions float at the screen's bottom right with the star, not in a
   // section header. Read from the right: the menu, then the action chosen in Appearance.
   const moreMenu = (
     <FileMoreMenu
       file={selectedFile}
-      vote={voteOverlay}
+      vote={starOverlay}
       onKept={onFileKept}
       deleting={deleteState.loading}
       deleteTitle={withShortcutHint('Delete file', shortcuts.delete)}
@@ -580,15 +580,15 @@ export function FileDetailPanel(props: Props): React.ReactElement {
                 <FileInfoList
                   file={file}
                   siteInfo={siteInfo}
-                  voteSystemEnabled={voteSystemEnabled}
-                  testId="vote-score"
+                  starsEnabled={starsEnabled}
+                  testId="star-count"
                 />
               ) : null}
             </div>
             </>) : null}
-            {active && voteState.error ? (
+            {active && starState.error ? (
               <div className="text-destructive text-sm mb-2">
-                {voteState.error}
+                {starState.error}
               </div>
             ) : null}
           </div>
@@ -598,13 +598,13 @@ export function FileDetailPanel(props: Props): React.ReactElement {
 
   // On the page body like PhoneActions: the frame is a layout container, and a fixed
   // box inside one is placed against the frame. In fullscreen the frame is the screen.
-  const voteUndo = pendingVote ? (
-    <div className="floating-capsule file-detail-vote-undo" role="status">
-      <span>Voted up</span>
+  const starUndo = pendingStar ? (
+    <div className="floating-capsule file-detail-star-undo" role="status">
+      <span>Star given</span>
       <button
         type="button"
         className="btn btn-link btn-sm p-0"
-        onClick={onUndoVote}
+        onClick={onUndoStar}
       >
         Undo
       </button>
@@ -628,8 +628,8 @@ export function FileDetailPanel(props: Props): React.ReactElement {
       onTouchEnd={onDetailTouchEnd}
       onTouchCancel={onDetailTouchEnd}
     >
-      {voteUndo && mediaFullscreen ? voteUndo : null}
-      {voteUndo && !mediaFullscreen ? createPortal(voteUndo, document.body) : null}
+      {starUndo && mediaFullscreen ? starUndo : null}
+      {starUndo && !mediaFullscreen ? createPortal(starUndo, document.body) : null}
       {mediaFullscreen ? null : (
         <WindowBarBack label={openedFromHistory ? 'Back to History' : 'Back to gallery'} onClick={onClose} />
       )}

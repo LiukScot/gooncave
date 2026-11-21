@@ -79,6 +79,7 @@ async fn manual_tags_aliases_negation_blacklist_and_suggestions() {
         ("dog%20blue_eyes", vec!["a"]),
         ("-dog", vec!["c"]),
         ("score:0", vec!["a", "b", "c"]),
+        ("stars:0", vec!["a", "b", "c"]),
     ] {
         let (status, body) = request(
             &server,

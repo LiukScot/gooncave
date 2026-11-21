@@ -31,6 +31,13 @@ import {
   type ProviderKind
 } from './sections';
 import { canShareFiles } from './share';
+import {
+  canGiveStar,
+  formatStarCooldown,
+  useNow,
+  STAR_COOLDOWN_MS,
+  STAR_UNDO_WINDOW_MS
+} from './star';
 import { useBodyScrollLock, useDetailSwipe } from './useDetailSwipe';
 import {
   restartVideoLoop,
@@ -39,13 +46,6 @@ import {
 } from './videoLoop';
 import { VideoPlayer } from './VideoPlayer';
 import { readVideoSound, writeVideoSound } from './videoVolume';
-import {
-  canCastFileVote,
-  formatVoteCooldown,
-  useNow,
-  VOTE_COOLDOWN_MS,
-  VOTE_UNDO_WINDOW_MS
-} from './vote';
 
 import {
   api,
@@ -74,7 +74,7 @@ import {
 import { dialogOwnsKey, useShortcuts } from '@/features/shortcuts/useShortcuts';
 import { useBooruSites } from '@/hooks/booru-sites';
 import { useDeviceProfile } from '@/hooks/device';
-import { useDeleteFile, useVoteFile } from '@/hooks/files';
+import { useDeleteFile, useStarFile } from '@/hooks/files';
 import { useExtraSettings } from '@/hooks/settings';
 import {
   useAddManualTag,
@@ -96,7 +96,7 @@ const providerKinds: readonly ProviderKind[] = ['SAUCENAO', 'FLUFFLE'];
 
 /**
  * How long a delete stays undoable before the file is actually removed from
- * disk. Longer than the vote's window: a wrong delete cannot be re-done.
+ * disk. Longer than the star's window: a wrong delete cannot be re-done.
  */
 const DELETE_UNDO_WINDOW_MS = 8_000;
 
@@ -219,11 +219,11 @@ export type FileDetailControllerOutput = {
   selectedFile: FileItem | null;
   openFile: (file: FileItem) => void;
   closeFile: (options?: { syncUrl?: boolean }) => void;
-  // Same handler the panel gets, exposed for callers outside it. The vote is
+  // Same handler the panel gets, exposed for callers outside it. The star is
   // held for the undo window before it is sent, so this returns immediately
   // and never reports the settled result; the gallery follows selectedFile
   // instead.
-  onVote: () => void;
+  onGiveStar: () => void;
   panelProps: FileDetailPanelProps;
 };
 
@@ -244,7 +244,7 @@ export function useFileDetailController(
     onFileRestored
   } = input;
   const queryClient = useQueryClient();
-  const { voteSystemEnabled, videoSkipSeconds } = useExtraSettings();
+  const { starsEnabled, videoSkipSeconds } = useExtraSettings();
 
   // --- mutations -----------------------------------------------------------
   const deleteFileMutation = useDeleteFile();
@@ -253,7 +253,7 @@ export function useFileDetailController(
   const navigate = useNavigate();
   const dialogOpen = useDialogOpen();
   const shortcuts = useShortcuts();
-  const voteFileMutation = useVoteFile();
+  const starFileMutation = useStarFile();
   const addManualTagMutation = useAddManualTag();
   const suppressFileTagsMutation = useSuppressFileTags();
   const { mutateAsync: refreshFileTags } = useRefreshFileTags();
@@ -279,17 +279,17 @@ export function useFileDetailController(
     loading: false,
     error: null
   });
-  const [voteState, setVoteState] = useState<FetchState>({
+  const [starState, setStarState] = useState<FetchState>({
     loading: false,
     error: null
   });
-  const [pendingVote, setPendingVote] = useState(false);
-  const pendingVoteRef = useRef<{
+  const [pendingStar, setPendingStar] = useState(false);
+  const pendingStarRef = useRef<{
     fileId: string;
-    previous: { voteScore: number; nextVoteAt: string | null };
+    previous: { stars: number; nextStarAt: string | null };
     timer: number;
   } | null>(null);
-  const commitVoteRef = useRef<() => void>(() => {});
+  const commitStarRef = useRef<() => void>(() => {});
   const [deleteState, setDeleteState] = useState<FetchState>({
     loading: false,
     error: null
@@ -385,8 +385,8 @@ export function useFileDetailController(
   // A minute is finer than the countdown's own resolution, so the label never
   // sits visibly stale, and it costs one re-render per minute.
   const now = useNow(60_000);
-  const voteCooldownText = formatVoteCooldown(
-    selectedFile?.nextVoteAt ?? null,
+  const starCooldownText = formatStarCooldown(
+    selectedFile?.nextStarAt ?? null,
     now
   );
 
@@ -712,7 +712,7 @@ export function useFileDetailController(
   );
 
   // A delete is applied to the list at once and sent when the undo window
-  // closes, the same shape the vote uses — there is no undelete endpoint, so
+  // closes, the same shape the star uses — there is no undelete endpoint, so
   // not having sent it yet is what makes Undo possible at all.
   const pendingDeleteRef = useRef<{
     file: FileItem;
@@ -837,29 +837,29 @@ export function useFileDetailController(
   // Handlers
   // ---------------------------------------------------------------------------
 
-  // A vote is held locally for VOTE_UNDO_WINDOW_MS before it is sent, which
+  // A star is held locally for STAR_UNDO_WINDOW_MS before it is sent, which
   // is what makes "Undo" possible without an undo endpoint (and without a way
   // to bypass the server-side cooldown).
-  const commitVote = useCallback(() => {
-    const pending = pendingVoteRef.current;
+  const commitStar = useCallback(() => {
+    const pending = pendingStarRef.current;
     if (!pending) return;
     window.clearTimeout(pending.timer);
-    pendingVoteRef.current = null;
-    setPendingVote(false);
-    setVoteState({ loading: true, error: null });
-    voteFileMutation
+    pendingStarRef.current = null;
+    setPendingStar(false);
+    setStarState({ loading: true, error: null });
+    starFileMutation
       .mutateAsync(pending.fileId)
       .then((resp) => {
         setSelectedFile((prev) =>
           prev && prev.id === pending.fileId
             ? {
                 ...prev,
-                voteScore: resp.voteScore,
-                nextVoteAt: resp.nextVoteAt
+                stars: resp.stars,
+                nextStarAt: resp.nextStarAt
               }
             : prev
         );
-        setVoteState({ loading: false, error: null });
+        setStarState({ loading: false, error: null });
       })
       .catch((err: Error) => {
         setSelectedFile((prev) =>
@@ -867,63 +867,63 @@ export function useFileDetailController(
             ? { ...prev, ...pending.previous }
             : prev
         );
-        notifyActionError('Could not save your vote', err);
-        setVoteState({ loading: false, error: null });
+        notifyActionError('Could not give the star', err);
+        setStarState({ loading: false, error: null });
       });
-  }, [voteFileMutation]);
+  }, [starFileMutation]);
 
   useEffect(() => {
-    commitVoteRef.current = commitVote;
-  }, [commitVote]);
+    commitStarRef.current = commitStar;
+  }, [commitStar]);
 
-  // Leaving the file (swipe, close, unmount) must send the pending vote
+  // Leaving the file (swipe, close, unmount) must send the pending star
   // rather than drop it silently.
   useEffect(() => {
     if (
-      pendingVoteRef.current &&
-      pendingVoteRef.current.fileId !== selectedFile?.id
+      pendingStarRef.current &&
+      pendingStarRef.current.fileId !== selectedFile?.id
     ) {
-      commitVoteRef.current();
+      commitStarRef.current();
     }
   }, [selectedFile?.id]);
 
-  useEffect(() => () => commitVoteRef.current(), []);
+  useEffect(() => () => commitStarRef.current(), []);
 
-  const onVote = useCallback(
+  const onGiveStar = useCallback(
     () => {
-      if (!selectedFile || pendingVoteRef.current) return;
-      if (!canCastFileVote(selectedFile, Date.now())) return;
+      if (!selectedFile || pendingStarRef.current) return;
+      if (!canGiveStar(selectedFile, Date.now())) return;
       const fileId = selectedFile.id;
       const previous = {
-        voteScore: selectedFile.voteScore,
-        nextVoteAt: selectedFile.nextVoteAt
+        stars: selectedFile.stars,
+        nextStarAt: selectedFile.nextStarAt
       };
-      setVoteState({ loading: false, error: null });
+      setStarState({ loading: false, error: null });
       setSelectedFile((prev) =>
         prev && prev.id === fileId
           ? {
               ...prev,
-              voteScore: prev.voteScore + 1,
-              nextVoteAt: new Date(Date.now() + VOTE_COOLDOWN_MS).toISOString()
+              stars: prev.stars + 1,
+              nextStarAt: new Date(Date.now() + STAR_COOLDOWN_MS).toISOString()
             }
           : prev
       );
       const timer = window.setTimeout(
-        () => commitVoteRef.current(),
-        VOTE_UNDO_WINDOW_MS
+        () => commitStarRef.current(),
+        STAR_UNDO_WINDOW_MS
       );
-      pendingVoteRef.current = { fileId, previous, timer };
-      setPendingVote(true);
+      pendingStarRef.current = { fileId, previous, timer };
+      setPendingStar(true);
     },
     [selectedFile]
   );
 
-  const onUndoVote = useCallback(() => {
-    const pending = pendingVoteRef.current;
+  const onUndoStar = useCallback(() => {
+    const pending = pendingStarRef.current;
     if (!pending) return;
     window.clearTimeout(pending.timer);
-    pendingVoteRef.current = null;
-    setPendingVote(false);
+    pendingStarRef.current = null;
+    setPendingStar(false);
     setSelectedFile((prev) =>
       prev && prev.id === pending.fileId
         ? { ...prev, ...pending.previous }
@@ -965,7 +965,7 @@ export function useFileDetailController(
       } else if (action === 'fullscreen') {
         onFullscreenChange(!mediaFullscreen);
       } else if (action === 'voteUp') {
-        if (voteSystemEnabled) onVote();
+        if (starsEnabled) onGiveStar();
       } else if (action === 'delete') {
         void onDeleteFile(selectedFile.id);
       }
@@ -981,8 +981,8 @@ export function useFileDetailController(
     onFullscreenChange,
     shortcuts,
     dialogOpen,
-    onVote,
-    voteSystemEnabled
+    onGiveStar,
+    starsEnabled
   ]);
 
   const onDownloadFile = useCallback(async () => {
@@ -1173,6 +1173,7 @@ export function useFileDetailController(
     async (tag: string, category: string) => {
       const mode = await choose('', {
         title: tag,
+        copyTitle: true,
         actions: [
           { value: 'search', label: 'Search tag' },
           { value: 'explore', label: 'Search tag in Explore' },
@@ -1280,9 +1281,9 @@ export function useFileDetailController(
 
     return {
       selectedFile: file,
-      voteCooldownText,
-      voteSystemEnabled,
-      pendingVote,
+      starCooldownText,
+      starsEnabled,
+      pendingStar,
 
       mediaFullscreen,
       onToggleFullscreen: () => onFullscreenChange(!mediaFullscreen),
@@ -1302,7 +1303,7 @@ export function useFileDetailController(
       onDetailTouchEnd: swipe.onTouchEnd,
 
       shareState,
-      voteState,
+      starState,
       deleteState,
       tagState,
       tagRefreshStatus,
@@ -1331,8 +1332,8 @@ export function useFileDetailController(
 
       shareSupported: shareSupported || nativeShare,
       onDownloadFile: () => void onDownloadFile(),
-      onVote,
-      onUndoVote,
+      onGiveStar,
+      onUndoStar,
       onDeleteFile: (id: string) => void onDeleteFile(id),
       onFileKept,
       onClose: closeFile,
@@ -1343,9 +1344,9 @@ export function useFileDetailController(
   }, [
     selectedFile,
     nativeShare,
-    voteCooldownText,
-    voteSystemEnabled,
-    pendingVote,
+    starCooldownText,
+    starsEnabled,
+    pendingStar,
     mediaFullscreen,
     hasPrev,
     hasNext,
@@ -1357,7 +1358,7 @@ export function useFileDetailController(
     swipe,
     onFullscreenChange,
     shareState,
-    voteState,
+    starState,
     deleteState,
     tagState,
     tagRefreshStatus,
@@ -1379,8 +1380,8 @@ export function useFileDetailController(
     displayFilterActive,
     onRunAllProviders,
     onDownloadFile,
-    onVote,
-    onUndoVote,
+    onGiveStar,
+    onUndoStar,
     onDeleteFile,
     onFileKept,
     closeFile,
@@ -1392,7 +1393,7 @@ export function useFileDetailController(
     selectedFile,
     openFile,
     closeFile,
-    onVote,
+    onGiveStar,
     panelProps
   };
 }

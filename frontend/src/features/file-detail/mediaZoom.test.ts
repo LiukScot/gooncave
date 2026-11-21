@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   clampOffset,
+  isMouseNotch,
   isZoomed,
   MAX_ZOOM,
   NO_ZOOM,
@@ -133,5 +134,17 @@ describe('pinchWheelDelta', () => {
     expect(pinchWheelDelta(-5)).toBe(-20);
     expect(pinchWheelDelta(120)).toBe(100);
     expect(pinchWheelDelta(-120)).toBe(-100);
+  });
+});
+
+describe('isMouseNotch', () => {
+  it('tells a mouse notch from two fingers sliding on a touchpad, with values measured on Linux', () => {
+    expect(isMouseNotch({ deltaX: 0, deltaY: -120 })).toBe(true);
+    expect(isMouseNotch({ deltaX: 0, deltaY: 240 })).toBe(true);
+    // On a screen scaled to 1.67.
+    expect(isMouseNotch({ deltaX: 0, deltaY: 120.00000343322738 })).toBe(true);
+    for (const step of [2, -14, 26, 61.12500166296951]) expect(isMouseNotch({ deltaX: 0, deltaY: step })).toBe(false);
+    expect(isMouseNotch({ deltaX: 3, deltaY: -120 })).toBe(false);
+    expect(isMouseNotch({ deltaX: 0, deltaY: 0 })).toBe(false);
   });
 });

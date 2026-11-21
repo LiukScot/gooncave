@@ -297,9 +297,11 @@ pub async fn probe(path: &Path, kind: MediaKind) -> Result<Probe> {
     }
     let duration_ms = match kind {
         MediaKind::Image => None,
-        MediaKind::Video => report["format"]["duration"]
-            .as_str()
-            .and_then(|duration| duration.parse::<f64>().ok())
+        // The picture's own length: a longer sound track lengthens the file's, so two copies of
+        // one clip that differ only in their sound would take their frames at different moments.
+        MediaKind::Video => [&stream["duration"], &report["format"]["duration"]]
+            .into_iter()
+            .find_map(|duration| duration.as_str()?.parse::<f64>().ok())
             .map(|seconds| (seconds * 1000.0).round() as i64),
     };
     Ok(Probe {
