@@ -33,6 +33,8 @@ const MAX_SIZE_NEIGHBOR_OFFSETS: usize = 12;
 /// Average hashes of one picture at two sizes stay within a few bits; checked against the
 /// signatures afterwards, so this only picks which pairs to compare first.
 const MAX_NEAR_HASH_DISTANCE: u32 = 6;
+/// Two copies of one clip last the same within this share of the longer one.
+const MAX_DURATION_DIFFERENCE: f64 = 0.02;
 const SMALL_GROUP_FULL_COMPARE_LIMIT: usize = 120;
 const SIGNATURE_CONCURRENCY: usize = 4;
 /// Two encodings of one picture stay within a few levels of gray per sample; an edit moves the
@@ -307,6 +309,39 @@ fn near_hash_pairs(hashes: &[Option<u64>], max_pairs: usize) -> Vec<(usize, usiz
                     pairs.push((i, j));
                 }
             }
+        }
+    }
+    pairs
+}
+
+/// Videos of about the same length, closest first: copies of one clip encoded at another bitrate,
+/// which file size does not bring together and which have no average hash. Stops at `max_pairs`.
+fn near_duration_pairs(durations: &[Option<i64>], max_pairs: usize) -> Vec<(usize, usize)> {
+    let mut order: Vec<(i64, usize)> = durations
+        .iter()
+        .enumerate()
+        .filter_map(|(i, d)| d.filter(|d| *d > 0).map(|d| (d, i)))
+        .collect();
+    order.sort_unstable();
+    let close = |shorter: i64, longer: i64| {
+        (longer - shorter) as f64 <= longer as f64 * MAX_DURATION_DIFFERENCE
+    };
+    let mut pairs = Vec::new();
+    for offset in 1..order.len() {
+        let mut any = false;
+        for window in order.windows(offset + 1) {
+            let ((shorter, a), (longer, b)) = (window[0], window[offset]);
+            if !close(shorter, longer) {
+                continue;
+            }
+            any = true;
+            if pairs.len() >= max_pairs {
+                return pairs;
+            }
+            pairs.push((a.min(b), a.max(b)));
+        }
+        if !any {
+            break;
         }
     }
     pairs
@@ -646,8 +681,14 @@ pub(crate) async fn find(
             .iter()
             .map(|f| f.phash.as_deref().and_then(gallery_matches::parse_hash))
             .collect();
+        let durations: Vec<Option<i64>> = candidates.iter().map(|f| f.duration_ms).collect();
         let mut pairs = near_hash_pairs(&hashes, budget as usize);
-        let compared: HashSet<(usize, usize)> = pairs.iter().copied().collect();
+        let mut compared: HashSet<(usize, usize)> = pairs.iter().copied().collect();
+        for pair in near_duration_pairs(&durations, budget as usize - pairs.len()) {
+            if compared.insert(pair) {
+                pairs.push(pair);
+            }
+        }
         pairs.extend(
             comparison_pairs(&sizes, budget - pairs.len() as u64)
                 .into_iter()
@@ -1082,6 +1123,23 @@ mod tests {
                 .collect(),
         );
         assert!(same_picture(&original, &noisy, threshold));
+    }
+
+    #[test]
+    fn videos_of_one_length_are_compared_however_far_apart_their_sizes() {
+        let durations = [
+            Some(12_544),
+            Some(30_000),
+            None,
+            Some(12_500),
+            Some(20_000),
+            Some(0),
+        ];
+        assert_eq!(near_duration_pairs(&durations, usize::MAX), vec![(0, 3)]);
+        // Closest lengths first, so a small budget keeps the likeliest copies.
+        let durations = [Some(10_000), Some(10_150), Some(10_010)];
+        assert_eq!(near_duration_pairs(&durations, 1), vec![(0, 2)]);
+        assert_eq!(near_duration_pairs(&durations, usize::MAX).len(), 3);
     }
 
     #[test]
