@@ -49,7 +49,7 @@ it('reopens subscriptions with fresh results after changing a search or artist',
   await act(async () => { root?.render(<QueryClientProvider client={queryClient}><Probe /></QueryClientProvider>); });
   const saveResults = () => writeExploreSnapshot({
     key: 'subscribed-feed', posts: [], siteErrors: [], hasMore: true,
-    streams: new Map(), subscriptionCursor: 'old-cursor', seen: { keys: new Set() }, scrollY: 600
+    streams: new Map(), subscriptionCursor: 'old-cursor', subscriptionNewestAt: null, seen: { keys: new Set() }, scrollY: 600
   });
   saveResults();
   let changed: Promise<unknown> | undefined;
@@ -75,7 +75,7 @@ it('reopens Explore with fresh results after the blacklist changes', async () =>
   await act(async () => { root?.render(<QueryClientProvider client={queryClient}><Probe /></QueryClientProvider>); });
   writeExploreSnapshot({
     key: 'search', posts: [], siteErrors: [], hasMore: true,
-    streams: new Map(), subscriptionCursor: null, seen: { keys: new Set() }, scrollY: 0
+    streams: new Map(), subscriptionCursor: null, subscriptionNewestAt: null, seen: { keys: new Set() }, scrollY: 0
   });
   await act(async () => { await save?.(); });
   expect(readExploreSnapshot('search')).toBeNull();

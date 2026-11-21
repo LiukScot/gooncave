@@ -47,6 +47,8 @@ export type ExploreSnapshot = {
   streams: Map<string, SiteStream>;
   /** Opaque next page for the Subscribed feed. */
   subscriptionCursor: string | null;
+  /** Sort date of the newest Subscribed post shown, so posts synced above it are still counted. */
+  subscriptionNewestAt: number | null;
   /** Posts already offered, so a resumed search shows none of them twice. */
   seen: { keys: Set<string> };
   scrollY: number;
