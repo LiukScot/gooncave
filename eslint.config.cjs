@@ -39,6 +39,17 @@ module.exports = [
     tsconfigPath: './frontend/tsconfig.json'
   }),
   {
+    files: ['tests/*.spec.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: '@playwright/test',
+          message: "Import from './helpers': its `test` fails on errors in the browser console."
+        }]
+      }]
+    }
+  },
+  {
     files: ['desktop/electron/*.js'],
     languageOptions: {
       ecmaVersion: 'latest',

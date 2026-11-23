@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
-
 import type { ExplorePost } from '../frontend/src/api';
+
+import { expect, test } from './helpers';
 
 test('opens the gallery without login and keeps a setting after reload', async ({ page }) => {
   await page.goto('/');
@@ -84,7 +84,8 @@ test('while the first Subscriptions page waits, the bar moves until the sync cou
   }
 });
 
-test('core startup failure remains visible and can be retried', async ({ page }) => {
+test('core startup failure remains visible and can be retried', async ({ page, allowConsoleError }) => {
+  allowConsoleError(/\/device: .*status of 500/);
   await page.route('**/device', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Storage is unavailable.' }) }));
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Library unavailable' })).toBeVisible();

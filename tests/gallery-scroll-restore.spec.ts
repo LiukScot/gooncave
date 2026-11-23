@@ -1,6 +1,4 @@
-import { expect, test } from '@playwright/test';
-
-import { uploadSampleImages } from './helpers';
+import { expect, test, uploadSampleImages } from './helpers';
 
 // Allow a few px of drift from lazy-loaded thumbnails settling their height
 // after the gallery remounts; the restore should still land on the same row.
