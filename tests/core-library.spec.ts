@@ -1,10 +1,8 @@
 import { execFileSync } from 'node:child_process';
 
-import { expect, test } from '@playwright/test';
-
 import type { ExplorePost } from '../frontend/src/api';
 
-import { thumbnailablePng, uploadSampleImages } from './helpers';
+import { expect, test, thumbnailablePng, uploadSampleImages } from './helpers';
 
 const card = (page: import('@playwright/test').Page, name: string) =>
   page.locator(`[data-test-id="file-card"][aria-label*="${name}"]`);
@@ -229,7 +227,8 @@ test('a file deleted with its undo pending stays out of the gallery while the li
   await expect(card(page, deleted)).toBeVisible();
 });
 
-test('a lookup that failed can be tried again, from the message and by coming back to the file', async ({ page }) => {
+test('a lookup that failed can be tried again, from the message and by coming back to the file', async ({ page, allowConsoleError }) => {
+  allowConsoleError(/\/files\?.*status of 500/);
   const target = await fileOutsideTheLoadedPage(page);
   let down = true;
   await page.route(
@@ -509,7 +508,8 @@ test('an Explore tile without a known size keeps its height while it is away', a
   expect(await height()).toBe(shown);
 });
 
-test('Explore asks once for a remote GIF preview the core cannot make', async ({ page }) => {
+test('Explore asks once for a remote GIF preview the core cannot make', async ({ page, allowConsoleError }) => {
+  allowConsoleError(/\/explore\/media\/file\.gif.*status of 502/);
   let conversions = 0;
   await page.route('**/booru-sites', (route) => route.fulfill({ json: { sites: [motionSite] } }));
   await page.route('**/explore/posts?*', (route) => route.fulfill({ json: {

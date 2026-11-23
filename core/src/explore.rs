@@ -856,7 +856,7 @@ async fn media(
     );
     if range.is_none() {
         if let Some(entry) = cache::get(&db, &key).await? {
-            return Ok(([(header::CONTENT_TYPE, entry.mime)], entry.bytes).into_response());
+            return Ok(picture(entry.mime, entry.bytes.into()));
         }
     }
     if motion {
@@ -962,14 +962,26 @@ async fn media(
         HeaderValue::from_static("inline"),
     );
     if status == StatusCode::OK {
-        // A signed link always names the same file, so the webview keeps it and a
-        // grid seen before loads without asking the booru again.
         result.headers_mut().insert(
             header::CACHE_CONTROL,
-            HeaderValue::from_static("private, max-age=2592000, immutable"),
+            HeaderValue::from_static(SIGNED_MEDIA_CACHE),
         );
     }
     Ok(result)
+}
+
+/// A signed link always names the same file, so the webview keeps it and a grid seen before
+/// loads without asking the core again.
+const SIGNED_MEDIA_CACHE: &str = "private, max-age=2592000, immutable";
+
+/// A whole picture or motion preview of a signed link.
+fn picture(mime: String, bytes: axum::body::Bytes) -> Response {
+    let mut response = ([(header::CONTENT_TYPE, mime)], bytes).into_response();
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(SIGNED_MEDIA_CACHE),
+    );
+    response
 }
 
 /// Answers with media and keeps it in the cache once the answer is on its way.
@@ -982,7 +994,7 @@ fn kept(db: &Database, key: &str, mime: String, bytes: Vec<u8>) -> Response {
             eprintln!("[developer] Cannot keep a picture in the cache: {error}");
         }
     });
-    ([(header::CONTENT_TYPE, mime)], bytes).into_response()
+    picture(mime, bytes)
 }
 
 /// The video a GIF plays as in a grid: its type and bytes.
@@ -1324,6 +1336,28 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn a_kept_picture_stays_in_the_webview_like_a_streamed_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let fetched = kept(&db, "media:site-a:x", "image/png".into(), b"png".to_vec());
+        let reread = picture("image/png".into(), b"png".to_vec().into());
+        for response in [fetched, reread] {
+            assert_eq!(
+                response.headers()[header::CACHE_CONTROL],
+                SIGNED_MEDIA_CACHE
+            );
+        }
+        // The picture is kept in the background; the folder must outlive that write.
+        for _ in 0..100 {
+            if cache::get(&db, "media:site-a:x").await.unwrap().is_some() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("the picture was not kept");
     }
 
     #[tokio::test]

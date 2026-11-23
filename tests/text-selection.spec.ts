@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './helpers';
 
 // The app's chrome is controls, not a document: Select All, a long press or a drifting drag must
 // not paint headings, tiles and buttons with the selection colour. Text meant to be copied stays.

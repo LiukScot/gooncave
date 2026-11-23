@@ -1,6 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
-
 import type { ExplorePost } from '../frontend/src/api';
+
+import { expect, test, type Page } from './helpers';
 
 const LENS = /^Search and filter/;
 

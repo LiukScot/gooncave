@@ -4,7 +4,48 @@
  */
 import { execFileSync } from 'node:child_process';
 
-import { expect, type Page } from '@playwright/test';
+import { test as base, expect, type Page } from '@playwright/test';
+
+// Specs import Playwright from here, so every one gets the `test` below.
+export { expect, type Locator, type Page } from '@playwright/test';
+
+type ConsoleFixtures = {
+  /** Lets the test cause, on purpose, a browser error whose report matches `pattern`. */
+  allowConsoleError: (pattern: RegExp) => void;
+};
+
+const FAILED_REQUEST = /^Failed to load resource: the server responded with a status of (\d+)/;
+
+/**
+ * Playwright's `test`, failing any test after which the browser console holds
+ * an error, an uncaught exception or a server error from the core. A glitch
+ * often leaves only that trace: an animation skipped, a render that threw.
+ */
+export const test = base.extend<ConsoleFixtures>({
+  allowConsoleError: [
+    async ({ context, baseURL }, use) => {
+      const errors: string[] = [];
+      const allowed: RegExp[] = [];
+      context.on('console', (message) => {
+        if (message.type() !== 'error') return;
+        const text = message.text();
+        const url = message.location().url;
+        // Chromium reports every failed request here too. Fixtures point at sites that do not
+        // exist on purpose; only the core answering with a server error counts.
+        if (text.startsWith('Failed to load resource')) {
+          const status = Number(FAILED_REQUEST.exec(text)?.[1] ?? 0);
+          if (status < 500 || !url.startsWith(baseURL ?? '')) return;
+        }
+        errors.push(`console.error at ${url}: ${text}`);
+      });
+      context.on('weberror', (error) => errors.push(`uncaught: ${error.error().message}`));
+      await use((pattern) => { allowed.push(pattern); });
+      const unexpected = errors.filter((error) => !allowed.some((pattern) => pattern.test(error)));
+      expect(unexpected, 'errors in the browser console').toEqual([]);
+    },
+    { auto: true }
+  ]
+});
 
 /**
  * A 64x120 PNG. Use this when the test depends on a thumbnail existing.

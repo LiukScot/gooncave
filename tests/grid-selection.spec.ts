@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
-
 import { expectBarBesideCornerButton, selectionPosts as posts, serveFixtureSite, tile } from './gridSelectionFixtures';
+import { expect, test } from './helpers';
+
 
 test('Ctrl-click selects on desktop and Escape leaves', async ({ page }) => {
   await serveFixtureSite(page);

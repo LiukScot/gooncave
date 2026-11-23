@@ -1,8 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
-
 import type { ExplorePost } from '../frontend/src/api';
 
-import { videoFixture } from './helpers';
+import { expect, test, type Page, videoFixture } from './helpers';
 
 const PHONE = {
   hasTouch: true,

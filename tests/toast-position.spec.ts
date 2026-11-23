@@ -1,6 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
-
-import { thumbnailablePng, uploadSampleImages } from './helpers';
+import { expect, test, type Page, thumbnailablePng, uploadSampleImages } from './helpers';
 
 test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 } });
 

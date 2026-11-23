@@ -768,6 +768,7 @@ export function useExploreController({
       requestRef.current = new AbortController();
       streamsRef.current = snapshot.streams;
       subscriptionCursorRef.current = snapshot.subscriptionCursor;
+      setSubscriptionNewestAt(snapshot.subscriptionNewestAt);
       seenRef.current = snapshot.seen;
       setPosts(snapshot.posts);
       setSiteErrors(snapshot.siteErrors);
@@ -819,9 +820,18 @@ export function useExploreController({
     query,
     posts,
     siteErrors,
-    hasMore
+    hasMore,
+    subscriptionNewestAt
   });
-  latestRef.current = { searchKey, isHistory, query, posts, siteErrors, hasMore };
+  latestRef.current = {
+    searchKey,
+    isHistory,
+    query,
+    posts,
+    siteErrors,
+    hasMore,
+    subscriptionNewestAt
+  };
 
   useEffect(
     () => () => {
@@ -844,6 +854,7 @@ export function useExploreController({
         hasMore: latest.hasMore,
         streams: streamsRef.current,
         subscriptionCursor: subscriptionCursorRef.current,
+        subscriptionNewestAt: latest.subscriptionNewestAt,
         seen: seenRef.current,
         scrollY
       });

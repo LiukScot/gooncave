@@ -6,7 +6,7 @@
   "scripts": {
     "build": "npm --prefix frontend run build && cargo build --release --locked -p gooncave-desktop",
     "dev": "npm --prefix frontend run build && cargo run --locked -p gooncave-core -- storage/core storage/library frontend/dist 4100",
-    "lint": "npm --prefix frontend run lint",
+    "lint": "npm --prefix frontend run lint && eslint --max-warnings=0 tests playwright.config.ts 'desktop/electron/*.ts'",
     "prepare": "husky",
     "test:e2e": "playwright test",
     "test:speed": "playwright test -c tests/speed/playwright.config.ts",
@@ -20,15 +20,15 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.63.0",
-    "@typescript-eslint/eslint-plugin": "^8.72.1",
+    "@playwright/test": "^1.65.0",
+    "@typescript-eslint/eslint-plugin": "^8.72.2",
     "@typescript-eslint/parser": "^8.70.1",
     "eslint": "^10.14.0",
     "eslint-import-resolver-typescript": "^4.4.5",
-    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-plugin-import-x": "^4.18.0",
     "globals": "^17.14.0",
     "husky": "^9.1.7",
-    "lint-staged": "^17.6.0"
+    "lint-staged": "^17.6.1"
   },
   "overrides": {
     "brace-expansion": "^5.0.11",
