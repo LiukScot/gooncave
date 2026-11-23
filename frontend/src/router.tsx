@@ -29,11 +29,6 @@ import {
   SettingsTrashRouteView,
 } from '@/features/shell/AppRoutes';
 import { AppShell } from '@/features/shell/AppShell';
-import { isSwipeBackRunning } from '@/lib/edgeSwipeBack';
-import {
-  settingsTransitionTypes,
-  supportsViewTransitions
-} from '@/lib/viewTransitions';
 
 type RouterContext = {
   queryClient: QueryClient;
@@ -227,17 +222,7 @@ export const router = createRouter({
   routeTree,
   context: {
     queryClient: undefined!
-  },
-  // Without typed transitions the router would animate every URL change,
-  // filters included, so those browsers get none.
-  defaultViewTransition: supportsViewTransitions
-    ? {
-        types: ({ fromLocation, toLocation }) =>
-          isSwipeBackRunning()
-            ? false
-            : settingsTransitionTypes(fromLocation, toLocation)
-      }
-    : false
+  }
 });
 
 declare module '@tanstack/react-router' {

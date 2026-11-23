@@ -12,34 +12,6 @@ export const supportsViewTransitions =
   typeof CSS !== 'undefined' &&
   CSS.supports('selector(:active-view-transition-type(a))');
 
-type TabLocation = { pathname: string };
-
-const SETTINGS_ROUTE = '/app/settings';
-
-const settingsDepth = (pathname: string): number =>
-  pathname.replace(/\/$/, '') === SETTINGS_ROUTE ? 0 : 1;
-
-/**
- * Inside Settings, opening one of its pages is a push and leaving it a pop:
- * iOS's navigation (app.css). Every other navigation changes the page at once:
- * the URL also changes for filters and for the open file.
- */
-export const settingsTransitionTypes = (
-  fromLocation: TabLocation | undefined,
-  toLocation: TabLocation
-): string[] | false => {
-  if (
-    !fromLocation?.pathname.startsWith(SETTINGS_ROUTE) ||
-    !toLocation.pathname.startsWith(SETTINGS_ROUTE)
-  ) {
-    return false;
-  }
-  const from = settingsDepth(fromLocation.pathname);
-  const to = settingsDepth(toLocation.pathname);
-  if (from === to) return false;
-  return [to > from ? 'push' : 'pop'];
-};
-
 // The name the detail picture carries in app.css. The gallery tile it opens
 // from borrows it until the detail is on the page.
 const SHARED_NAME = 'detail-media';

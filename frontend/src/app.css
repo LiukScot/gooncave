@@ -5071,19 +5071,6 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   view-transition-name: detail-media;
 }
 
-/* These stay in place: what changes on them changes at once. */
-::view-transition-group(app-menu) {
-  animation: none;
-}
-
-::view-transition-old(app-menu) {
-  display: none;
-}
-
-::view-transition-new(app-menu) {
-  animation: none;
-}
-
 ::view-transition-group(*) {
   animation-duration: 0.4s;
   animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
@@ -5716,35 +5703,63 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 }
 
 /* Opening a Settings page slides it over the list, and leaving it slides it
-   back. The menu keeps its place. */
-:root:active-view-transition-type(push, pop) .app-menu {
-  view-transition-name: app-menu;
+   back (lib/settingsSlide.ts). The page being left is a copy of its elements:
+   Chromium draws a view-transition picture of it white under a fractional
+   display scale. The stacking and clipping last only while the pages move, so
+   a pinned heading still lies over the rest of the app. */
+.settings-leaving {
+  display: none;
 }
 
-:root:active-view-transition-type(push, pop)::view-transition-old(root), :root:active-view-transition-type(push, pop)::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
+.settings-stage[data-slide] {
+  position: relative;
+  z-index: 0;
+  overflow-x: clip;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  :root:active-view-transition-type(push)::view-transition-new(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-push-in;
-    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
-  }
+.settings-stage[data-slide] > .settings-page {
+  position: relative;
+  background: hsl(var(--page-background));
+}
 
-  :root:active-view-transition-type(push)::view-transition-old(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-push-under;
-  }
+/* Fixed to the page's column, so the copy is clipped there and the menu beside it stays clear. */
+.settings-stage[data-slide] > .settings-leaving {
+  display: block;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
 
-  :root:active-view-transition-type(pop)::view-transition-old(root) {
-    z-index: 1;
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-pop-out;
-    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
-  }
+.settings-leaving > * {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: hsl(var(--page-background));
+}
 
-  :root:active-view-transition-type(pop)::view-transition-new(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-pop-under;
-  }
+.settings-stage[data-slide='push'] > .settings-page {
+  z-index: 1;
+  animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-push-in;
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
+}
+
+.settings-stage[data-slide='push'] > .settings-leaving > * {
+  animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-push-under;
+}
+
+.settings-stage[data-slide='pop'] > .settings-leaving {
+  z-index: 1;
+}
+
+.settings-stage[data-slide='pop'] > .settings-leaving > * {
+  animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-pop-out;
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
+}
+
+.settings-stage[data-slide='pop'] > .settings-page {
+  animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-pop-under;
 }
 
 @keyframes ios-push-in {
