@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from '@playwright/test';
+import { expect, test, type Locator } from './helpers';
 
 const radii = (button: Locator) =>
   button.evaluate((element) => {

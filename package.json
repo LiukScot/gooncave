@@ -6,7 +6,7 @@
   "scripts": {
     "build": "npm --prefix frontend run build && cargo build --release --locked -p gooncave-desktop",
     "dev": "npm --prefix frontend run build && cargo run --locked -p gooncave-core -- storage/core storage/library frontend/dist 4100",
-    "lint": "npm --prefix frontend run lint",
+    "lint": "npm --prefix frontend run lint && eslint --max-warnings=0 tests playwright.config.ts 'desktop/electron/*.ts'",
     "prepare": "husky",
     "test:e2e": "playwright test",
     "test:speed": "playwright test -c tests/speed/playwright.config.ts",

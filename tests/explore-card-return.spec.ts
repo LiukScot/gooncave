@@ -1,8 +1,6 @@
-import { expect, test } from '@playwright/test';
-
 import type { ExplorePost } from '../frontend/src/api';
 
-import { thumbnailablePng } from './helpers';
+import { expect, test, thumbnailablePng } from './helpers';
 
 const POST_COUNT = 120;
 // The pictures come back this late the second time, so the window where a returning card has no

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './helpers';
 
 test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 } });
 
