@@ -632,31 +632,46 @@ test('closing a file, the picture leaves with the page instead of staying alone 
   await expect(page.locator('.page-leaving')).toHaveCount(0);
 });
 
-test('opening a file, the page rises over a copy of the gallery and the picture grows out of its tile', async ({ page }) => {
+test('opening a file, the gallery stays in place under the rising page and the picture grows out of its tile', async ({ page }) => {
   await page.goto('/app/gallery');
   const tile = card(page, 'landscape.png');
   await expect(tile).toBeVisible();
   const tileBox = await tile.locator('img').boundingBox();
+  const menuBox = await page.locator('.app-menu').boundingBox();
   await tile.click();
   const opening = await page.evaluate(() => {
     for (const animation of document.getAnimations()) {
       animation.pause();
       animation.currentTime = 0;
     }
-    const picture = document.querySelector('.file-detail-panel-current .file-detail-media-wrap')!.getBoundingClientRect();
+    const box = (element: Element | null | undefined) => {
+      const rect = element?.getBoundingClientRect();
+      return rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    };
+    const copy = document.querySelector('.page-leaving');
+    const hero = document.querySelector('.page-hero');
+    const live = document.querySelector('.page-shell:not(.page-leaving) .file-detail-panel-current .file-detail-media');
     return {
       viewTransition: document.documentElement.matches(':active-view-transition'),
-      galleryCopy: document.querySelectorAll('.page-leaving .gallery-thumb').length > 0,
       rising: document.querySelectorAll('.page-shell.is-rising').length,
-      picture: { x: picture.left + picture.width / 2, y: picture.top + picture.height / 2, width: picture.width }
+      copiedTile: box(copy?.querySelector('[data-test-id="file-card"][aria-label*="landscape.png"] img')),
+      copiedMenu: box(copy?.querySelector('.app-menu')),
+      hero: box(hero),
+      heroOpacity: hero ? getComputedStyle(hero).opacity : null,
+      livePicture: live ? getComputedStyle(live).visibility : null
     };
   });
-  expect(opening).toMatchObject({ viewTransition: false, galleryCopy: true, rising: 1 });
-  // At its start the picture covers the tile it opens from.
-  expect(Math.abs(opening.picture.x - (tileBox!.x + tileBox!.width / 2))).toBeLessThan(2);
-  expect(Math.abs(opening.picture.y - (tileBox!.y + tileBox!.height / 2))).toBeLessThan(2);
-  expect(Math.abs(opening.picture.width - tileBox!.width)).toBeLessThan(2);
+  expect(opening).toMatchObject({ viewTransition: false, rising: 1, heroOpacity: '1', livePicture: 'hidden' });
+  // The gallery left, menu included, does not move while the file rises over it.
+  for (const key of ['x', 'y', 'width', 'height'] as const) {
+    expect(opening.copiedTile?.[key]).toBeCloseTo(tileBox![key], 0);
+    expect(opening.copiedMenu?.[key]).toBeCloseTo(menuBox![key], 0);
+    // The picture starts as the tile, whole and opaque, not faded in with the page.
+    expect(opening.hero?.[key]).toBeCloseTo(tileBox![key], 0);
+  }
   // Stalled animations still give the page back.
   await expect(page.locator('.page-leaving')).toHaveCount(0, { timeout: 2500 });
+  await expect(page.locator('.page-hero')).toHaveCount(0);
   await expect(page.locator('.page-shell.is-rising')).toHaveCount(0);
+  await expect(page.locator('.file-detail-panel-current .file-detail-media')).toBeVisible();
 });

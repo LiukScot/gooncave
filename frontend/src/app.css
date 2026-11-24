@@ -5078,6 +5078,21 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-rise;
 }
 
+/* The tile's picture flying to the file's, over the page rising (402). */
+.page-hero {
+  position: fixed;
+  z-index: 402;
+  margin: 0;
+  object-fit: cover;
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+
+.file-detail-media-wrap[data-landing]::before,
+.file-detail-media-wrap[data-landing] .file-detail-media {
+  visibility: hidden;
+}
+
 .page-leaving.is-sinking {
   animation: 0.25s cubic-bezier(0.3, 0, 1, 1) both vt-sink;
 }

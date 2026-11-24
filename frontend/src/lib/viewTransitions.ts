@@ -17,6 +17,7 @@ export const galleryTileImage = (fileId: string): string =>
 export type PageChange = 'detail-open' | 'detail-close';
 
 const PAGE = '.page-shell';
+const MENU = '.app-menu';
 const DETAIL_PICTURE = '.file-detail-panel-current .file-detail-media-wrap';
 /**
  * Longest the copy of the page left may stay. A window the compositor is not
@@ -28,8 +29,8 @@ let finishRunning: (() => void) | null = null;
 
 /**
  * A still copy of what `page` shows, fixed where it shows now and as tall as
- * the window. Its videos load nothing: the copy only stands in for the page a
- * moment.
+ * the window, with the side menu beside it. Its videos load nothing: the copy
+ * only stands in for the page a moment.
  */
 const copyInPlace = (page: HTMLElement): HTMLElement => {
   const box = page.getBoundingClientRect();
@@ -40,6 +41,10 @@ const copyInPlace = (page: HTMLElement): HTMLElement => {
     video.removeAttribute('autoplay');
     video.preload = 'none';
   }
+  // The page makes room for the menu through a rule on the menu beside it, which the copy is not.
+  copy.style.padding = getComputedStyle(page).padding;
+  const menu = document.querySelector(MENU);
+  if (menu && getComputedStyle(menu).display !== 'none') copy.prepend(menu.cloneNode(true));
   copy.inert = true;
   copy.setAttribute('aria-hidden', 'true');
   copy.classList.add('page-leaving');
@@ -51,29 +56,68 @@ const copyInPlace = (page: HTMLElement): HTMLElement => {
   return copy;
 };
 
-/** Moves the detail picture from the tile's place to its own, in step with the page rising. */
-const growFromTile = (picture: Element, tile: DOMRect, rise: Animation): Animation => {
-  const to = picture.getBoundingClientRect();
-  const scale = tile.width / to.width;
-  const dx = tile.left + tile.width / 2 - (to.left + to.width / 2);
-  const dy = tile.top + tile.height / 2 - (to.top + to.height / 2);
-  const effect = rise.effect as KeyframeEffect | null;
-  return picture.animate(
-    [{ transform: `translate(${dx}px, ${dy}px) scale(${scale})` }, { transform: 'none' }],
-    {
-      duration: Number(effect?.getTiming().duration ?? 0),
-      easing: effect?.getKeyframes()[0]?.easing ?? 'linear'
-    }
+/**
+ * Where the picture shows inside its box: the box runs the full width, and the
+ * picture is centred in it at the file's own shape.
+ */
+const pictureBox = (wrap: Element): DOMRect => {
+  const box = wrap.getBoundingClientRect();
+  const [width, height = 1] = getComputedStyle(wrap)
+    .getPropertyValue('--file-detail-aspect')
+    .split('/')
+    .map(Number);
+  const aspect = width / height;
+  if (!(aspect > 0)) return box;
+  const fitWidth = Math.min(box.width, box.height * aspect);
+  const fitHeight = fitWidth / aspect;
+  return new DOMRect(
+    box.left + (box.width - fitWidth) / 2,
+    box.top + (box.height - fitHeight) / 2,
+    fitWidth,
+    fitHeight
   );
 };
 
 /**
- * Opens or closes a file with a React state change. Opening, the new page
- * rises over a copy of the one left and the picture grows out of the tile
- * that `sharedSelector` finds; closing, a copy of the file's page sinks away.
- * Copies, not the browser's View Transition pictures: under a fractional
- * display scale Chromium draws those white.
+ * Flies a copy of the tile's picture to where the file's picture lands, over
+ * the page rising and in step with it. The file's own picture stays hidden
+ * until then: inside the page it would fade in with it.
  */
+const flyFromTile = (
+  tile: HTMLImageElement,
+  from: DOMRect,
+  wrap: HTMLElement,
+  to: DOMRect,
+  rise: Animation
+) => {
+  const hero = tile.cloneNode() as HTMLImageElement;
+  hero.removeAttribute('style');
+  hero.className = 'page-hero';
+  hero.alt = '';
+  hero.loading = 'eager';
+  hero.setAttribute('aria-hidden', 'true');
+  document.body.append(hero);
+  // An attribute, not a class: React rewrites the class when the picture loads.
+  wrap.dataset.landing = '';
+  const place = (box: DOMRect) => ({
+    left: `${box.left}px`,
+    top: `${box.top}px`,
+    width: `${box.width}px`,
+    height: `${box.height}px`
+  });
+  const effect = rise.effect as KeyframeEffect | null;
+  const flight = hero.animate([place(from), place(to)], {
+    duration: Number(effect?.getTiming().duration ?? 0),
+    easing: effect?.getKeyframes()[0]?.easing ?? 'linear',
+    fill: 'both'
+  });
+  const land = () => {
+    hero.remove();
+    delete wrap.dataset.landing;
+  };
+  return { flight, land };
+};
+
 export const transitionView = (
   type: PageChange,
   update: () => void,
@@ -85,17 +129,22 @@ export const transitionView = (
     update();
     return;
   }
-  const tile = sharedSelector
-    ? document.querySelector(sharedSelector)?.getBoundingClientRect()
-    : undefined;
+  const tile = sharedSelector ? document.querySelector(sharedSelector) : null;
+  // Measured while the grid still shows: the file opening hides it.
+  const tileBox = tile?.getBoundingClientRect();
   const copy = copyInPlace(page);
   flushSync(update);
+  const picture = type === 'detail-open' ? page.querySelector<HTMLElement>(DETAIL_PICTURE) : null;
+  // Measured before the page starts lower down to rise.
+  const landing = picture && pictureBox(picture);
   const moving = type === 'detail-open' ? page : copy;
   moving.classList.add(type === 'detail-open' ? 'is-rising' : 'is-sinking');
   const animations = moving.getAnimations();
-  const picture = page.querySelector(DETAIL_PICTURE);
-  if (type === 'detail-open' && tile && picture && animations[0]) {
-    animations.push(growFromTile(picture, tile, animations[0]));
+  let land = () => {};
+  if (tile instanceof HTMLImageElement && tileBox && picture && landing && animations[0]) {
+    const hero = flyFromTile(tile, tileBox, picture, landing, animations[0]);
+    animations.push(hero.flight);
+    land = hero.land;
   }
   let stall = 0;
   const finish = () => {
@@ -103,6 +152,7 @@ export const transitionView = (
     finishRunning = null;
     window.clearTimeout(stall);
     copy.remove();
+    land();
     page.classList.remove('is-rising');
     for (const animation of animations) animation.cancel();
   };
