@@ -1140,11 +1140,6 @@ html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::befor
   }
 }
 
-/* In the desktop window a link is a button of the app, not a web address to drag away. */
-.has-window-controls a {
-  -webkit-user-drag: none;
-}
-
 .has-window-controls .page-header.is-scrolled-away:not(:has(:focus-visible)) {
   transform: none;
 }

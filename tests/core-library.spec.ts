@@ -334,6 +334,23 @@ test('in fullscreen a mouse wheel and a pinch zoom, a touchpad slide does not, a
   await expect.poll(zoom).not.toBe(before);
 });
 
+test('a gallery picture does not drag out of the app as its address', async ({ page }) => {
+  await page.goto('/app/gallery');
+  const picture = card(page, 'landscape.png').locator('img');
+  await expect(picture).toBeVisible();
+  await page.evaluate(() => {
+    document.addEventListener('dragstart', (event) => {
+      if (!event.defaultPrevented) document.body.setAttribute('data-dragged', 'true');
+    });
+  });
+  const box = (await picture.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 150, box.y + box.height / 2 + 100, { steps: 10 });
+  await page.mouse.up();
+  await expect(page.locator('body')).not.toHaveAttribute('data-dragged', 'true');
+});
+
 test('a file a running sync adds shows up in the gallery while the sync goes on', async ({ page }) => {
   const providers = [{ provider: 'fixture', stage: 'fetching', fetched: 1, total: 2, processed: 1, added: 0, skipped: 0, removed: 0, failed: 0, errors: [] }];
   await page.route('**/favorites/sync/status', (route) => route.fulfill({ json: {

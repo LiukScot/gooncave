@@ -26,6 +26,10 @@ if (isIos()) {
 }
 
 installWindowErrorLog(window);
+// A picture or link dragged out of the app hands over its local address, not the file.
+document.addEventListener('dragstart', (event) => {
+  if (event.target instanceof Element && event.target.closest('img, video, a')) event.preventDefault();
+});
 applyScreenCorner();
 
 // Electron's window without a system title bar; `navigator.windowControlsOverlay` is not in

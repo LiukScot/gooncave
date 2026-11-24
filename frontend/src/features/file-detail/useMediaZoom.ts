@@ -184,15 +184,6 @@ export const useMediaZoom = (enabled: boolean, resetKey: string | null) => {
     []
   );
 
-  // Chromium starts dragging the picture itself out of the page on a mouse
-  // drag, which swallows the pointer moves that pan it.
-  const onDragStart = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      if (enabled) event.preventDefault();
-    },
-    [enabled]
-  );
-
   const reset = useCallback(() => setZoom(NO_ZOOM), []);
 
   /** Zooms in on the point of the picture under `client` (screen coordinates), in fullscreen. */
@@ -222,8 +213,7 @@ export const useMediaZoom = (enabled: boolean, resetKey: string | null) => {
       onPointerDown,
       onPointerMove,
       onPointerUp: onPointerEnd,
-      onPointerCancel: onPointerEnd,
-      onDragStart
+      onPointerCancel: onPointerEnd
     }
   };
 };
