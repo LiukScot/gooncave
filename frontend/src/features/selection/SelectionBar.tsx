@@ -92,7 +92,7 @@ export function SelectionBar({
                 <MoreHorizontal className="size-4" aria-hidden="true" />
               </button>
             </PopoverTrigger>
-            <PopoverContent side="top" align="start" sideOffset={12} aria-label="Actions for the selection" className="more-actions-menu">
+            <PopoverContent side="top" align="end" sideOffset={12} aria-label="Actions for the selection" className="more-actions-menu">
               <div className="more-actions-pills">
                 {[...actions, selectAll].map((action) => (
                   <button

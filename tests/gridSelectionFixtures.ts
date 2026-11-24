@@ -36,7 +36,7 @@ export async function barOnCornerRow(page: Page) {
     centredOnButton: Math.abs(bar.y + bar.height / 2 - (lens.y + lens.height / 2)) <= 1,
     cornerButtonsHidden: await page.locator('.search-lens, .search-lens-actions').evaluateAll((buttons) =>
       buttons.every((button) => getComputedStyle(button).visibility === 'hidden')),
-    inTheLeftHalf: bar.x < page.viewportSize()!.width / 2,
+    endsWhereTheButtonEnds: Math.abs(bar.x + bar.width - (lens.x + lens.width)) <= 1,
     besideTheMenu: bar.x >= content - 1
   };
 }

@@ -33,7 +33,7 @@ test('Ctrl-click selects on desktop and Escape leaves', async ({ page }) => {
   await expect(bar).toContainText('1 selected');
   await expect(bar.getByRole('button')).toHaveText(['Favorite', 'Vote up', 'Vote down', 'Select all', 'Cancel']);
   expect(await barOnCornerRow(page)).toEqual({
-    centredOnButton: true, cornerButtonsHidden: true, inTheLeftHalf: true, besideTheMenu: true
+    centredOnButton: true, cornerButtonsHidden: true, endsWhereTheButtonEnds: true, besideTheMenu: true
   });
   await page.keyboard.press('Escape');
   await expect(bar).toHaveCount(0);
@@ -145,21 +145,48 @@ test('a post opened just before it is removed from History does not come back', 
   expect(order).toEqual(['marked read', 'removed']);
 });
 
+test('a tile joining the selection squares its neighbour\'s corner only as its colour arrives', async ({ page }) => {
+  await serveFixtureSite(page);
+  await page.goto('/app/explore');
+  await tile(page, '1').click({ modifiers: ['Control'] });
+  const flows = () => page.evaluate(() => [...document.querySelectorAll('.selection-layer [data-key]')].flatMap((shape) => shape.getAnimations()).length);
+  await expect.poll(flows).toBe(0);
+  await tile(page, '2').click();
+  expect(await flows()).toBe(1);
+  // Held at its first frame: the second tile's colour has not left the first tile yet.
+  await page.evaluate(() => document.querySelectorAll('.selection-layer [data-key]').forEach((shape) => shape.getAnimations().forEach((animation) => {
+    animation.pause();
+    animation.currentTime = 0;
+  })));
+  const first = (await tile(page, '1').boundingBox())!;
+  const second = (await tile(page, '2').boundingBox())!;
+  const quarter = (second.x - first.x - first.width) / 4;
+  // The first tile's corner on the side the second one reaches past, a quarter gap out:
+  // outside its rounded outline, inside the square one.
+  const y = second.y <= first.y + 1 ? first.y - quarter : first.y + first.height + quarter;
+  const corner = await page.screenshot({ clip: { x: first.x + first.width + quarter, y, width: 1, height: 1 } });
+  expect(firstRowPixels(corner)).toEqual([[0, 0, 0]]);
+});
+
 test('selected tiles flow together across the gap, in from and back to the selected tile beside them', async ({ page }) => {
   await serveFixtureSite(page);
   await page.goto('/app/explore');
-  const flow = (id: string) => page.locator(`.selection-layer path[data-key="fixture:${id}"]`).evaluate((shape) => {
+  const flow = (id: string) => page.locator(`.selection-layer [data-key="fixture:${id}"]`).evaluate((shape) => {
     const animation = shape.getAnimations().at(-1);
     const frames = (animation?.effect as KeyframeEffect | undefined)?.getKeyframes() ?? [];
-    return { from: frames[0]?.transform, to: frames.at(-1)?.transform, origin: getComputedStyle(shape).transformOrigin };
+    const layer = shape.ownerSVGElement!.getBoundingClientRect();
+    const tile = document.querySelector(`[data-select-key="${shape.getAttribute('data-key')}"]`)!.getBoundingClientRect();
+    // Where the colour gathers, from the tile's own left edge.
+    const fromLeft = parseFloat(getComputedStyle(shape).transformOrigin) - (tile.left - layer.left);
+    return { from: frames[0]?.transform, to: frames.at(-1)?.transform, fromLeft };
   });
   await tile(page, '1').click({ modifiers: ['Control'] });
   await tile(page, '2').click();
   // The second tile's colour flows in from its left, where the first one is.
   const joining = await flow('2');
   expect(joining).toMatchObject({ from: 'scale(0, 1)', to: 'none' });
-  expect(joining.origin.startsWith('0px')).toBe(true);
-  await expect.poll(() => page.locator('.selection-layer path').first().evaluate((shape) =>
+  expect(joining.fromLeft).toBeLessThan(0);
+  await expect.poll(() => page.locator('.selection-layer [data-key]').first().evaluate((shape) =>
     shape.getAnimations().every((animation) => animation.playState === 'finished'))).toBe(true);
   // The gap between the two tiles is all colour: the picture is outside it.
   const first = (await tile(page, '1').boundingBox())!;
@@ -179,5 +206,5 @@ test('selected tiles flow together across the gap, in from and back to the selec
   // Deselected, the second tile's colour drains back towards the first instead of vanishing.
   await tile(page, '2').click();
   expect(await flow('2')).toMatchObject({ from: 'none', to: 'scale(0, 1)' });
-  await expect(page.locator('.selection-layer path[data-key="fixture:2"]')).toHaveCount(0);
+  await expect(page.locator('.selection-layer [data-key="fixture:2"]')).toHaveCount(0);
 });

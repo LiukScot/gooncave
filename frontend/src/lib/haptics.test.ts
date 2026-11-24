@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
-import { PRESS_CHANGE_MS, listenForHaptics } from './haptics';
+import { PRESS_CHANGE_MS, haptic, listenForHaptics } from './haptics';
 
 const impact = vi.fn<() => Promise<void>>();
 let stop: () => void;
@@ -53,4 +53,9 @@ it('stops calling once the app refuses a tap', async () => {
 it('does not tap when a finger lands on a control only to scroll', () => {
   fire('go', 'pointerdown');
   expect(impact).not.toHaveBeenCalled();
+});
+
+it('taps for a gesture the page asks for, such as a long press', () => {
+  haptic();
+  expect(impact).toHaveBeenCalledTimes(1);
 });

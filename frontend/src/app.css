@@ -6129,8 +6129,8 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   --selection-bar-left: max(var(--corner-button-edge), env(safe-area-inset-left));
   position: fixed;
   z-index: 600;
-  /* Bottom left, on the row of the corner buttons it hides. */
-  left: var(--selection-bar-left);
+  /* Bottom right, on the row of the corner buttons it hides. */
+  right: max(var(--corner-button-edge), env(safe-area-inset-right));
   bottom: var(--corner-button-edge);
   display: flex;
   align-items: center;

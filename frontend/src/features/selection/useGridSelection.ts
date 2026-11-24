@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { haptic } from '@/lib/haptics';
+
 /** How long a finger rests on a tile before it starts selecting. */
 export const LONG_PRESS_MS = 500;
 /** A finger that moves farther than this is scrolling, not pressing. */
@@ -62,7 +64,7 @@ export function useGridSelection() {
         timer: window.setTimeout(() => {
           press.current = null;
           swallowClick.current = true;
-          navigator.vibrate?.(10);
+          haptic();
           toggle(key);
         }, LONG_PRESS_MS)
       };

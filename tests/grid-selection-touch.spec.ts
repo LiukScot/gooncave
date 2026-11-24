@@ -37,7 +37,7 @@ test('a long press selects a tile instead of opening it, and taps add more', asy
   await expect(bar).toContainText('1 selected');
   await expect(page.locator('.file-detail-panel-current')).toHaveCount(0);
   expect(await barOnCornerRow(page)).toEqual({
-    centredOnButton: true, cornerButtonsHidden: true, inTheLeftHalf: true, besideTheMenu: true
+    centredOnButton: true, cornerButtonsHidden: true, endsWhereTheButtonEnds: true, besideTheMenu: true
   });
 
   await tile(page, '2').tap();
@@ -50,18 +50,13 @@ test('a long press selects a tile instead of opening it, and taps add more', asy
   await expect(page.locator('.file-detail-panel-current')).toBeVisible();
 });
 
-test('on a phone the actions open from a menu above the bar, and nothing in the bar reaches the corner button', async ({ page }) => {
+test('on a phone the actions open from a menu above the bar', async ({ page }) => {
   await serveFixtureSite(page);
   await page.goto('/app/explore');
   await longPress(page, '1');
   const bar = page.getByRole('toolbar', { name: 'Selection' });
   await expect(bar.getByRole('button')).toHaveText(['', '']);
   await expect(bar.getByRole('button', { name: 'Actions' })).toBeVisible();
-  const lens = (await page.locator('.search-lens').boundingBox())!;
-  for (const button of await bar.getByRole('button').all()) {
-    const box = (await button.boundingBox())!;
-    expect(box.x + box.width).toBeLessThanOrEqual(lens.x);
-  }
   await bar.getByRole('button', { name: 'Actions' }).tap();
   const menu = page.getByRole('dialog', { name: 'Actions for the selection' });
   await expect(menu.getByRole('button')).toHaveText(['Favorite', 'Vote up', 'Vote down', 'Select all']);

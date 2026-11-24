@@ -95,9 +95,12 @@ export const joins = (tiles: { box: Box; radius: number }[], gap: number) => {
   return paths;
 };
 
-/** The shape gathered on the origin's side: a scale that keeps that side in place. */
-const gathered = ({ x, y }: Origin) => ({
-  origin: `${x < 0 ? 'left' : x > 0 ? 'right' : 'center'} ${y < 0 ? 'top' : y > 0 ? 'bottom' : 'center'}`,
+/**
+ * The shape gathered on the origin's side of `box`: a scale about that side, as a point in
+ * the layer, so a tile's colour and the pieces it adds to its neighbours move as one.
+ */
+const gathered = (box: Box, { x, y }: Origin) => ({
+  origin: `${x < 0 ? box.left : x > 0 ? box.right : (box.left + box.right) / 2}px ${y < 0 ? box.top : y > 0 ? box.bottom : (box.top + box.bottom) / 2}px`,
   transform: `scale(${x || !y ? 0 : 1}, ${y || !x ? 0 : 1})`
 });
 
@@ -128,7 +131,7 @@ export function SelectionLayer({ selected }: { selected: ReadonlySet<string> }) 
   const id = useId();
   const svgRef = useRef<SVGSVGElement>(null);
   const shown = useRef<ReadonlySet<string>>(new Set(selected));
-  const draining = useRef(new Set<string>());
+  const flows = useRef(new Map<string, { leaving: boolean; animation?: Animation }>());
 
   const draw = (changed: { added: string[]; removed: string[] }) => {
     const svg = svgRef.current;
@@ -150,65 +153,78 @@ export function SelectionLayer({ selected }: { selected: ReadonlySet<string> }) 
     svg.setAttribute('height', String(frame.height));
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     // A tile leaving keeps its shape until it has drained away.
-    if (!reduced) for (const key of changed.removed) if (tiles.has(key)) draining.current.add(key);
-    const inShape = (key: string) => selected.has(key) || draining.current.has(key);
-    const existing = new Map(
-      [...shapes.querySelectorAll<SVGPathElement>('path')].map((shape) => [shape.dataset.key!, shape])
-    );
-    for (const [key, shape] of existing) {
-      if (!inShape(key) || !tiles.has(key)) shape.remove();
-    }
-    const selectedBoxes = (except: string) =>
-      [...tiles].filter(([key]) => key !== except && selected.has(key)).map(([, tile]) => tile.box);
+    if (!reduced) for (const key of changed.removed) if (tiles.has(key)) flows.current.set(key, { leaving: true });
+    for (const key of changed.added) if (flows.current.get(key)?.leaving) flows.current.delete(key);
+    const inShape = (key: string) => selected.has(key) || flows.current.get(key)?.leaving === true;
+    const flowing = (key: string) => !reduced && (flows.current.has(key) || changed.added.includes(key));
+    const grow = gap / 2 + 0.5;
+    const settled = [...tiles].filter(([key]) => inShape(key) && !flowing(key));
+    const boxes = (list: [string, { box: Box }][], except: string) => list.filter(([key]) => key !== except).map(([, tile]) => tile.box);
+    const path = (d: string) => {
+      const shape = document.createElementNS(SVG, 'path');
+      shape.setAttribute('d', d);
+      return shape;
+    };
+    const existing = new Map([...shapes.children].map((group) => [(group as SVGGElement).dataset.key!, group as SVGGElement]));
+    for (const [key, group] of existing) if (!inShape(key) || !tiles.has(key)) group.remove();
     for (const [key, tile] of tiles) {
       if (!inShape(key)) continue;
-      let shape = existing.get(key);
-      if (!shape?.isConnected) {
-        shape = document.createElementNS(SVG, 'path');
-        shape.dataset.key = key;
-        shapes.append(shape);
+      let group = existing.get(key);
+      if (!group?.isConnected) {
+        group = document.createElementNS(SVG, 'g');
+        group.dataset.key = key;
+        shapes.append(group);
       }
-      // Half a pixel past half the gap: selected neighbours overlap without a seam, while the
-      // outer edge stays on the cut around tiles left out instead of stepping past it.
-      shape.setAttribute('d', outline(tile.box, gap / 2 + 0.5, tile.radius, squareCorners(tile.box, selectedBoxes(key), gap)));
+      if (!flowing(key)) {
+        // Half a pixel past half the gap: selected neighbours overlap without a seam, while the
+        // outer edge stays on the cut around tiles left out instead of stepping past it.
+        group.replaceChildren(path(outline(tile.box, grow, tile.radius, squareCorners(tile.box, boxes(settled, key), gap))));
+        continue;
+      }
+      // A tile flowing in or out carries what it changes around it: the corners of settled
+      // neighbours it squares, and the rounded joins beside it. Drawn on the neighbours, they
+      // would show before the tile's own colour reaches them.
+      const others = [...tiles].filter(([other]) => other !== key && inShape(other));
+      const pieces = [path(outline(tile.box, grow, tile.radius, squareCorners(tile.box, boxes(others, key), gap)))];
+      for (const [other, neighbour] of settled) {
+        const before = squareCorners(neighbour.box, boxes(settled, other), gap);
+        const after = squareCorners(neighbour.box, [...boxes(settled, other), tile.box], gap);
+        const [left, top, right, bottom] = [neighbour.box.left - grow, neighbour.box.top - grow, neighbour.box.right + grow, neighbour.box.bottom + grow];
+        const r = Math.min(neighbour.radius + grow, (right - left) / 2, (bottom - top) / 2);
+        const corners = { topLeft: [left, top], topRight: [right - r, top], bottomRight: [right - r, bottom - r], bottomLeft: [left, bottom - r] } as const;
+        for (const corner of Object.keys(corners) as (keyof typeof corners)[]) {
+          if (after[corner] && !before[corner]) pieces.push(path(`M${corners[corner][0]},${corners[corner][1]}h${r}v${r}h${-r}Z`));
+        }
+      }
+      for (const [, other] of others) pieces.push(...joins([tile, other], gap).map(path));
+      group.replaceChildren(...pieces);
       const joining = changed.added.includes(key);
       const leaving = changed.removed.includes(key);
-      if (reduced || (!joining && !leaving)) continue;
-      const end = gathered(fillOrigin(tile.box, selectedBoxes(key), gap));
-      shape.style.transformBox = 'fill-box';
-      shape.style.transformOrigin = end.origin;
-      for (const running of shape.getAnimations()) running.cancel();
-      const animation = shape.animate(
+      if (!joining && !leaving) continue;
+      const end = gathered(
+        { left: tile.box.left - grow, top: tile.box.top - grow, right: tile.box.right + grow, bottom: tile.box.bottom + grow },
+        fillOrigin(tile.box, boxes(others, key), gap)
+      );
+      group.style.transformBox = 'view-box';
+      group.style.transformOrigin = end.origin;
+      for (const running of group.getAnimations()) running.cancel();
+      const animation = group.animate(
         joining ? [{ transform: end.transform }, { transform: 'none' }] : [{ transform: 'none' }, { transform: end.transform }],
         { duration: FILL_MS, easing: EASING, fill: leaving ? 'forwards' : 'none' }
       );
-      if (leaving) {
-        void animation.finished.then(
-          () => {
-            draining.current.delete(key);
-            if (!selected.has(key)) shape.remove();
-            draw({ added: [], removed: [] });
-          },
-          () => draining.current.delete(key)
-        );
-      }
+      flows.current.set(key, { leaving, animation });
+      const settle = () => {
+        if (flows.current.get(key)?.animation !== animation) return;
+        flows.current.delete(key);
+        draw({ added: [], removed: [] });
+      };
+      // A cancelled flow was replaced by a newer one for the same tile, which settles instead.
+      void animation.finished.then(settle, settle);
     }
-    svg.querySelector('[data-part="joins"]')!.replaceChildren(
-      ...joins([...tiles].filter(([key]) => inShape(key)).map(([, tile]) => tile), gap).map((d) => {
-        const join = document.createElementNS(SVG, 'path');
-        join.setAttribute('d', d);
-        return join;
-      })
-    );
+    svg.querySelector('[data-part="joins"]')!.replaceChildren(...joins(settled.map(([, tile]) => tile), gap).map(path));
     // The gap of a tile left out follows that tile's rounded outline.
     cuts.replaceChildren(
-      ...[...tiles]
-        .filter(([key]) => !inShape(key))
-        .map(([, tile]) => {
-          const cut = document.createElementNS(SVG, 'path');
-          cut.setAttribute('d', outline(tile.box, gap / 2, tile.radius));
-          return cut;
-        })
+      ...[...tiles].filter(([key]) => !inShape(key)).map(([, tile]) => path(outline(tile.box, gap / 2, tile.radius)))
     );
   };
   const drawRef = useRef(draw);
