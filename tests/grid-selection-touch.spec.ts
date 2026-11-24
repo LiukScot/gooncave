@@ -1,4 +1,4 @@
-import { expectBarBesideCornerButton, serveFixtureSite, tile } from './gridSelectionFixtures';
+import { barOnCornerRow, serveFixtureSite, tile } from './gridSelectionFixtures';
 import { expect, test, type Page } from './helpers';
 
 
@@ -36,8 +36,8 @@ test('a long press selects a tile instead of opening it, and taps add more', asy
   const bar = page.getByRole('toolbar', { name: 'Selection' });
   await expect(bar).toContainText('1 selected');
   await expect(page.locator('.file-detail-panel-current')).toHaveCount(0);
-  expect(await expectBarBesideCornerButton(page)).toEqual({
-    centredOnButton: true, leftOfButton: true, inTheLeftHalf: true, besideTheMenu: true
+  expect(await barOnCornerRow(page)).toEqual({
+    centredOnButton: true, cornerButtonsHidden: true, inTheLeftHalf: true, besideTheMenu: true
   });
 
   await tile(page, '2').tap();

@@ -1460,6 +1460,11 @@ body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   display: none;
 }
 
+/* While tiles are selected the selection bar takes the corner's row. */
+body:has(.selection-bar) :is(.search-lens, .search-lens-actions) {
+  visibility: hidden;
+}
+
 /* The menu pushes the page aside by its own width (lib/fingerOpening.ts moves
    them). The lens is outside .page-shell because a transform would make a fixed
    child measure from the page's far bottom instead of the screen's. */
@@ -6129,7 +6134,7 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   --selection-bar-left: max(var(--corner-button-edge), env(safe-area-inset-left));
   position: fixed;
   z-index: 600;
-  /* Bottom left, centred on the corner button and stopping short of it. */
+  /* Bottom left, on the row of the corner buttons it hides. */
   left: var(--selection-bar-left);
   bottom: var(--corner-button-edge);
   display: flex;
@@ -6137,7 +6142,7 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   gap: 0.5rem;
   width: max-content;
   height: var(--floating-button-size);
-  max-width: calc(100vw - var(--selection-bar-left) - max(var(--corner-button-edge), env(safe-area-inset-right)) - var(--floating-button-size) - 0.5rem);
+  max-width: calc(100vw - var(--selection-bar-left) - max(var(--corner-button-edge), env(safe-area-inset-right)));
   padding: 0 0.5rem 0 1rem;
   border-radius: calc(var(--floating-button-size) / 2);
   background: hsl(var(--section));

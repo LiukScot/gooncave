@@ -1,6 +1,6 @@
 import { inflateSync } from 'node:zlib';
 
-import { expectBarBesideCornerButton, selectionPosts as posts, serveFixtureSite, tile } from './gridSelectionFixtures';
+import { barOnCornerRow, selectionPosts as posts, serveFixtureSite, tile } from './gridSelectionFixtures';
 import { expect, test } from './helpers';
 
 /** The first row of an 8-bit RGB or RGBA screenshot, as [r, g, b] per pixel. */
@@ -32,8 +32,8 @@ test('Ctrl-click selects on desktop and Escape leaves', async ({ page }) => {
   const bar = page.getByRole('toolbar', { name: 'Selection' });
   await expect(bar).toContainText('1 selected');
   await expect(bar.getByRole('button')).toHaveText(['Favorite', 'Vote up', 'Vote down', 'Select all', 'Cancel']);
-  expect(await expectBarBesideCornerButton(page)).toEqual({
-    centredOnButton: true, leftOfButton: true, inTheLeftHalf: true, besideTheMenu: true
+  expect(await barOnCornerRow(page)).toEqual({
+    centredOnButton: true, cornerButtonsHidden: true, inTheLeftHalf: true, besideTheMenu: true
   });
   await page.keyboard.press('Escape');
   await expect(bar).toHaveCount(0);
@@ -88,20 +88,16 @@ test('Escape in an action’s confirmation closes only the confirmation', async 
   await expect(bar).toContainText('1 selected');
 });
 
-test('a History search that hides every selected post ends the selection', async ({ page }) => {
+test('the corner buttons hide while tiles are selected and come back after', async ({ page }) => {
   await serveFixtureSite(page);
-  await page.route('**/read-marks/history?*', (route) => {
-    const tags = new URL(route.request().url()).searchParams.get('tags');
-    return route.fulfill({ json: { posts: tags ? [] : posts, nextCursor: null } });
-  });
+  await page.route('**/read-marks/history?*', (route) => route.fulfill({ json: { posts, nextCursor: null } }));
   await page.goto('/app/explore?feed=history');
+  const search = page.getByRole('button', { name: 'Search History' });
+  await expect(search).toBeVisible();
   await tile(page, '1').click({ modifiers: ['Control'] });
-  const bar = page.getByRole('toolbar', { name: 'Selection' });
-  await expect(bar).toContainText('1 selected');
-  await page.getByRole('button', { name: 'Search History' }).click();
-  await page.locator('#history-tag-search').fill('fox');
-  await expect(tile(page, '1')).toHaveCount(0);
-  await expect(bar).toHaveCount(0);
+  await expect(search).toBeHidden();
+  await page.getByRole('toolbar', { name: 'Selection' }).getByRole('button', { name: 'Cancel' }).click();
+  await expect(search).toBeVisible();
 });
 
 test('a post opened just before it is removed from History does not come back', async ({ page }) => {
@@ -134,7 +130,7 @@ test('a post opened just before it is removed from History does not come back', 
 test('selected tiles flow together across the gap, in from and back to the selected tile beside them', async ({ page }) => {
   await serveFixtureSite(page);
   await page.goto('/app/explore');
-  const flow = (id: string) => page.locator(`.selection-layer rect[data-key="fixture:${id}"]`).evaluate((shape) => {
+  const flow = (id: string) => page.locator(`.selection-layer path[data-key="fixture:${id}"]`).evaluate((shape) => {
     const animation = shape.getAnimations().at(-1);
     const frames = (animation?.effect as KeyframeEffect | undefined)?.getKeyframes() ?? [];
     return { from: frames[0]?.transform, to: frames.at(-1)?.transform, origin: getComputedStyle(shape).transformOrigin };
@@ -145,7 +141,7 @@ test('selected tiles flow together across the gap, in from and back to the selec
   const joining = await flow('2');
   expect(joining).toMatchObject({ from: 'scale(0, 1)', to: 'none' });
   expect(joining.origin.startsWith('0px')).toBe(true);
-  await expect.poll(() => page.locator('.selection-layer rect').first().evaluate((shape) =>
+  await expect.poll(() => page.locator('.selection-layer path').first().evaluate((shape) =>
     shape.getAnimations().every((animation) => animation.playState === 'finished'))).toBe(true);
   // The gap between the two tiles is all colour: the picture is outside it.
   const first = (await tile(page, '1').boundingBox())!;
@@ -160,5 +156,5 @@ test('selected tiles flow together across the gap, in from and back to the selec
   // Deselected, the second tile's colour drains back towards the first instead of vanishing.
   await tile(page, '2').click();
   expect(await flow('2')).toMatchObject({ from: 'none', to: 'scale(0, 1)' });
-  await expect(page.locator('.selection-layer rect[data-key="fixture:2"]')).toHaveCount(0);
+  await expect(page.locator('.selection-layer path[data-key="fixture:2"]')).toHaveCount(0);
 });

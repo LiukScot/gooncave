@@ -23,8 +23,8 @@ export async function serveFixtureSite(page: Page) {
 export const tile = (page: Page, id: string) => page.locator(`[data-select-key="fixture:${id}"]`);
 
 
-/** The selection bar sits at the bottom left, centred on the corner button and short of it. */
-export async function expectBarBesideCornerButton(page: Page) {
+/** The selection bar sits at the bottom left, on the row of the corner buttons it hides. */
+export async function barOnCornerRow(page: Page) {
   const bar = await page.getByRole('toolbar', { name: 'Selection' }).boundingBox();
   const lens = await page.locator('.search-lens').boundingBox();
   if (!bar || !lens) throw new Error('The selection bar or the corner button is not on screen');
@@ -34,7 +34,8 @@ export async function expectBarBesideCornerButton(page: Page) {
   });
   return {
     centredOnButton: Math.abs(bar.y + bar.height / 2 - (lens.y + lens.height / 2)) <= 1,
-    leftOfButton: bar.x + bar.width <= lens.x,
+    cornerButtonsHidden: await page.locator('.search-lens, .search-lens-actions').evaluateAll((buttons) =>
+      buttons.every((button) => getComputedStyle(button).visibility === 'hidden')),
     inTheLeftHalf: bar.x < page.viewportSize()!.width / 2,
     besideTheMenu: bar.x >= content - 1
   };
