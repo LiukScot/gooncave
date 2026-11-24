@@ -134,6 +134,16 @@ describe('subscriptionReasons', () => {
     ).toEqual(['Blue Eyes', 'red_fox']);
   });
 
+  it('names the followed search for a post carrying the tag it was renamed to', () => {
+    const renamedPost = {
+      engine: 'e621',
+      tags: [{ tag: 'rilie', category: 'artist' }],
+      uploader: 'someone'
+    } as ExplorePost;
+
+    expect(subscriptionReasons(renamedPost, ['rilium', 'wolf'], [], { rilium: 'rilie' })).toEqual(['rilium']);
+  });
+
   it('returns the artist for a FurAffinity subscription post', () => {
     const artistPost = {
       engine: 'furaffinity',

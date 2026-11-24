@@ -138,7 +138,7 @@ export function useAddSubscriptionTag() {
       writeExploreSnapshot(null);
       queryClient.setQueryData<SubscriptionTargets>(
         queryKeys.settings.subscriptionTags(),
-        { tags, artists }
+        (current) => ({ ...current, tags, artists })
       );
       queryClient.setQueryData<SubscriptionSettings>(
         queryKeys.settings.subscriptions(),
@@ -167,7 +167,7 @@ export function useUpdateSubscriptionTags() {
       writeExploreSnapshot(null);
       queryClient.setQueryData<SubscriptionTargets>(
         queryKeys.settings.subscriptionTags(),
-        (current) => ({ artists: current?.artists ?? [], tags })
+        (current) => ({ ...current, artists: current?.artists ?? [], tags })
       );
       queryClient.setQueryData<SubscriptionSettings>(
         queryKeys.settings.subscriptions(),
@@ -220,10 +220,11 @@ export function useArtistSubscriptionMutation(subscribed: boolean) {
     onSuccess: (data) => {
       writeExploreSnapshot(null);
       queryClient.setQueryData(queryKeys.settings.subscriptions(), data);
-      queryClient.setQueryData<SubscriptionTargets>(queryKeys.settings.subscriptionTags(), {
+      queryClient.setQueryData<SubscriptionTargets>(queryKeys.settings.subscriptionTags(), (current) => ({
+        ...current,
         tags: data.tags,
         artists: data.artists
-      });
+      }));
     }
   });
 }

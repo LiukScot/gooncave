@@ -408,7 +408,7 @@ export function ExploreView({
             baseUrl: active.sourceUrl
           });
         }}
-        subscriptionReasons={(active) => ctl.sort === 'subscribed' ? subscriptionReasons(active, ctl.subscribedTags, ctl.subscribedPools) : null}
+        subscriptionReasons={(active) => ctl.sort === 'subscribed' ? subscriptionReasons(active, ctl.subscribedTags, ctl.subscribedPools, ctl.subscriptionAliases) : null}
         onOpen={(active) =>
           transitionView(
             'detail-open',

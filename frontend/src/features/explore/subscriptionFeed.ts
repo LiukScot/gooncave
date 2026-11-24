@@ -29,7 +29,8 @@ export const subscriptionActionState = (
 export const subscriptionReasons = (
   post: ExplorePost,
   subscribedTags: string[],
-  subscribedPools: Array<Pick<PoolSubscription, 'siteId' | 'poolId' | 'name'>> = []
+  subscribedPools: Array<Pick<PoolSubscription, 'siteId' | 'poolId' | 'name'>> = [],
+  aliases: Record<string, string> = {}
 ): string[] => {
   if (post.engine === 'furaffinity') {
     const artist = post.uploader?.replace(/^~/, '').trim();
@@ -38,7 +39,9 @@ export const subscriptionReasons = (
   const postTags = new Set(post.tags.map(({ tag }) => normalizeTag(tag)));
   const poolIds = new Set(post.poolIds ?? []);
   return [
-    ...subscribedTags.filter((tag) => postTags.has(normalizeTag(tag))),
+    ...subscribedTags.filter(
+      (tag) => postTags.has(normalizeTag(tag)) || (tag in aliases && postTags.has(normalizeTag(aliases[tag])))
+    ),
     ...subscribedPools
       .filter((pool) => pool.siteId === post.siteId && poolIds.has(pool.poolId))
       .map((pool) => pool.name)

@@ -1755,6 +1755,7 @@ export function useExploreController({
     hasSubscriptions,
     subscribedTags,
     subscribedPools,
+    subscriptionAliases: subscriptionTags.data?.aliases,
     subscriptionsLoading:
       sort === 'subscribed' &&
       (subscriptionTags.isLoading || subscriptionPools.isLoading)

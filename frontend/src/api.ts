@@ -210,7 +210,12 @@ export const BLACKLIST_DEFAULTS: BlacklistSettings = {
 };
 
 /** The saved searches and followed artists, as stored. */
-export type SubscriptionTargets = { tags: string[]; artists: string[] };
+export type SubscriptionTargets = {
+  tags: string[];
+  artists: string[];
+  /** Searches the tag vocabulary renamed, with the tag their posts now carry instead. */
+  aliases?: Record<string, string>;
+};
 
 /** A FurAffinity account whose watchlist could not be synced with the artists. */
 export type ArtistSyncError = {
