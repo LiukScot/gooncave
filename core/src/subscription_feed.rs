@@ -96,10 +96,12 @@ async fn prepare(db: &Database, t: &Transport, sites: &[Site]) -> Result<Vec<Row
         let of = json!({"engine": site.engine, "base": site.base, "searches": searches});
         plans.push((site.id.clone(), of, queries));
     }
+    let followed = json!(artists).to_string();
     db.call(move |c| {
         let tx = c.transaction()?;
         let mut rows = Vec::new();
         for (index, (site, of, queries)) in plans.into_iter().enumerate() {
+            let inbox = of["engine"] == "furaffinity";
             let saved: Option<String> = tx
                 .query_row(
                     "SELECT searches FROM subscription_sites WHERE site_id=?1",
@@ -121,6 +123,16 @@ async fn prepare(db: &Database, t: &Transport, sites: &[Site]) -> Result<Vec<Row
                     "INSERT INTO subscription_sites(site_id,searches) VALUES (?1,?2)
                      ON CONFLICT(site_id) DO UPDATE SET searches=excluded.searches",
                     params![site, of],
+                )?;
+            }
+            // The inbox has no searches to compare, so an artist unfollowed here or on the site
+            // takes their posts along. Only once the watchlist has been read: before, no one is
+            // followed yet.
+            if inbox && store::seen_artists(&tx, &site)?.is_some() {
+                tx.execute(
+                    "DELETE FROM subscription_posts WHERE site_id=?1
+                       AND lower(json_extract(post,'$.uploader')) NOT IN (SELECT value FROM json_each(?2))",
+                    params![site, followed],
                 )?;
             }
             // Searches regrouped (a Danbooru tag got its first post) keep the posts read so far.
@@ -1527,6 +1539,52 @@ mod tests {
             .collect::<HashSet<_>>();
         assert_eq!(searched, HashSet::from(["fox", "wolf", "old_name"]));
     }
+    #[tokio::test]
+    async fn an_unfollowed_furaffinity_artist_takes_their_inbox_posts_along() {
+        let (_dir, db) = open();
+        let site = setup(&db, "furaffinity", "http://127.0.0.1:9").await;
+        // The first preparation records the site, which clears posts saved before.
+        prepare(&db, &t(), std::slice::from_ref(&site))
+            .await
+            .unwrap();
+        db.call(|c| {
+            for (id, uploader) in [("1", json!("kept")), ("2", json!("gone")), ("3", Value::Null)] {
+                let post = json!({"remoteId": id, "uploader": uploader}).to_string();
+                c.execute(
+                    "INSERT INTO subscription_posts(site_id,remote_id,sort_at,post) VALUES ('fixture',?1,1,?2)",
+                    params![id, post],
+                )?;
+            }
+            write_setting(c, "subscriptions.artists", &json!(["Kept"]))?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let left = |db: Database| async move {
+            db.call(|c| {
+                let mut s =
+                    c.prepare("SELECT remote_id FROM subscription_posts ORDER BY remote_id")?;
+                let ids = s
+                    .query_map([], |r| r.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                Ok(ids)
+            })
+            .await
+            .unwrap()
+        };
+        // Before the watchlist is read, nobody counts as followed: nothing goes.
+        prepare(&db, &t(), std::slice::from_ref(&site))
+            .await
+            .unwrap();
+        assert_eq!(left(db.clone()).await, ["1", "2", "3"]);
+        db.call(|c| store::save_seen_artists(c, "fixture", &["kept".to_owned()]))
+            .await
+            .unwrap();
+        prepare(&db, &t(), &[site]).await.unwrap();
+        // A post without an author stays: there is no one to compare.
+        assert_eq!(left(db).await, ["1", "3"]);
+    }
+
     #[tokio::test]
     async fn the_furaffinity_inbox_carries_on_from_the_last_post_read() {
         let requests = Arc::new(Mutex::new(Vec::new()));
