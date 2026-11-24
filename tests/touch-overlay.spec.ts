@@ -647,6 +647,8 @@ test.describe('phone media controls', () => {
   test('the buttons over a video are 48px and the video bar still fits beside them', async ({ page }) => {
     await page.goto('/app/gallery');
     await openExplore(page, true);
+    // The picture grows out of its tile while the post opens, scaling the buttons on it.
+    await expect(page.locator('.page-shell.is-rising')).toHaveCount(0);
     const size = (selector: string) => page.locator(selector).first().evaluate((element) => {
       const { width, height } = element.getBoundingClientRect();
       return { width, height };

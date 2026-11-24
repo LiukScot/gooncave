@@ -97,6 +97,8 @@ test('a post opened just before it is removed from History does not come back', 
   await tile(page, '1').click();
   await expect(page).toHaveURL(/post=/);
   await page.goBack();
+  // The post's page sinks away as a copy that holds the grid too.
+  await expect(page.locator('.page-leaving')).toHaveCount(0);
   await tile(page, '1').click({ modifiers: ['Control'] });
   await page.getByRole('toolbar', { name: 'Selection' }).getByRole('button', { name: 'Remove from History' }).click();
   await page.getByRole('button', { name: 'Remove', exact: true }).click();

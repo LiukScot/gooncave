@@ -45,6 +45,8 @@ test('a Gallery file known to have relatives holds their place before they arriv
   const current = page.locator('.file-detail-panel-current');
   await expect(current.locator('.file-detail-relation.is-pending')).toHaveCount(2);
   const tags = current.locator('.file-detail-tags');
+  // The page rises into place as the file opens.
+  await expect(page.locator('.page-shell.is-rising')).toHaveCount(0);
   const before = (await tags.boundingBox())!.y;
 
   answer();

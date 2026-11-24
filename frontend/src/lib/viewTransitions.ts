@@ -27,12 +27,15 @@ const STALL_MS = 1500;
 let finishRunning: (() => void) | null = null;
 
 /**
- * A still copy of `page`, fixed where it shows now and as tall as the window.
- * Its videos load nothing: the copy only stands in for the page a moment.
+ * A still copy of what `page` shows, fixed where it shows now and as tall as
+ * the window. Its videos load nothing: the copy only stands in for the page a
+ * moment.
  */
 const copyInPlace = (page: HTMLElement): HTMLElement => {
   const box = page.getBoundingClientRect();
   const copy = page.cloneNode(true) as HTMLElement;
+  // A hidden part (the grid under an open file) shows nothing and would only add a second copy of it.
+  for (const hidden of copy.querySelectorAll('[hidden]')) hidden.remove();
   for (const video of copy.querySelectorAll('video')) {
     video.removeAttribute('autoplay');
     video.preload = 'none';
