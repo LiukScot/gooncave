@@ -129,7 +129,9 @@ test('the window has no system title bar and its heading moves the window', asyn
   expect(style.reserved).toBeGreaterThan(0);
   // A menu entry does not come off as a web link when dragged.
   const link = page.locator('.app-menu-link').first();
-  expect(await link.evaluate((element) => getComputedStyle(element).getPropertyValue('-webkit-user-drag'))).toBe('none');
+  expect(
+    await link.evaluate((element) => !element.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true })))
+  ).toBe(true);
   expect(await link.evaluate((element) => getComputedStyle(element.closest('.app-menu-body')!).userSelect)).toBe('none');
 });
 
