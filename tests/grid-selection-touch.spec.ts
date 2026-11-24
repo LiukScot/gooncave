@@ -49,3 +49,23 @@ test('a long press selects a tile instead of opening it, and taps add more', asy
   await tile(page, '1').tap();
   await expect(page.locator('.file-detail-panel-current')).toBeVisible();
 });
+
+test('on a phone the actions open from a menu above the bar, and nothing in the bar reaches the corner button', async ({ page }) => {
+  await serveFixtureSite(page);
+  await page.goto('/app/explore');
+  await longPress(page, '1');
+  const bar = page.getByRole('toolbar', { name: 'Selection' });
+  await expect(bar.getByRole('button')).toHaveText(['', '']);
+  await expect(bar.getByRole('button', { name: 'Actions' })).toBeVisible();
+  const lens = (await page.locator('.search-lens').boundingBox())!;
+  for (const button of await bar.getByRole('button').all()) {
+    const box = (await button.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(lens.x);
+  }
+  await bar.getByRole('button', { name: 'Actions' }).tap();
+  const menu = page.getByRole('dialog', { name: 'Actions for the selection' });
+  await expect(menu.getByRole('button')).toHaveText(['Favorite', 'Vote up', 'Vote down', 'Select all']);
+  await menu.getByRole('button', { name: 'Select all' }).tap();
+  await expect(bar).toContainText('2 selected');
+  await expect(menu).toHaveCount(0);
+});

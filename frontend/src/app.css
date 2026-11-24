@@ -6153,11 +6153,10 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 
 .selection-bar-actions {
   display: flex;
-  /* One row, so the bar stays as tall as the corner button; on a phone the
-     actions scroll sideways and the cut button at the edge shows there are more. */
+  /* One row, so the bar stays as tall as the corner button. A row that does not fit moves
+     into the Actions menu (SelectionBar.tsx), which measures it through this overflow. */
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow: hidden;
   gap: 0.5rem;
 }
 
@@ -6167,4 +6166,10 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
+}
+
+.selection-bar-round {
+  justify-content: center;
+  aspect-ratio: 1;
+  padding: 0;
 }
