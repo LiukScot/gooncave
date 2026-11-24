@@ -913,6 +913,8 @@ test.describe('with a mouse', () => {
     await page.goto('/app/gallery');
     await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').click();
     await expect(page.locator('.file-detail-panel-current')).toBeVisible();
+    // The gallery left sinks away as a copy that holds the menu too.
+    await expect(page.locator('.page-leaving')).toHaveCount(0);
     await expect(page.locator('.app-menu')).toBeHidden();
     await expect(page.locator('.search-lens')).toBeHidden();
   });
