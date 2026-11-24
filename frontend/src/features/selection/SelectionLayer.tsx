@@ -61,6 +61,40 @@ export const squareCorners = (tile: Box, selected: Box[], gap: number) => {
   };
 };
 
+/**
+ * Rounded fillets for the inner corners where two selected tiles side by side
+ * end at different heights, as `d` path strings. Each is centred where the
+ * rounded outline of a tile in that corner would be, so it meets the cut
+ * around a tile left out there, or rounds the corner off where none is.
+ */
+export const joins = (tiles: { box: Box; radius: number }[], gap: number) => {
+  const half = gap / 2;
+  const near = (distance: number) => distance >= -1 && distance <= gap + 1;
+  const fillet = (x: number, y: number, dx: 1 | -1, dy: 1 | -1, room: number, radius: number) => {
+    const r = Math.min(radius + half, room);
+    return `M${x},${y}V${y + dy * r}A${r},${r} 0 0 ${dx * dy < 0 ? 0 : 1} ${x + dx * r},${y}Z`;
+  };
+  const paths: string[] = [];
+  for (const a of tiles) {
+    for (const b of tiles) {
+      const [left, right] = [a.box, b.box];
+      const across = Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top);
+      if (a === b || across <= 0 || !near(right.left - left.right)) continue;
+      const radius = Math.min(a.radius, b.radius);
+      const [inLeft, inRight] = [right.left - half, left.right + half];
+      if (left.bottom < right.bottom - 1)
+        paths.push(fillet(inLeft, left.bottom + half, -1, 1, Math.min(right.bottom - left.bottom, left.right - left.left), radius));
+      if (right.bottom < left.bottom - 1)
+        paths.push(fillet(inRight, right.bottom + half, 1, 1, Math.min(left.bottom - right.bottom, right.right - right.left), radius));
+      if (left.top > right.top + 1)
+        paths.push(fillet(inLeft, left.top - half, -1, -1, Math.min(left.top - right.top, left.right - left.left), radius));
+      if (right.top > left.top + 1)
+        paths.push(fillet(inRight, right.top - half, 1, -1, Math.min(right.top - left.top, right.right - right.left), radius));
+    }
+  }
+  return paths;
+};
+
 /** The shape gathered on the origin's side: a scale that keeps that side in place. */
 const gathered = ({ x, y }: Origin) => ({
   origin: `${x < 0 ? 'left' : x > 0 ? 'right' : 'center'} ${y < 0 ? 'top' : y > 0 ? 'bottom' : 'center'}`,
@@ -83,10 +117,10 @@ const outline = (box: Box, grow: number, radius: number, square = { topLeft: fal
 };
 
 /**
- * The colour around the selected tiles of the grid it sits in, drawn as one
- * liquid shape: each selected tile's outline is blurred and cut back to a
- * sharp edge, so selected neighbours flow together across the gap with
- * rounded joins, while the gap of a tile left out keeps that tile's rounded
+ * The colour around the selected tiles of the grid it sits in: each selected
+ * tile's outline reaches half a pixel past the middle of the gap, so selected
+ * neighbours overlap into one shape, square where they meet, with rounded inner
+ * corners. The gap of a tile left out is cut back to that tile's rounded
  * outline. A tile joining or leaving the selection flows in from, or drains
  * into, the selected tiles beside it.
  */
@@ -134,8 +168,8 @@ export function SelectionLayer({ selected }: { selected: ReadonlySet<string> }) 
         shape.dataset.key = key;
         shapes.append(shape);
       }
-      // Half a pixel past half the gap: selected neighbours overlap and flow together, while
-      // the outer edge stays on the cut around tiles left out instead of stepping past it.
+      // Half a pixel past half the gap: selected neighbours overlap without a seam, while the
+      // outer edge stays on the cut around tiles left out instead of stepping past it.
       shape.setAttribute('d', outline(tile.box, gap / 2 + 0.5, tile.radius, squareCorners(tile.box, selectedBoxes(key), gap)));
       const joining = changed.added.includes(key);
       const leaving = changed.removed.includes(key);
@@ -159,6 +193,13 @@ export function SelectionLayer({ selected }: { selected: ReadonlySet<string> }) 
         );
       }
     }
+    svg.querySelector('[data-part="joins"]')!.replaceChildren(
+      ...joins([...tiles].filter(([key]) => inShape(key)).map(([, tile]) => tile), gap).map((d) => {
+        const join = document.createElementNS(SVG, 'path');
+        join.setAttribute('d', d);
+        return join;
+      })
+    );
     // The gap of a tile left out follows that tile's rounded outline.
     cuts.replaceChildren(
       ...[...tiles]
@@ -206,22 +247,18 @@ export function SelectionLayer({ selected }: { selected: ReadonlySet<string> }) 
     };
   }, []);
 
-  const goo = `${id}-goo`;
   const cutOut = `${id}-cut`;
   return (
     <svg ref={svgRef} className="selection-layer" aria-hidden="true">
       <defs>
-        <filter id={goo} x="-10%" y="-10%" width="120%" height="120%">
-          <feGaussianBlur stdDeviation="4" />
-          <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -11" />
-        </filter>
         <mask id={cutOut} maskUnits="userSpaceOnUse" x="-100%" y="-100%" width="300%" height="300%">
           <rect x="-100%" y="-100%" width="300%" height="300%" fill="white" />
           <g data-part="cuts" fill="black" />
         </mask>
       </defs>
       <g mask={`url(#${cutOut})`}>
-        <g filter={`url(#${goo})`} data-part="shapes" />
+        <g data-part="shapes" />
+        <g data-part="joins" />
       </g>
     </svg>
   );
