@@ -1,5 +1,5 @@
 import { observeWindowOffset, useWindowVirtualizer } from '@tanstack/react-virtual';
-import { Check, Clock, CloudDownload, Images, Play, Star } from 'lucide-react';
+import { Clock, CloudDownload, Images, Play, Star } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { stackGalleryFiles, type GalleryStack } from './galleryDuplicateStacks';
@@ -14,6 +14,7 @@ import { ThumbnailMotion } from '@/components/ThumbnailMotion';
 import { formatStarCooldown } from '@/features/file-detail/star';
 import { CardVideo } from '@/features/library/CardVideo';
 import { tileRatio } from '@/features/library/masonry';
+import { SelectionCheck } from '@/features/selection/SelectionCheck';
 import { formatDuration } from '@/lib/format';
 import { isIos } from '@/lib/platform';
 import { useAppMenuStore } from '@/stores/appMenuStore';
@@ -289,9 +290,7 @@ const GalleryCard = memo(function GalleryCard({
       style={{ '--gallery-thumb-ratio': thumbRatio } as React.CSSProperties}
     >
       {selected ? (
-        <span className="selection-check" aria-hidden="true">
-          <Check />
-        </span>
+        <SelectionCheck />
       ) : null}
       <button
         type="button"

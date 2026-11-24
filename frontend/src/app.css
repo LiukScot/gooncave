@@ -6071,24 +6071,20 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   user-select: none;
 }
 
-/* A selected tile's edge fills with the accent from the bottom up, like a glass filling. */
-.gallery-thumb.is-selected::after {
-  content: '';
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-  padding: 4px;
-  border-radius: inherit;
-  background: linear-gradient(to top, hsl(var(--primary)) 50%, transparent 50%) bottom / 100% 200% no-repeat;
-  /* Only the ring along the edge shows the fill. */
-  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  animation: selection-fill 420ms cubic-bezier(0.3, 0.7, 0.2, 1) both;
-  pointer-events: none;
+/* A selected tile's outside fills with the accent across half the gap to the next tile, so
+   selected neighbours join into one shape. The fill starts from the selected tiles already
+   around it (--fill-x, --fill-y: features/selection/SelectionCheck.tsx). */
+.gallery-thumb.is-selected {
+  /* Half of the grid's gap-2. */
+  --selection-edge: 0.25rem;
+  box-shadow: 0 0 0 var(--selection-edge) hsl(var(--primary));
+  animation: selection-fill 300ms cubic-bezier(0.3, 0.7, 0.2, 1) both;
 }
 
 @keyframes selection-fill {
   from {
-    background-position: top;
+    box-shadow: calc(var(--fill-x, 0) * var(--selection-edge))
+      calc(var(--fill-y, 0) * var(--selection-edge)) 0 0 hsl(var(--primary));
   }
 }
 
@@ -6125,7 +6121,7 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gallery-thumb.is-selected::after,
+  .gallery-thumb.is-selected,
   .selection-check {
     animation: none;
   }

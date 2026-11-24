@@ -107,3 +107,26 @@ test('a post opened just before it is removed from History does not come back', 
   await page.waitForTimeout(2500);
   expect(order).toEqual(['marked read', 'removed']);
 });
+
+test('a selected tile fills the gap around it, from the selected tile beside it', async ({ page }) => {
+  await serveFixtureSite(page);
+  await page.goto('/app/explore');
+  await tile(page, '1').click({ modifiers: ['Control'] });
+  await tile(page, '2').click();
+  await expect.poll(() => tile(page, '2').evaluate((element) => element.getAnimations().every((animation) => animation.playState === 'finished'))).toBe(true);
+  const edges = await page.evaluate(() => {
+    const [first, second] = ['1', '2'].map((id) => document.querySelector(`[data-select-key="fixture:${id}"]`) as HTMLElement);
+    const spread = (element: Element) => parseFloat(getComputedStyle(element).boxShadow.split(' ').at(-1)!);
+    return {
+      overPicture: getComputedStyle(first, '::after').content,
+      firstSpread: spread(first),
+      gap: second.getBoundingClientRect().left - first.getBoundingClientRect().right,
+      origin: [second.style.getPropertyValue('--fill-x'), second.style.getPropertyValue('--fill-y')]
+    };
+  });
+  // The colour lies outside the picture, and two selected neighbours meet across the gap.
+  expect(edges.overPicture).toBe('none');
+  expect(edges.firstSpread * 2).toBeCloseTo(edges.gap, 0);
+  // The second tile fills from its left, where the first one is.
+  expect(edges.origin).toEqual(['-1', '0']);
+});

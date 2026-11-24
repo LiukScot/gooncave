@@ -2,7 +2,6 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import {
   ArrowUp,
   ArrowDown,
-  Check,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -60,6 +59,7 @@ import { TagSearchInput } from '@/features/library/TagSearchInput';
 import { useScrolledPastRead } from '@/features/read-marks/useScrolledPastRead';
 import { runBulk } from '@/features/selection/runBulk';
 import { SelectionBar, type SelectionAction } from '@/features/selection/SelectionBar';
+import { SelectionCheck } from '@/features/selection/SelectionCheck';
 import { useGridSelection } from '@/features/selection/useGridSelection';
 import { OfflineNotice } from '@/features/shell/OfflineNotice';
 import { PageTitle } from '@/features/shell/PageTitle';
@@ -1102,9 +1102,7 @@ export function ExploreCard({
       }
     >
       {selected ? (
-        <span className="selection-check" aria-hidden="true">
-          <Check />
-        </span>
+        <SelectionCheck />
       ) : null}
       <div ref={cardFaceRef} className="explore-card-face">
       <button
