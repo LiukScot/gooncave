@@ -40,11 +40,16 @@ export function SelectionBar({
     const buttons = row.current;
     if (!folded && buttons && buttons.scrollWidth > buttons.clientWidth) setFolded(true);
   }, [folded, count, actions]);
-  // A wider window may hold the row again: lay it out and measure once more.
+  // A narrower window may no longer hold the row; a wider one may hold the folded row again,
+  // so that one is laid out and measured once more.
   useEffect(() => {
-    const unfold = () => setFolded(false);
-    window.addEventListener('resize', unfold);
-    return () => window.removeEventListener('resize', unfold);
+    const refit = () => {
+      const buttons = row.current;
+      if (!buttons) setFolded(false);
+      else if (buttons.scrollWidth > buttons.clientWidth) setFolded(true);
+    };
+    window.addEventListener('resize', refit);
+    return () => window.removeEventListener('resize', refit);
   }, []);
 
   const start = async ({ key, run }: SelectionAction) => {

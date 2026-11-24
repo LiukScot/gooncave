@@ -39,6 +39,24 @@ test('Ctrl-click selects on desktop and Escape leaves', async ({ page }) => {
   await expect(bar).toHaveCount(0);
 });
 
+test('the selection actions fold into a menu when the window narrows', async ({ page }) => {
+  // With stars on the Gallery's row is long enough to stop fitting at 800 pixels.
+  const original = await (await page.request.get('/settings/extra')).json();
+  expect((await page.request.put('/settings/extra', { data: { starsEnabled: true } })).ok()).toBeTruthy();
+  try {
+    await page.goto('/app/gallery');
+    await page.locator('[data-test-id="file-card"][aria-label*="landscape.png"]').click({ modifiers: ['Control'] });
+    const bar = page.getByRole('toolbar', { name: 'Selection' });
+    await expect(bar.getByRole('button', { name: 'Cancel' })).toBeVisible();
+    await page.setViewportSize({ width: 800, height: 720 });
+    await expect(bar.getByRole('button', { name: 'Actions' })).toBeVisible();
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await expect(bar.getByRole('button', { name: 'Select all' })).toBeVisible();
+  } finally {
+    await page.request.put('/settings/extra', { data: { starsEnabled: original.starsEnabled } });
+  }
+});
+
 test('selected History entries are removed with one request', async ({ page }) => {
   await serveFixtureSite(page);
   await page.route('**/read-marks/history?*', (route) => route.fulfill({ json: { posts, nextCursor: null } }));
