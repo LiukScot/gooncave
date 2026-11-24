@@ -14,7 +14,7 @@ import { ThumbnailMotion } from '@/components/ThumbnailMotion';
 import { formatStarCooldown } from '@/features/file-detail/star';
 import { CardVideo } from '@/features/library/CardVideo';
 import { tileRatio } from '@/features/library/masonry';
-import { SelectionEdge } from '@/features/selection/SelectionEdge';
+import { SelectionLayer } from '@/features/selection/SelectionLayer';
 import { formatDuration } from '@/lib/format';
 import { isIos } from '@/lib/platform';
 import { useAppMenuStore } from '@/stores/appMenuStore';
@@ -177,6 +177,7 @@ export function VirtualGalleryMasonry({
       ref={setMasonryElement}
       style={{ height: virtualizer.getTotalSize() }}
     >
+      {selected ? <SelectionLayer selected={selected} /> : null}
       {virtualItems.map((item) => {
         const stack = stacks[item.index];
         return (
@@ -189,7 +190,6 @@ export function VirtualGalleryMasonry({
               transform: `translate(${item.lane * (metrics.columnWidth + metrics.gap)}px, ${item.start - metrics.scrollMargin}px)`
             }}
           >
-            <SelectionEdge selected={selected?.has(stack.anchor.id) ?? false} />
             <GalleryCard
               key={stack.anchor.id}
               stack={stack}

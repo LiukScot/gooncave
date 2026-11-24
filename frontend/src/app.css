@@ -6071,27 +6071,19 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   user-select: none;
 }
 
-/* A selected tile's outside fills with the accent across half the gap to the next tile, so
-   selected neighbours join into one shape (features/selection/SelectionEdge.tsx). The edge sits
-   just before the tile, in an element that does not clip it, and under it. */
-.selection-slot {
+/* The colour around selected tiles (features/selection/SelectionLayer.tsx): one shape under
+   the tiles of its grid, which shows through the gaps. */
+.gallery-masonry {
   position: relative;
 }
 
-.selection-edge {
-  /* Half of the grid's gap-2, and a hair more: tiles sit on fractional pixels, and two halves
-     meeting exactly left a thin dark line between them. */
-  --selection-edge: calc(0.25rem + 0.5px);
+.selection-layer {
   position: absolute;
-  inset: calc(-1 * var(--selection-edge));
-  border-radius: calc(1rem + var(--selection-edge));
-  background: hsl(var(--primary));
-  visibility: hidden;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  fill: hsl(var(--primary));
   pointer-events: none;
-}
-
-.selection-edge.is-on {
-  visibility: visible;
 }
 
 /* Colour is not the only signal: a selected tile also carries a check, in its middle. */

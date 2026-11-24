@@ -1,5 +1,28 @@
+import { inflateSync } from 'node:zlib';
+
 import { expectBarBesideCornerButton, selectionPosts as posts, serveFixtureSite, tile } from './gridSelectionFixtures';
 import { expect, test } from './helpers';
+
+/** The first row of an 8-bit RGB or RGBA screenshot, as [r, g, b] per pixel. */
+const firstRowPixels = (png: Buffer) => {
+  const width = png.readUInt32BE(16);
+  const step = png[25] === 6 ? 4 : 3;
+  const chunks: Buffer[] = [];
+  for (let at = 8; at < png.length; ) {
+    const length = png.readUInt32BE(at);
+    if (png.toString('ascii', at + 4, at + 8) === 'IDAT') chunks.push(png.subarray(at + 8, at + 8 + length));
+    at += length + 12;
+  }
+  const data = inflateSync(Buffer.concat(chunks));
+  const filter = data[0];
+  const row = Buffer.from(data.subarray(1, 1 + width * step));
+  // Without a row above, Up adds nothing and Average and Paeth reduce to the pixel on the left.
+  for (let at = step; at < row.length; at += 1) {
+    if (filter === 1 || filter === 4) row[at] = (row[at] + row[at - step]) & 255;
+    if (filter === 3) row[at] = (row[at] + (row[at - step] >> 1)) & 255;
+  }
+  return Array.from({ length: width }, (_, x) => [row[x * step], row[x * step + 1], row[x * step + 2]]);
+};
 
 
 test('Ctrl-click selects on desktop and Escape leaves', async ({ page }) => {
@@ -108,35 +131,34 @@ test('a post opened just before it is removed from History does not come back', 
   expect(order).toEqual(['marked read', 'removed']);
 });
 
-test('selected tiles join across the gap, filling from and draining to the selected tile beside them', async ({ page }) => {
+test('selected tiles flow together across the gap, in from and back to the selected tile beside them', async ({ page }) => {
   await serveFixtureSite(page);
   await page.goto('/app/explore');
-  const edge = (id: string) => page.locator(`.selection-slot:has([data-select-key="fixture:${id}"]) > .selection-edge`);
-  const fill = (id: string) => edge(id).evaluate((element) => {
-    const animation = element.getAnimations()[0];
+  const flow = (id: string) => page.locator(`.selection-layer rect[data-key="fixture:${id}"]`).evaluate((shape) => {
+    const animation = shape.getAnimations().at(-1);
     const frames = (animation?.effect as KeyframeEffect | undefined)?.getKeyframes() ?? [];
-    return { from: frames[0]?.clipPath, to: frames.at(-1)?.clipPath, visibility: getComputedStyle(element).visibility };
+    return { from: frames[0]?.transform, to: frames.at(-1)?.transform, origin: getComputedStyle(shape).transformOrigin };
   });
   await tile(page, '1').click({ modifiers: ['Control'] });
   await tile(page, '2').click();
-  // The second tile fills from its left, where the first one is.
-  expect(await fill('2')).toEqual({ from: 'inset(0px 100% 0px 0px)', to: 'inset(0px)', visibility: 'visible' });
-  const shape = await page.evaluate(() => {
-    const box = (id: string, part: string) =>
-      document.querySelector(`.selection-slot:has([data-select-key="fixture:${id}"]) ${part}`)!.getBoundingClientRect();
-    const firstEdge = document.querySelector('.selection-slot:has([data-select-key="fixture:1"]) > .selection-edge')!;
-    return {
-      overPicture: getComputedStyle(document.querySelector('[data-select-key="fixture:1"]')!, '::after').content,
-      aroundFirst: box('1', '.selection-edge').left < box('1', '[data-select-key]').left,
-      noGap: box('1', '.selection-edge').right >= box('2', '.selection-edge').left,
-      innerCorners: [getComputedStyle(firstEdge).borderTopRightRadius, getComputedStyle(firstEdge).borderBottomRightRadius],
-      outerCorner: getComputedStyle(firstEdge).borderTopLeftRadius
-    };
+  // The second tile's colour flows in from its left, where the first one is.
+  const joining = await flow('2');
+  expect(joining).toMatchObject({ from: 'scale(0, 1)', to: 'none' });
+  expect(joining.origin.startsWith('0px')).toBe(true);
+  await expect.poll(() => page.locator('.selection-layer rect').first().evaluate((shape) =>
+    shape.getAnimations().every((animation) => animation.playState === 'finished'))).toBe(true);
+  // The gap between the two tiles is all colour: the picture is outside it.
+  const first = (await tile(page, '1').boundingBox())!;
+  const second = (await tile(page, '2').boundingBox())!;
+  const gap = await page.screenshot({
+    // Two pixels in from each tile: the tiles sit on fractional pixels and their edges blend.
+    clip: { x: first.x + first.width + 2, y: first.y + first.height / 2, width: second.x - first.x - first.width - 4, height: 1 }
   });
-  // The colour lies outside the picture, and the two edges meet with square corners between them.
-  expect(shape).toMatchObject({ overPicture: 'none', aroundFirst: true, noGap: true, innerCorners: ['0px', '0px'] });
-  expect(shape.outerCorner).not.toBe('0px');
+  const accent = (await page.evaluate(() => getComputedStyle(document.querySelector('.selection-layer')!).fill)).match(/\d+/g)!.map(Number);
+  const offColour = Math.max(...firstRowPixels(gap).map(([r, g, b]) => Math.abs(r - accent[0]) + Math.abs(g - accent[1]) + Math.abs(b - accent[2])));
+  expect(offColour).toBeLessThan(12);
   // Deselected, the second tile's colour drains back towards the first instead of vanishing.
   await tile(page, '2').click();
-  expect(await fill('2')).toEqual({ from: 'inset(0px)', to: 'inset(0px 100% 0px 0px)', visibility: 'visible' });
+  expect(await flow('2')).toMatchObject({ from: 'none', to: 'scale(0, 1)' });
+  await expect(page.locator('.selection-layer rect[data-key="fixture:2"]')).toHaveCount(0);
 });

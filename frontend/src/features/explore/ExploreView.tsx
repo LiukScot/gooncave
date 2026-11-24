@@ -60,7 +60,7 @@ import { TagSearchInput } from '@/features/library/TagSearchInput';
 import { useScrolledPastRead } from '@/features/read-marks/useScrolledPastRead';
 import { runBulk } from '@/features/selection/runBulk';
 import { SelectionBar, type SelectionAction } from '@/features/selection/SelectionBar';
-import { SelectionEdge } from '@/features/selection/SelectionEdge';
+import { SelectionLayer } from '@/features/selection/SelectionLayer';
 import { useGridSelection } from '@/features/selection/useGridSelection';
 import { OfflineNotice } from '@/features/shell/OfflineNotice';
 import { PageTitle } from '@/features/shell/PageTitle';
@@ -384,48 +384,46 @@ export function ExploreView({
   const renderCard = (post: ExplorePost) => {
     const key = explorePostKey(post);
     return (
-      <div key={key} className="selection-slot">
-        <SelectionEdge selected={selection.selected.has(key)} />
-        <ExploreCard
-          selectKey={key}
-          selected={selection.selected.has(key)}
-          posts={stackByFirstKey.get(key) ?? [post]}
-          hasRelations={(active) => Boolean(active.parentId) || active.hasChildren || parentIdsOnScreen.has(active.remoteId)}
-          supportsVote={(active) => ctl.siteById.get(active.siteId)?.canVote ?? false}
-          canFavorite={(active) => ctl.siteById.get(active.siteId)?.canFavorite ?? false}
-          favorited={ctl.isFavorited}
-          voted={ctl.voteOf}
-          voteBusy={(active) => ctl.pendingVoteKey === explorePostKey(active)}
-          favoriteBusy={(active) => ctl.pendingFavoriteKey === explorePostKey(active)}
-          sourceIcon={(active) => {
-            if (active.siteId === LIBRARY_SITE_ID) {
-              return { key: 'local', label: active.siteName, iconUrl: null };
-            }
-            const site = ctl.siteById.get(active.siteId);
-            return gallerySourceIconForSite(site ?? {
-              id: active.siteId,
-              name: active.siteName,
-              presetKey: active.engine,
-              baseUrl: active.sourceUrl
-            });
-          }}
-          subscriptionReasons={(active) => ctl.sort === 'subscribed' ? subscriptionReasons(active, ctl.subscribedTags, ctl.subscribedPools) : null}
-          onOpen={(active) =>
-            transitionView(
-              'detail-open',
-              () => ctl.openPost(active),
-              `[data-detail-anchor=${JSON.stringify(explorePostKey(active))}] img`
-            )
+      <ExploreCard
+        key={key}
+        selectKey={key}
+        selected={selection.selected.has(key)}
+        posts={stackByFirstKey.get(key) ?? [post]}
+        hasRelations={(active) => Boolean(active.parentId) || active.hasChildren || parentIdsOnScreen.has(active.remoteId)}
+        supportsVote={(active) => ctl.siteById.get(active.siteId)?.canVote ?? false}
+        canFavorite={(active) => ctl.siteById.get(active.siteId)?.canFavorite ?? false}
+        favorited={ctl.isFavorited}
+        voted={ctl.voteOf}
+        voteBusy={(active) => ctl.pendingVoteKey === explorePostKey(active)}
+        favoriteBusy={(active) => ctl.pendingFavoriteKey === explorePostKey(active)}
+        sourceIcon={(active) => {
+          if (active.siteId === LIBRARY_SITE_ID) {
+            return { key: 'local', label: active.siteName, iconUrl: null };
           }
-          onVote={(active, score) => void ctl.votePost(active, score)}
-          onFavorite={(active) =>
-            void ctl.toggleFavorite(
-              active,
-              ctl.isFavorited(active)
-            )
-          }
-        />
-      </div>
+          const site = ctl.siteById.get(active.siteId);
+          return gallerySourceIconForSite(site ?? {
+            id: active.siteId,
+            name: active.siteName,
+            presetKey: active.engine,
+            baseUrl: active.sourceUrl
+          });
+        }}
+        subscriptionReasons={(active) => ctl.sort === 'subscribed' ? subscriptionReasons(active, ctl.subscribedTags, ctl.subscribedPools) : null}
+        onOpen={(active) =>
+          transitionView(
+            'detail-open',
+            () => ctl.openPost(active),
+            `[data-detail-anchor=${JSON.stringify(explorePostKey(active))}] img`
+          )
+        }
+        onVote={(active, score) => void ctl.votePost(active, score)}
+        onFavorite={(active) =>
+          void ctl.toggleFavorite(
+            active,
+            ctl.isFavorited(active)
+          )
+        }
+      />
     );
   };
 
@@ -821,6 +819,7 @@ export function ExploreView({
                           {day.monthLabel ? <h2 className="explore-feed-month-title">{day.monthLabel}</h2> : null}
                           {day.dayLabel ? <h3 className="explore-feed-day-title">{day.dayLabel}</h3> : null}
                           <div className="gallery-masonry">
+                            <SelectionLayer selected={selection.selected} />
                             {day.columns.map((column, columnIndex) => (
                               <div key={columnIndex} className="gallery-masonry-column">
                                 {column.map(renderCard)}
