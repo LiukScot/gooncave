@@ -621,24 +621,42 @@ test('closing a file, the picture leaves with the page instead of staying alone 
   await expect(page.locator('.file-detail-panel-current .file-detail-media-wrap img')).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
   await page.getByRole('button', { name: 'Back to gallery' }).first().click();
-  const ends = await page.evaluate(async () => {
-    for (let frame = 0; frame < 120; frame++) {
-      const found = new Map<string, number>();
-      for (const animation of document.getAnimations()) {
-        const pseudo = (animation.effect as KeyframeEffect | null)?.pseudoElement;
-        const end = animation.effect?.getComputedTiming().endTime;
-        if (pseudo && typeof end === 'number') {
-          found.set(pseudo, Math.max(found.get(pseudo) ?? 0, end));
-        }
-      }
-      if (found.has('::view-transition-old(root)')) return Object.fromEntries(found);
-      await new Promise(requestAnimationFrame);
+  // The page sinking away is a copy, and the picture is part of it.
+  const closing = await page.evaluate(() => ({
+    viewTransition: document.documentElement.matches(':active-view-transition'),
+    sinking: document.querySelectorAll('.page-leaving.is-sinking').length,
+    pictureInCopy: document.querySelectorAll('.page-leaving .file-detail-panel-current .file-detail-media-wrap').length,
+    pictureOutside: document.querySelectorAll('.page-shell:not(.page-leaving) .file-detail-media-wrap').length
+  }));
+  expect(closing).toEqual({ viewTransition: false, sinking: 1, pictureInCopy: 1, pictureOutside: 0 });
+  await expect(page.locator('.page-leaving')).toHaveCount(0);
+});
+
+test('opening a file, the page rises over a copy of the gallery and the picture grows out of its tile', async ({ page }) => {
+  await page.goto('/app/gallery');
+  const tile = card(page, 'landscape.png');
+  await expect(tile).toBeVisible();
+  const tileBox = await tile.locator('img').boundingBox();
+  await tile.click();
+  const opening = await page.evaluate(() => {
+    for (const animation of document.getAnimations()) {
+      animation.pause();
+      animation.currentTime = 0;
     }
-    return null;
+    const picture = document.querySelector('.file-detail-panel-current .file-detail-media-wrap')!.getBoundingClientRect();
+    return {
+      viewTransition: document.documentElement.matches(':active-view-transition'),
+      galleryCopy: document.querySelectorAll('.page-leaving .gallery-thumb').length > 0,
+      rising: document.querySelectorAll('.page-shell.is-rising').length,
+      picture: { x: picture.left + picture.width / 2, y: picture.top + picture.height / 2, width: picture.width }
+    };
   });
-  if (!ends) throw new Error('The closing animation did not run');
-  const pageEnd = ends['::view-transition-old(root)'];
-  for (const [pseudo, end] of Object.entries(ends)) {
-    if (pseudo.includes('detail-media')) expect(end, pseudo).toBeLessThanOrEqual(pageEnd);
-  }
+  expect(opening).toMatchObject({ viewTransition: false, galleryCopy: true, rising: 1 });
+  // At its start the picture covers the tile it opens from.
+  expect(Math.abs(opening.picture.x - (tileBox!.x + tileBox!.width / 2))).toBeLessThan(2);
+  expect(Math.abs(opening.picture.y - (tileBox!.y + tileBox!.height / 2))).toBeLessThan(2);
+  expect(Math.abs(opening.picture.width - tileBox!.width)).toBeLessThan(2);
+  // Stalled animations still give the page back.
+  await expect(page.locator('.page-leaving')).toHaveCount(0, { timeout: 2500 });
+  await expect(page.locator('.page-shell.is-rising')).toHaveCount(0);
 });

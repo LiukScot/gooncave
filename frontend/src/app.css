@@ -5058,30 +5058,28 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   }
 }
 
-/* Page transitions (see lib/viewTransitions.ts). Names are given only while
-   a transition of the matching type runs: a standing view-transition-name
-   makes a stacking context, and the controls' menus would open underneath
-   the grid. */
-
-/* Opening a file, and closing it: the tile grows into the picture at the
-   top of the detail page. */
-:root:active-view-transition-type(detail-open, detail-close)
-  .file-detail-panel-current
-  .file-detail-media-wrap {
-  view-transition-name: detail-media;
+/* Opening a file and closing it (lib/viewTransitions.ts). The page left is a
+   still copy of its elements, fixed where it showed: Chromium draws a
+   view-transition picture of it white under a fractional display scale. Both
+   sit where the pinned headings do (400), over the desktop window bar (300)
+   and under the menu. */
+.page-leaving {
+  position: fixed;
+  z-index: 400;
+  margin: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: hsl(var(--page-background));
 }
 
-::view-transition-group(*) {
-  animation-duration: 0.4s;
-  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+.page-shell.is-rising {
+  position: relative;
+  z-index: 401;
+  animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-rise;
 }
 
-/* A tile is cropped and the picture is not, so the two differ in shape;
-   each keeps its own instead of being stretched to the other's. */
-::view-transition-old(detail-media),
-::view-transition-new(detail-media) {
-  height: 100%;
-  object-fit: contain;
+.page-leaving.is-sinking {
+  animation: 0.25s cubic-bezier(0.3, 0, 1, 1) both vt-sink;
 }
 
 @keyframes vt-rise {
@@ -5110,34 +5108,6 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 :root:active-view-transition-type(swipe-back)::view-transition-old(root) {
   z-index: 1;
   box-shadow: -0.5rem 0 1.5rem rgba(0, 0, 0, 0.35);
-}
-
-/* Reduced motion keeps the browser's own cross-fade and drops the travel. */
-@media (prefers-reduced-motion: no-preference) {
-  :root:active-view-transition-type(detail-open)::view-transition-new(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-rise;
-  }
-
-  :root:active-view-transition-type(detail-close)::view-transition-old(root) {
-    animation: 0.25s cubic-bezier(0.3, 0, 1, 1) both vt-sink;
-    z-index: 1;
-  }
-
-  /* The picture sinks with its page: left behind, it stood alone over the
-     grid after the page had gone, a white flash when it is light. */
-  :root:active-view-transition-type(detail-close)::view-transition-group(detail-media) {
-    animation: none;
-  }
-
-  :root:active-view-transition-type(detail-close)::view-transition-old(detail-media) {
-    animation: 0.25s cubic-bezier(0.3, 0, 1, 1) both vt-sink;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(detail-media) {
-    animation: none;
-  }
 }
 
 @media (min-width: 768px) {
@@ -5705,15 +5675,16 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 /* Opening a Settings page slides it over the list, and leaving it slides it
    back (lib/settingsSlide.ts). The page being left is a copy of its elements:
    Chromium draws a view-transition picture of it white under a fractional
-   display scale. The stacking and clipping last only while the pages move, so
-   a pinned heading still lies over the rest of the app. */
+   display scale. The stacking and clipping last only while the pages move.
+   The layer sits where the pinned headings do (400), over the desktop window
+   bar (300) and under the menu: lower, the bar would cover the headings. */
 .settings-leaving {
   display: none;
 }
 
 .settings-stage[data-slide] {
   position: relative;
-  z-index: 0;
+  z-index: 400;
   overflow-x: clip;
 }
 

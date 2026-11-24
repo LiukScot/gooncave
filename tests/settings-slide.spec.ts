@@ -45,3 +45,30 @@ test('the copy of the page left goes away when its animation never advances', as
   await expect(page.locator('.settings-leaving')).toBeEmpty({ timeout: 2500 });
   await expect(page.locator('.settings-stage[data-slide]')).toHaveCount(0);
 });
+
+test('the desktop window bar stays under the pinned title while a Settings page slides', async ({ page }) => {
+  await page.goto('/app/settings');
+  await expect(page.getByRole('link', { name: /appearance/i }).first()).toBeVisible();
+  // The browser has no window buttons, so the bar the desktop window draws is given a height here.
+  await page.evaluate(() => {
+    document.documentElement.classList.add('has-window-controls');
+    const style = document.createElement('style');
+    style.textContent = 'html.has-window-controls body::before { height: 64px !important; }';
+    document.head.append(style);
+  });
+  await page.waitForTimeout(300);
+  await page.getByRole('link', { name: /appearance/i }).first().click();
+  await expect(page.locator('.settings-stage[data-slide]')).toHaveCount(1);
+  // Held near the end of the slide, with the new page's title where it stays.
+  // The bar is body::before, so a point it covers reports the body.
+  const topElement = await page.evaluate(() => {
+    for (const animation of document.getAnimations()) {
+      animation.pause();
+      animation.currentTime = 390;
+    }
+    const title = document.querySelector('.settings-page .settings-subpage-head')!.getBoundingClientRect();
+    const hit = document.elementFromPoint(title.left + title.width / 2, title.top + title.height / 2);
+    return hit === document.body ? 'window bar' : (hit?.closest('.settings-subpage-head') ? 'title' : hit?.className);
+  });
+  expect(topElement).toBe('title');
+});
