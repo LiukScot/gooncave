@@ -55,6 +55,14 @@ impl Row {
     fn unread(&self) -> bool {
         self.tail_at.is_none() && !self.tail.done
     }
+    /// Whether opening the feed has to read this search before it answers: never read, or on a
+    /// site read through the browser, which the periodic sync leaves out, and not read for a
+    /// sync period. Read after the answer, its posts would land among posts already shown.
+    fn behind(&self, site: &Site, now: i64) -> bool {
+        self.unread()
+            || (crate::browser::site(&site.base).is_some()
+                && self.synced_at < now - SYNC_EVERY.as_secs() as i64)
+    }
 }
 fn now() -> i64 {
     time::OffsetDateTime::now_utc().unix_timestamp()
@@ -450,13 +458,14 @@ pub(crate) async fn sync(db: &Database, t: &Transport, background: bool) {
         );
     }
 }
-/// Syncs `sites`, or only their searches never read with `unread_only`. The caller holds
-/// `subscription_feed`. Returns the first error of each site that failed, by index.
+/// Syncs `sites`, or with `opening` only the searches the feed has to read before it answers
+/// (see [`Row::behind`]). The caller holds `subscription_feed`. Returns the first error of each
+/// site that failed, by index.
 async fn sync_sites(
     db: &Database,
     t: &Transport,
     sites: &[Site],
-    unread_only: bool,
+    opening: bool,
 ) -> HashMap<usize, String> {
     let rows = match prepare(db, t, sites).await {
         Ok(rows) => rows,
@@ -486,7 +495,13 @@ async fn sync_sites(
     let recent = now() - SYNCED_RECENTLY;
     let rows = rows
         .into_iter()
-        .filter(|r| r.unread() || (!unread_only && r.synced_at < recent))
+        .filter(|r| {
+            if opening {
+                r.behind(&sites[r.site], now())
+            } else {
+                r.unread() || r.synced_at < recent
+            }
+        })
         .collect::<Vec<_>>();
     if rows.is_empty() {
         return HashMap::new();
@@ -516,9 +531,16 @@ async fn hits(db: &Database, sites: &[Site], saved: &[(usize, Value)]) {
     }
 }
 /// Syncs the feed every 15 minutes, starting when the app starts.
-pub(crate) async fn watch(db: Database) {
-    let mut interval = tokio::time::interval(SYNC_EVERY);
+/// The first sync waits a full period: at launch it would read every search at once while the
+/// gallery loads, and opening the feed syncs anyway.
+fn sync_schedule() -> tokio::time::Interval {
+    let mut interval =
+        tokio::time::interval_at(tokio::time::Instant::now() + SYNC_EVERY, SYNC_EVERY);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    interval
+}
+pub(crate) async fn watch(db: Database) {
+    let mut interval = sync_schedule();
     loop {
         interval.tick().await;
         sync(&db, &Transport::default(), true).await;
@@ -717,7 +739,7 @@ async fn page(db: &Database, t: &Transport, sites: Vec<Site>, q: FeedQuery) -> R
     let mut failed = HashMap::new();
     if q.cursor.is_none() {
         let pending = prepare(db, t, &sites).await?;
-        if pending.iter().any(Row::unread) {
+        if pending.iter().any(|r| r.behind(&sites[r.site], now())) {
             let _guard = db.subscription_feed.lock().await;
             failed = sync_sites(db, t, &sites, true).await;
         }
@@ -1269,6 +1291,40 @@ mod tests {
             json!({"read": null, "total": null})
         );
         task.abort();
+    }
+    #[tokio::test(start_paused = true)]
+    async fn launching_the_app_reads_no_search_before_the_first_period() {
+        let mut schedule = sync_schedule();
+        let early = SYNC_EVERY - Duration::from_secs(1);
+        assert!(tokio::time::timeout(early, schedule.tick()).await.is_err());
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), schedule.tick())
+                .await
+                .is_ok()
+        );
+    }
+    #[tokio::test]
+    async fn opening_the_feed_reads_browser_sites_the_periodic_sync_left_out() {
+        let (_dir, db) = open();
+        let mut site = setup(&db, "e621", "https://e621.net").await;
+        let read = |synced_at| Row {
+            site: 0,
+            query: vec!["fox".into()],
+            head: vec!["1".into()],
+            tail: {
+                let mut tail = Position::default();
+                tail.done = true;
+                tail
+            },
+            tail_at: Some(1),
+            synced_at,
+        };
+        let now = 1_800_000_000;
+        let stale = now - SYNC_EVERY.as_secs() as i64 - 1;
+        assert!(!read(stale).behind(&site, now));
+        site.base = "https://www.furaffinity.net".into();
+        assert!(read(stale).behind(&site, now));
+        assert!(!read(now - 60).behind(&site, now));
     }
     #[tokio::test]
     async fn a_new_subscription_keeps_the_posts_saved_before() {
