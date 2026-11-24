@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { fillOrigin } from './SelectionCheck';
+import { fillOrigin, squareCorners } from './SelectionEdge';
 
 const box = (left: number, top: number, width = 100, height = 100) =>
   ({ left, top, right: left + width, bottom: top + height });
@@ -23,5 +23,23 @@ describe('fillOrigin', () => {
 
   it('does not count a tile that only touches a corner', () => {
     expect(fillOrigin(tile, [box(0, 0)], 8)).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe('squareCorners', () => {
+  const none = { topLeft: false, topRight: false, bottomRight: false, bottomLeft: false };
+
+  it('keeps every corner round on a tile alone', () => {
+    expect(squareCorners(box(108, 108), [], 8)).toEqual(none);
+  });
+
+  it('squares the corners a taller neighbour reaches past, so no notch is left between them', () => {
+    expect(squareCorners(box(108, 108), [box(216, 50, 100, 300)], 8))
+      .toEqual({ ...none, topRight: true, bottomRight: true });
+  });
+
+  it('keeps round the corner a shorter neighbour stops short of', () => {
+    expect(squareCorners(box(108, 108), [box(216, 150, 100, 300)], 8))
+      .toEqual({ ...none, bottomRight: true });
   });
 });

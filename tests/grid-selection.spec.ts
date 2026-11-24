@@ -108,25 +108,35 @@ test('a post opened just before it is removed from History does not come back', 
   expect(order).toEqual(['marked read', 'removed']);
 });
 
-test('a selected tile fills the gap around it, from the selected tile beside it', async ({ page }) => {
+test('selected tiles join across the gap, filling from and draining to the selected tile beside them', async ({ page }) => {
   await serveFixtureSite(page);
   await page.goto('/app/explore');
+  const edge = (id: string) => page.locator(`.selection-slot:has([data-select-key="fixture:${id}"]) > .selection-edge`);
+  const fill = (id: string) => edge(id).evaluate((element) => {
+    const animation = element.getAnimations()[0];
+    const frames = (animation?.effect as KeyframeEffect | undefined)?.getKeyframes() ?? [];
+    return { from: frames[0]?.clipPath, to: frames.at(-1)?.clipPath, visibility: getComputedStyle(element).visibility };
+  });
   await tile(page, '1').click({ modifiers: ['Control'] });
   await tile(page, '2').click();
-  await expect.poll(() => tile(page, '2').evaluate((element) => element.getAnimations().every((animation) => animation.playState === 'finished'))).toBe(true);
-  const edges = await page.evaluate(() => {
-    const [first, second] = ['1', '2'].map((id) => document.querySelector(`[data-select-key="fixture:${id}"]`) as HTMLElement);
-    const spread = (element: Element) => parseFloat(getComputedStyle(element).boxShadow.split(' ').at(-1)!);
+  // The second tile fills from its left, where the first one is.
+  expect(await fill('2')).toEqual({ from: 'inset(0px 100% 0px 0px)', to: 'inset(0px)', visibility: 'visible' });
+  const shape = await page.evaluate(() => {
+    const box = (id: string, part: string) =>
+      document.querySelector(`.selection-slot:has([data-select-key="fixture:${id}"]) ${part}`)!.getBoundingClientRect();
+    const firstEdge = document.querySelector('.selection-slot:has([data-select-key="fixture:1"]) > .selection-edge')!;
     return {
-      overPicture: getComputedStyle(first, '::after').content,
-      firstSpread: spread(first),
-      gap: second.getBoundingClientRect().left - first.getBoundingClientRect().right,
-      origin: [second.style.getPropertyValue('--fill-x'), second.style.getPropertyValue('--fill-y')]
+      overPicture: getComputedStyle(document.querySelector('[data-select-key="fixture:1"]')!, '::after').content,
+      aroundFirst: box('1', '.selection-edge').left < box('1', '[data-select-key]').left,
+      noGap: box('1', '.selection-edge').right >= box('2', '.selection-edge').left,
+      innerCorners: [getComputedStyle(firstEdge).borderTopRightRadius, getComputedStyle(firstEdge).borderBottomRightRadius],
+      outerCorner: getComputedStyle(firstEdge).borderTopLeftRadius
     };
   });
-  // The colour lies outside the picture, and two selected neighbours meet across the gap.
-  expect(edges.overPicture).toBe('none');
-  expect(edges.firstSpread * 2).toBeCloseTo(edges.gap, 0);
-  // The second tile fills from its left, where the first one is.
-  expect(edges.origin).toEqual(['-1', '0']);
+  // The colour lies outside the picture, and the two edges meet with square corners between them.
+  expect(shape).toMatchObject({ overPicture: 'none', aroundFirst: true, noGap: true, innerCorners: ['0px', '0px'] });
+  expect(shape.outerCorner).not.toBe('0px');
+  // Deselected, the second tile's colour drains back towards the first instead of vanishing.
+  await tile(page, '2').click();
+  expect(await fill('2')).toEqual({ from: 'inset(0px)', to: 'inset(0px 100% 0px 0px)', visibility: 'visible' });
 });

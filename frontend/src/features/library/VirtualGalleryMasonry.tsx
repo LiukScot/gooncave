@@ -1,5 +1,5 @@
 import { observeWindowOffset, useWindowVirtualizer } from '@tanstack/react-virtual';
-import { Clock, CloudDownload, Images, Play, Star } from 'lucide-react';
+import { Check, Clock, CloudDownload, Images, Play, Star } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { stackGalleryFiles, type GalleryStack } from './galleryDuplicateStacks';
@@ -14,7 +14,7 @@ import { ThumbnailMotion } from '@/components/ThumbnailMotion';
 import { formatStarCooldown } from '@/features/file-detail/star';
 import { CardVideo } from '@/features/library/CardVideo';
 import { tileRatio } from '@/features/library/masonry';
-import { SelectionCheck } from '@/features/selection/SelectionCheck';
+import { SelectionEdge } from '@/features/selection/SelectionEdge';
 import { formatDuration } from '@/lib/format';
 import { isIos } from '@/lib/platform';
 import { useAppMenuStore } from '@/stores/appMenuStore';
@@ -189,6 +189,7 @@ export function VirtualGalleryMasonry({
               transform: `translate(${item.lane * (metrics.columnWidth + metrics.gap)}px, ${item.start - metrics.scrollMargin}px)`
             }}
           >
+            <SelectionEdge selected={selected?.has(stack.anchor.id) ?? false} />
             <GalleryCard
               key={stack.anchor.id}
               stack={stack}
@@ -290,7 +291,9 @@ const GalleryCard = memo(function GalleryCard({
       style={{ '--gallery-thumb-ratio': thumbRatio } as React.CSSProperties}
     >
       {selected ? (
-        <SelectionCheck />
+        <span className="selection-check" aria-hidden="true">
+          <Check />
+        </span>
       ) : null}
       <button
         type="button"
