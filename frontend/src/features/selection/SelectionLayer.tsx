@@ -30,18 +30,56 @@ export const fillOrigin = (tile: Box, selected: Box[], gap: number): Origin => {
   return { x, y };
 };
 
+/**
+ * Which corners of a selected tile's shape are square: those a selected
+ * neighbour reaches past, so the colour runs on into the neighbour's instead
+ * of leaving a curved notch between them.
+ */
+export const squareCorners = (tile: Box, selected: Box[], gap: number) => {
+  const near = (distance: number) => distance >= -1 && distance <= gap + 1;
+  const across = (other: Box) => Math.min(tile.bottom, other.bottom) - Math.max(tile.top, other.top) > 0;
+  const along = (other: Box) => Math.min(tile.right, other.right) - Math.max(tile.left, other.left) > 0;
+  const beside = {
+    left: selected.filter((other) => across(other) && near(tile.left - other.right)),
+    right: selected.filter((other) => across(other) && near(other.left - tile.right)),
+    top: selected.filter((other) => along(other) && near(tile.top - other.bottom)),
+    bottom: selected.filter((other) => along(other) && near(other.top - tile.bottom))
+  };
+  const reaches = {
+    top: (other: Box) => other.top <= tile.top + 1,
+    bottom: (other: Box) => other.bottom >= tile.bottom - 1,
+    left: (other: Box) => other.left <= tile.left + 1,
+    right: (other: Box) => other.right >= tile.right - 1
+  };
+  const square = (vertical: 'top' | 'bottom', horizontal: 'left' | 'right') =>
+    beside[horizontal].some(reaches[vertical]) || beside[vertical].some(reaches[horizontal]);
+  return {
+    topLeft: square('top', 'left'),
+    topRight: square('top', 'right'),
+    bottomRight: square('bottom', 'right'),
+    bottomLeft: square('bottom', 'left')
+  };
+};
+
 /** The shape gathered on the origin's side: a scale that keeps that side in place. */
 const gathered = ({ x, y }: Origin) => ({
   origin: `${x < 0 ? 'left' : x > 0 ? 'right' : 'center'} ${y < 0 ? 'top' : y > 0 ? 'bottom' : 'center'}`,
   transform: `scale(${x || !y ? 0 : 1}, ${y || !x ? 0 : 1})`
 });
 
-const rounded = (rect: SVGRectElement, box: Box, grow: number, radius: number) => {
-  rect.setAttribute('x', String(box.left - grow));
-  rect.setAttribute('y', String(box.top - grow));
-  rect.setAttribute('width', String(box.right - box.left + 2 * grow));
-  rect.setAttribute('height', String(box.bottom - box.top + 2 * grow));
-  rect.setAttribute('rx', String(radius + grow));
+/** `box` grown by `grow` on every side, its corners rounded to the tile's own curve unless square. */
+const outline = (box: Box, grow: number, radius: number, square = { topLeft: false, topRight: false, bottomRight: false, bottomLeft: false }) => {
+  const [left, top, right, bottom] = [box.left - grow, box.top - grow, box.right + grow, box.bottom + grow];
+  const r = Math.min(radius + grow, (right - left) / 2, (bottom - top) / 2);
+  const [tl, tr, br, bl] = [square.topLeft, square.topRight, square.bottomRight, square.bottomLeft].map((on) => (on ? 0 : r));
+  return [
+    `M${left + tl},${top}`,
+    `H${right - tr}`, tr ? `A${tr},${tr} 0 0 1 ${right},${top + tr}` : '',
+    `V${bottom - br}`, br ? `A${br},${br} 0 0 1 ${right - br},${bottom}` : '',
+    `H${left + bl}`, bl ? `A${bl},${bl} 0 0 1 ${left},${bottom - bl}` : '',
+    `V${top + tl}`, tl ? `A${tl},${tl} 0 0 1 ${left + tl},${top}` : '',
+    'Z'
+  ].join('');
 };
 
 /**
@@ -81,31 +119,31 @@ export function SelectionLayer({ selected }: { selected: ReadonlySet<string> }) 
     if (!reduced) for (const key of changed.removed) if (tiles.has(key)) draining.current.add(key);
     const inShape = (key: string) => selected.has(key) || draining.current.has(key);
     const existing = new Map(
-      [...shapes.querySelectorAll<SVGRectElement>('rect')].map((rect) => [rect.dataset.key!, rect])
+      [...shapes.querySelectorAll<SVGPathElement>('path')].map((shape) => [shape.dataset.key!, shape])
     );
-    for (const [key, rect] of existing) {
-      if (!inShape(key) || !tiles.has(key)) rect.remove();
+    for (const [key, shape] of existing) {
+      if (!inShape(key) || !tiles.has(key)) shape.remove();
     }
     const selectedBoxes = (except: string) =>
       [...tiles].filter(([key]) => key !== except && selected.has(key)).map(([, tile]) => tile.box);
     for (const [key, tile] of tiles) {
       if (!inShape(key)) continue;
-      let rect = existing.get(key);
-      if (!rect?.isConnected) {
-        rect = document.createElementNS(SVG, 'rect');
-        rect.dataset.key = key;
-        shapes.append(rect);
+      let shape = existing.get(key);
+      if (!shape?.isConnected) {
+        shape = document.createElementNS(SVG, 'path');
+        shape.dataset.key = key;
+        shapes.append(shape);
       }
       // A little past half the gap, so two selected neighbours overlap and flow together.
-      rounded(rect, tile.box, gap * 0.75, tile.radius);
+      shape.setAttribute('d', outline(tile.box, gap * 0.75, tile.radius, squareCorners(tile.box, selectedBoxes(key), gap)));
       const joining = changed.added.includes(key);
       const leaving = changed.removed.includes(key);
       if (reduced || (!joining && !leaving)) continue;
       const end = gathered(fillOrigin(tile.box, selectedBoxes(key), gap));
-      rect.style.transformBox = 'fill-box';
-      rect.style.transformOrigin = end.origin;
-      for (const running of rect.getAnimations()) running.cancel();
-      const animation = rect.animate(
+      shape.style.transformBox = 'fill-box';
+      shape.style.transformOrigin = end.origin;
+      for (const running of shape.getAnimations()) running.cancel();
+      const animation = shape.animate(
         joining ? [{ transform: end.transform }, { transform: 'none' }] : [{ transform: 'none' }, { transform: end.transform }],
         { duration: FILL_MS, easing: EASING, fill: leaving ? 'forwards' : 'none' }
       );
@@ -113,7 +151,7 @@ export function SelectionLayer({ selected }: { selected: ReadonlySet<string> }) 
         void animation.finished.then(
           () => {
             draining.current.delete(key);
-            if (!selected.has(key)) rect.remove();
+            if (!selected.has(key)) shape.remove();
             draw({ added: [], removed: [] });
           },
           () => draining.current.delete(key)
@@ -125,8 +163,8 @@ export function SelectionLayer({ selected }: { selected: ReadonlySet<string> }) 
       ...[...tiles]
         .filter(([key]) => !inShape(key))
         .map(([, tile]) => {
-          const cut = document.createElementNS(SVG, 'rect');
-          rounded(cut, tile.box, gap / 2, tile.radius);
+          const cut = document.createElementNS(SVG, 'path');
+          cut.setAttribute('d', outline(tile.box, gap / 2, tile.radius));
           return cut;
         })
     );
