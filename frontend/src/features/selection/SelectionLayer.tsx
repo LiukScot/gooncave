@@ -134,8 +134,9 @@ export function SelectionLayer({ selected }: { selected: ReadonlySet<string> }) 
         shape.dataset.key = key;
         shapes.append(shape);
       }
-      // A little past half the gap, so two selected neighbours overlap and flow together.
-      shape.setAttribute('d', outline(tile.box, gap * 0.75, tile.radius, squareCorners(tile.box, selectedBoxes(key), gap)));
+      // Half a pixel past half the gap: selected neighbours overlap and flow together, while
+      // the outer edge stays on the cut around tiles left out instead of stepping past it.
+      shape.setAttribute('d', outline(tile.box, gap / 2 + 0.5, tile.radius, squareCorners(tile.box, selectedBoxes(key), gap)));
       const joining = changed.added.includes(key);
       const leaving = changed.removed.includes(key);
       if (reduced || (!joining && !leaving)) continue;

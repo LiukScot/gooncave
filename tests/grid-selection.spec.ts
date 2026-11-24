@@ -153,6 +153,11 @@ test('selected tiles flow together across the gap, in from and back to the selec
   const accent = (await page.evaluate(() => getComputedStyle(document.querySelector('.selection-layer')!).fill)).match(/\d+/g)!.map(Number);
   const offColour = Math.max(...firstRowPixels(gap).map(([r, g, b]) => Math.abs(r - accent[0]) + Math.abs(g - accent[1]) + Math.abs(b - accent[2])));
   expect(offColour).toBeLessThan(12);
+  // On its outer side the colour stops at half the gap, where the outline around a tile left
+  // out stops too, so the two never step past each other.
+  const halfGap = (second.x - first.x - first.width) / 2;
+  const beyond = await page.screenshot({ clip: { x: first.x - halfGap - 3, y: first.y + first.height / 2, width: 2, height: 1 } });
+  expect(firstRowPixels(beyond)).toEqual([[0, 0, 0], [0, 0, 0]]);
   // Deselected, the second tile's colour drains back towards the first instead of vanishing.
   await tile(page, '2').click();
   expect(await flow('2')).toMatchObject({ from: 'none', to: 'scale(0, 1)' });
