@@ -20,6 +20,7 @@ import { AutomaticTagging } from './AutomaticTagging';
 import { TrashToggle } from './TrashSettings';
 
 
+
 import {
   api,
   CACHE_LIMITS_GB,
@@ -27,6 +28,7 @@ import {
   type ExtraSettings as ExtraSettingsValue
 } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
+import { AppLockSetting } from '@/features/app-lock/AppLockSetting';
 import { flushReadQueue } from '@/features/read-marks/readQueue';
 import { useExtraSettings, useUpdateExtraSettings } from '@/hooks/settings';
 import { formatBytes } from '@/lib/format';
@@ -330,7 +332,10 @@ export function ExtraSettings({
           </select>
         </div>
       </ExtraGroup>
-      <ExtraGroup group="privacy">{toggles('privacy')}</ExtraGroup>
+      <ExtraGroup group="privacy">
+        <AppLockSetting />
+        {toggles('privacy')}
+      </ExtraGroup>
       <ExtraGroup group="data">
         <AutomaticTagging />
         <TrashToggle />

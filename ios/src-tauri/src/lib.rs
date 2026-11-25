@@ -23,6 +23,7 @@ use tokio::{
 mod background;
 #[cfg(target_os = "ios")]
 mod browser;
+mod lock;
 #[cfg(target_os = "ios")]
 mod media;
 #[cfg(target_os = "ios")]
@@ -420,7 +421,7 @@ pub fn run() {
     background::register();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![retry, haptic])
+        .invoke_handler(tauri::generate_handler![retry, haptic, lock::app_lock])
         .setup(|app| {
             #[cfg(target_os = "ios")]
             gooncave_core::decoder::register(Box::new(media::Native));

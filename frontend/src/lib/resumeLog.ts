@@ -24,6 +24,8 @@ export const installResumeLog = () => {
     const away = performance.now() - hiddenAt;
     hiddenAt = null;
     window.setTimeout(() => {
+      // The app lock blocks the page on purpose.
+      if (document.querySelector('.app-lock')) return;
       const blocked = getComputedStyle(document.body).pointerEvents === 'none';
       const inert = document.querySelectorAll('[inert]').length;
       const dialogs = document.querySelectorAll('[role="dialog"], [role="alertdialog"]').length;

@@ -9,6 +9,8 @@
 		<true/>
 	</dict>
 	<!-- Shown when the person turns on deleting photos after adding them. -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>GoonCave asks for Face ID to unlock, only when you turn on the lock in Settings → Extra.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>GoonCave deletes the photos you added to it from your library, only when you turn that option on.</string>
 	<!-- Without it iOS caps the app's own animations at 60 Hz on a 120 Hz iPhone. -->

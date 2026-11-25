@@ -11,6 +11,8 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ConfirmProvider } from './components/confirm-dialog';
 import { Toaster } from './components/ui/sonner';
+import { installAppLock } from './features/app-lock/appLock';
+import { AppLockScreen } from './features/app-lock/AppLockScreen';
 import { applyAppearance } from './lib/appearanceTheme';
 import { installExternalLinks } from './lib/externalLinks';
 import { listenForHaptics } from './lib/haptics';
@@ -59,6 +61,7 @@ const queryClient = createQueryClient();
 
 // Only the iPhone shell is Tauri; desktop is Electron and the web is a browser.
 if (isTauri()) listenForHaptics();
+installAppLock();
 
 const root = createRoot(container);
 root.render(
@@ -75,6 +78,7 @@ root.render(
           They still go on a swipe, and none of them outlives its own
           timeout. */}
       <Toaster />
+      <AppLockScreen />
       {import.meta.env.DEV ? (
         <ReactQueryDevtools buttonPosition="bottom-left" />
       ) : null}
