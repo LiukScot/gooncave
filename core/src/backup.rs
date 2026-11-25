@@ -72,6 +72,7 @@ async fn restore(State(db): State<Database>, mut multipart: Multipart) -> Result
         }
     }
     let bytes = bytes.ok_or_else(|| Error::Invalid("Choose a backup file to import.".into()))?;
+    let _running = db.sync.running.lock().await;
     let worker = db.clone();
     let result = db
         .call(move |c| sync::import_backup(c, &worker.sync, &bytes))
@@ -113,6 +114,7 @@ async fn take_over(State(db): State<Database>, mut multipart: Multipart) -> Resu
         tokio::task::spawn_blocking(move || read_old(copy.path(), &username))
             .await
             .map_err(|error| Error::Storage(format!("old database reader stopped: {error}")))??;
+    let _running = db.sync.running.lock().await;
     let worker = db.clone();
     let result = db
         .call(move |c| {
@@ -302,6 +304,36 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(key.as_deref(), Some("my-key"));
+    }
+
+    #[tokio::test]
+    async fn an_import_waits_for_a_running_sync_cycle() {
+        use axum::{body::Body, http::Request};
+        use tower::ServiceExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        let file = db.call(|c| sync::backup_file(c)).await.unwrap();
+        let mut body =
+            b"--x\r\nContent-Disposition: form-data; name=\"file\"; filename=\"b.json.gz\"\r\n\r\n"
+                .to_vec();
+        body.extend(file);
+        body.extend(b"\r\n--x--\r\n");
+        let import = || {
+            routes().with_state(db.clone()).oneshot(
+                Request::post("/backup")
+                    .header("content-type", "multipart/form-data; boundary=x")
+                    .body(Body::from(body.clone()))
+                    .unwrap(),
+            )
+        };
+
+        // A cycle between its read of the folder and its save would overwrite what the import wrote.
+        let cycle = db.sync.running.lock().await;
+        let during = tokio::time::timeout(std::time::Duration::from_millis(200), import()).await;
+        assert!(during.is_err(), "the import ran during a sync cycle");
+        drop(cycle);
+        assert_eq!(import().await.unwrap().status(), 200);
     }
 
     #[test]

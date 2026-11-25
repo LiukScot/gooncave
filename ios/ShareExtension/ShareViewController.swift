@@ -69,7 +69,10 @@ final class ShareViewController: UIViewController {
         let copies = DispatchGroup()
         for (index, provider) in providers.enumerated() {
             guard let type = Self.type(of: provider) else {
+                // Copies started earlier may already be counting failures on other threads.
+                lock.lock()
                 failed += 1
+                lock.unlock()
                 continue
             }
             copies.enter()

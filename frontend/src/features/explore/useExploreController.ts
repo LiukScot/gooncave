@@ -584,7 +584,10 @@ export function useExploreController({
         const first = await loadHistoryPage(null, controller.signal);
         if (controller.signal.aborted) return;
         subscriptionCursorRef.current = first.nextCursor;
-        setPosts(await preparePosts(first.posts, controller.signal));
+        const prepared = await preparePosts(first.posts, controller.signal);
+        // An aborted match still resolves, and a newer search's list must not take these posts.
+        if (controller.signal.aborted) return;
+        setPosts(prepared);
         setHasMore(first.nextCursor !== null);
       } catch (error) {
         if (controller.signal.aborted) return;

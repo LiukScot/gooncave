@@ -236,7 +236,9 @@ pub(crate) struct Job {
     /// device's records, so an unchanged snapshot is not downloaded and merged again.
     in_step: Mutex<Option<(String, String)>>,
     pub(crate) wake: tokio::sync::Notify,
-    running: tokio::sync::Mutex<()>,
+    /// Held by a cycle, by connecting or disconnecting a folder and by the manual imports, so a
+    /// cycle never overwrites imported records between its read of the folder and its save.
+    pub(crate) running: tokio::sync::Mutex<()>,
     status: Mutex<Value>,
     /// What the waiting records depended on after the last pass that left some waiting.
     waited_on: Mutex<Option<String>>,
@@ -3827,7 +3829,10 @@ pub(crate) mod tests {
             }
         }
         let a = Device::open(&url, &[]).await;
+        // The backup is named by the UTC day, and the sync may cross midnight.
+        let before = format!("{}.json.gz", &now()[..10]);
         a.sync(Trigger::Full).await;
+        let after = format!("{}.json.gz", &now()[..10]);
         let mut backups: Vec<String> = dav
             .files()
             .into_keys()
@@ -3840,10 +3845,8 @@ pub(crate) mod tests {
         backups.sort();
         assert_eq!(backups.len(), KEEP_BACKUPS);
         assert_eq!(backups[0], "2026-01-03.json.gz");
-        assert_eq!(
-            backups.last().unwrap(),
-            &format!("{}.json.gz", &now()[..10])
-        );
+        let last = backups.last().unwrap();
+        assert!(*last == before || *last == after, "{last}");
     }
 
     #[tokio::test]
