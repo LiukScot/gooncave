@@ -6139,8 +6139,8 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   height: var(--floating-button-size);
   max-width: calc(100vw - var(--selection-bar-left) - max(var(--corner-button-edge), env(safe-area-inset-right)));
   /* The last button sits as far from the end as from the top and bottom, so their curves
-     share a centre; its height is the buttons' h-9. */
-  padding: 0 calc((var(--floating-button-size) - var(--spacing) * 9) / 2) 0 1rem;
+     share a centre. */
+  padding: 0 calc((var(--floating-button-size) - var(--floating-action-size)) / 2) 0 1rem;
   border-radius: calc(var(--floating-button-size) / 2);
   background: hsl(var(--section));
   box-shadow: var(--floating-button-shadow);
@@ -6162,8 +6162,10 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   gap: 0.5rem;
 }
 
+/* As tall as the actions beside the corner button, the smallest a button gets. */
 .selection-bar-button {
   flex: none;
+  height: var(--floating-action-size);
   white-space: nowrap;
   display: inline-flex;
   align-items: center;

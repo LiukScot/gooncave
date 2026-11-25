@@ -30,12 +30,15 @@ export const fillOrigin = (tile: Box, selected: Box[], gap: number): Origin => {
   return { x, y };
 };
 
+type Corners = { topLeft: number; topRight: number; bottomRight: number; bottomLeft: number };
+
 /**
- * Which corners of a selected tile's shape are square: those a selected
- * neighbour reaches past, so the colour runs on into the neighbour's instead
- * of leaving a curved notch between them.
+ * How far each corner of a selected tile's shape may round, in pixels: 0 where a selected
+ * neighbour reaches past it, so the colour runs on into the neighbour's; the step to a
+ * neighbour that ends short of it, so the curve does not start beside the neighbour and open
+ * a spike between them; Infinity without neighbours there.
  */
-export const squareCorners = (tile: Box, selected: Box[], gap: number) => {
+export const cornerRoom = (tile: Box, selected: Box[], gap: number): Corners => {
   const near = (distance: number) => distance >= -1 && distance <= gap + 1;
   const across = (other: Box) => Math.min(tile.bottom, other.bottom) - Math.max(tile.top, other.top) > 0;
   const along = (other: Box) => Math.min(tile.right, other.right) - Math.max(tile.left, other.left) > 0;
@@ -45,20 +48,19 @@ export const squareCorners = (tile: Box, selected: Box[], gap: number) => {
     top: selected.filter((other) => along(other) && near(tile.top - other.bottom)),
     bottom: selected.filter((other) => along(other) && near(other.top - tile.bottom))
   };
-  const reaches = {
-    top: (other: Box) => other.top <= tile.top + 1,
-    bottom: (other: Box) => other.bottom >= tile.bottom - 1,
-    left: (other: Box) => other.left <= tile.left + 1,
-    right: (other: Box) => other.right >= tile.right - 1
+  // How far short of this tile's side the neighbour's matching side ends; 1px or less is level.
+  const short = {
+    top: (other: Box) => other.top - tile.top,
+    bottom: (other: Box) => tile.bottom - other.bottom,
+    left: (other: Box) => other.left - tile.left,
+    right: (other: Box) => tile.right - other.right
   };
-  const square = (vertical: 'top' | 'bottom', horizontal: 'left' | 'right') =>
-    beside[horizontal].some(reaches[vertical]) || beside[vertical].some(reaches[horizontal]);
-  return {
-    topLeft: square('top', 'left'),
-    topRight: square('top', 'right'),
-    bottomRight: square('bottom', 'right'),
-    bottomLeft: square('bottom', 'left')
+  const room = (vertical: 'top' | 'bottom', horizontal: 'left' | 'right') => {
+    const steps = [...beside[horizontal].map(short[vertical]), ...beside[vertical].map(short[horizontal])];
+    const step = Math.min(Infinity, ...steps);
+    return step <= 1 ? 0 : step;
   };
+  return { topLeft: room('top', 'left'), topRight: room('top', 'right'), bottomRight: room('bottom', 'right'), bottomLeft: room('bottom', 'left') };
 };
 
 /**
@@ -67,9 +69,23 @@ export const squareCorners = (tile: Box, selected: Box[], gap: number) => {
  * rounded outline of a tile in that corner would be, so it meets the cut
  * around a tile left out there, or rounds the corner off where none is.
  */
-export const joins = (tiles: { box: Box; radius: number }[], gap: number) => {
+export const joins = (tiles: { box: Box; radius: number }[], gap: number, around: { box: Box }[] = tiles) => {
   const half = gap / 2;
   const near = (distance: number) => distance >= -1 && distance <= gap + 1;
+  // Where the run of selected tiles stacked with `box` in its column ends, up or down: a tile
+  // left out beside the step may sit against any of them, not only `box`.
+  const runEnd = (box: Box, side: 'top' | 'bottom') => {
+    let edge = box[side];
+    for (let moved = true; moved; ) {
+      moved = false;
+      for (const { box: other } of around) {
+        if (Math.min(other.right, box.right) - Math.max(other.left, box.left) <= 0) continue;
+        if (side === 'bottom' && other.bottom > edge && near(other.top - edge)) [edge, moved] = [other.bottom, true];
+        if (side === 'top' && other.top < edge && near(edge - other.bottom)) [edge, moved] = [other.top, true];
+      }
+    }
+    return edge;
+  };
   const fillet = (x: number, y: number, dx: 1 | -1, dy: 1 | -1, room: number, radius: number) => {
     const r = Math.min(radius + half, room);
     return `M${x},${y}V${y + dy * r}A${r},${r} 0 0 ${dx * dy < 0 ? 0 : 1} ${x + dx * r},${y}Z`;
@@ -83,13 +99,13 @@ export const joins = (tiles: { box: Box; radius: number }[], gap: number) => {
       const radius = Math.min(a.radius, b.radius);
       const [inLeft, inRight] = [right.left - half, left.right + half];
       if (left.bottom < right.bottom - 1)
-        paths.push(fillet(inLeft, left.bottom + half, -1, 1, Math.min(right.bottom - left.bottom, left.right - left.left), radius));
+        paths.push(fillet(inLeft, left.bottom + half, -1, 1, Math.min(runEnd(right, 'bottom') - left.bottom, left.right - left.left), radius));
       if (right.bottom < left.bottom - 1)
-        paths.push(fillet(inRight, right.bottom + half, 1, 1, Math.min(left.bottom - right.bottom, right.right - right.left), radius));
+        paths.push(fillet(inRight, right.bottom + half, 1, 1, Math.min(runEnd(left, 'bottom') - right.bottom, right.right - right.left), radius));
       if (left.top > right.top + 1)
-        paths.push(fillet(inLeft, left.top - half, -1, -1, Math.min(left.top - right.top, left.right - left.left), radius));
+        paths.push(fillet(inLeft, left.top - half, -1, -1, Math.min(left.top - runEnd(right, 'top'), left.right - left.left), radius));
       if (right.top > left.top + 1)
-        paths.push(fillet(inRight, right.top - half, 1, -1, Math.min(right.top - left.top, right.right - right.left), radius));
+        paths.push(fillet(inRight, right.top - half, 1, -1, Math.min(right.top - runEnd(left, 'top'), right.right - right.left), radius));
     }
   }
   return paths;
@@ -104,11 +120,11 @@ const gathered = (box: Box, { x, y }: Origin) => ({
   transform: `scale(${x || !y ? 0 : 1}, ${y || !x ? 0 : 1})`
 });
 
-/** `box` grown by `grow` on every side, its corners rounded to the tile's own curve unless square. */
-const outline = (box: Box, grow: number, radius: number, square = { topLeft: false, topRight: false, bottomRight: false, bottomLeft: false }) => {
+/** `box` grown by `grow` on every side, its corners rounded to the tile's own curve within their room. */
+const outline = (box: Box, grow: number, radius: number, room: Corners = cornerRoom(box, [], 0)) => {
   const [left, top, right, bottom] = [box.left - grow, box.top - grow, box.right + grow, box.bottom + grow];
   const r = Math.min(radius + grow, (right - left) / 2, (bottom - top) / 2);
-  const [tl, tr, br, bl] = [square.topLeft, square.topRight, square.bottomRight, square.bottomLeft].map((on) => (on ? 0 : r));
+  const [tl, tr, br, bl] = [room.topLeft, room.topRight, room.bottomRight, room.bottomLeft].map((space) => Math.min(r, space));
   return [
     `M${left + tl},${top}`,
     `H${right - tr}`, tr ? `A${tr},${tr} 0 0 1 ${right},${top + tr}` : '',
@@ -178,25 +194,25 @@ export function SelectionLayer({ selected }: { selected: ReadonlySet<string> }) 
       if (!flowing(key)) {
         // Half a pixel past half the gap: selected neighbours overlap without a seam, while the
         // outer edge stays on the cut around tiles left out instead of stepping past it.
-        group.replaceChildren(path(outline(tile.box, grow, tile.radius, squareCorners(tile.box, boxes(settled, key), gap))));
+        group.replaceChildren(path(outline(tile.box, grow, tile.radius, cornerRoom(tile.box, boxes(settled, key), gap))));
         continue;
       }
       // A tile flowing in or out carries what it changes around it: the corners of settled
       // neighbours it squares, and the rounded joins beside it. Drawn on the neighbours, they
       // would show before the tile's own colour reaches them.
       const others = [...tiles].filter(([other]) => other !== key && inShape(other));
-      const pieces = [path(outline(tile.box, grow, tile.radius, squareCorners(tile.box, boxes(others, key), gap)))];
+      const pieces = [path(outline(tile.box, grow, tile.radius, cornerRoom(tile.box, boxes(others, key), gap)))];
       for (const [other, neighbour] of settled) {
-        const before = squareCorners(neighbour.box, boxes(settled, other), gap);
-        const after = squareCorners(neighbour.box, [...boxes(settled, other), tile.box], gap);
+        const before = cornerRoom(neighbour.box, boxes(settled, other), gap);
+        const after = cornerRoom(neighbour.box, [...boxes(settled, other), tile.box], gap);
         const [left, top, right, bottom] = [neighbour.box.left - grow, neighbour.box.top - grow, neighbour.box.right + grow, neighbour.box.bottom + grow];
         const r = Math.min(neighbour.radius + grow, (right - left) / 2, (bottom - top) / 2);
         const corners = { topLeft: [left, top], topRight: [right - r, top], bottomRight: [right - r, bottom - r], bottomLeft: [left, bottom - r] } as const;
         for (const corner of Object.keys(corners) as (keyof typeof corners)[]) {
-          if (after[corner] && !before[corner]) pieces.push(path(`M${corners[corner][0]},${corners[corner][1]}h${r}v${r}h${-r}Z`));
+          if (Math.min(r, after[corner]) < Math.min(r, before[corner])) pieces.push(path(`M${corners[corner][0]},${corners[corner][1]}h${r}v${r}h${-r}Z`));
         }
       }
-      for (const [, other] of others) pieces.push(...joins([tile, other], gap).map(path));
+      for (const [, other] of others) pieces.push(...joins([tile, other], gap, others.map(([, around]) => around).concat(tile)).map(path));
       group.replaceChildren(...pieces);
       const joining = changed.added.includes(key);
       const leaving = changed.removed.includes(key);

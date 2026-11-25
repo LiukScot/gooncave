@@ -1,6 +1,6 @@
 import { inflateSync } from 'node:zlib';
 
-import { barOnCornerRow, selectionPosts as posts, serveFixtureSite, tile } from './gridSelectionFixtures';
+import { barOnCornerRow, fixturePost, selectionPosts as posts, serveFixtureSite, tile } from './gridSelectionFixtures';
 import { expect, test } from './helpers';
 
 /** The first row of an 8-bit RGB or RGBA screenshot, as [r, g, b] per pixel. */
@@ -166,6 +166,55 @@ test('a tile joining the selection squares its neighbour\'s corner only as its c
   const y = second.y <= first.y + 1 ? first.y - quarter : first.y + first.height + quarter;
   const corner = await page.screenshot({ clip: { x: first.x + first.width + quarter, y, width: 1, height: 1 } });
   expect(firstRowPixels(corner)).toEqual([[0, 0, 0]]);
+});
+
+test('two selected tiles that end a few pixels apart meet without a spike between them', async ({ page }) => {
+  await page.setViewportSize({ width: 400, height: 800 });
+  // Two columns: the second tile ends a few pixels below the first, and the third tile, left
+  // out, sits under the first.
+  await serveFixtureSite(page, [fixturePost('1'), fixturePost('2', 495), fixturePost('3'), fixturePost('4')]);
+  await page.goto('/app/explore');
+  await tile(page, '1').click({ modifiers: ['Control'] });
+  await tile(page, '2').click();
+  await expect.poll(() => page.evaluate(() => [...document.querySelectorAll('.selection-layer [data-key]')]
+    .flatMap((shape) => shape.getAnimations()).length)).toBe(0);
+  const first = (await tile(page, '1').boundingBox())!;
+  const second = (await tile(page, '2').boundingBox())!;
+  expect(second.x).toBeGreaterThan(first.x + first.width);
+  const step = second.y + second.height - (first.y + first.height);
+  expect(step).toBeGreaterThan(1);
+  expect(step).toBeLessThan(8);
+  // Just inside the second tile's half of the gap, level with the end of the first tile.
+  const middle = (first.x + first.width + second.x) / 2;
+  const seam = await page.screenshot({ clip: { x: middle + 1, y: first.y + first.height - 1, width: 1, height: 1 } });
+  const accent = (await page.evaluate(() => getComputedStyle(document.querySelector('.selection-layer')!).fill)).match(/\d+/g)!.map(Number);
+  const [[r, g, b]] = firstRowPixels(seam);
+  expect(Math.abs(r - accent[0]) + Math.abs(g - accent[1]) + Math.abs(b - accent[2])).toBeLessThan(12);
+});
+
+test('the colour wraps the corner of a tile left out between selected tiles beside and below it', async ({ page }) => {
+  await page.setViewportSize({ width: 400, height: 800 });
+  // Two columns: the first tile, left out, ends 3px below the second; the third and fourth
+  // stack under them, so the tile under the first starts 3px below the one beside it.
+  await serveFixtureSite(page, [fixturePost('1'), fixturePost('2', 469), fixturePost('3'), fixturePost('4')]);
+  await page.goto('/app/explore');
+  await tile(page, '2').click({ modifiers: ['Control'] });
+  await tile(page, '3').click();
+  await tile(page, '4').click();
+  await expect.poll(() => page.evaluate(() => [...document.querySelectorAll('.selection-layer [data-key]')]
+    .flatMap((shape) => shape.getAnimations()).length)).toBe(0);
+  const left = (await tile(page, '1').boundingBox())!;
+  const beside = (await tile(page, '2').boundingBox())!;
+  const below = (await tile(page, '4').boundingBox())!;
+  expect(below.x).toBe(left.x);
+  expect(beside.x).toBeGreaterThan(left.x + left.width);
+  const half = (below.y - left.y - left.height) / 2;
+  const middle = (left.x + left.width + beside.x) / 2;
+  // Inside the square corner of the gap around the first tile, outside its rounded outline.
+  const corner = await page.screenshot({ clip: { x: middle - 3, y: left.y + left.height + half - 3, width: 1, height: 1 } });
+  const accent = (await page.evaluate(() => getComputedStyle(document.querySelector('.selection-layer')!).fill)).match(/\d+/g)!.map(Number);
+  const [[r, g, b]] = firstRowPixels(corner);
+  expect(Math.abs(r - accent[0]) + Math.abs(g - accent[1]) + Math.abs(b - accent[2])).toBeLessThan(12);
 });
 
 test('selected tiles flow together across the gap, in from and back to the selected tile beside them', async ({ page }) => {
