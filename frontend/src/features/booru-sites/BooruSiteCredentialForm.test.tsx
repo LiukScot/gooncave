@@ -161,3 +161,23 @@ it('signs in to Rule34 in place of its cookie field and explains where the API k
   await act(async () => signInButton()?.click());
   expect(onSignIn).toHaveBeenCalledOnce();
 });
+
+it('keeps the clear buttons outside the labels and names what each clears', async () => {
+  const site = { id: 'site', name: 'FurAffinity', engine: 'furaffinity', username: 'me',
+    hasApiKey: false, hasSessionCookie: true, engineSupportsSessionCookie: true } as BooruSite;
+  const container = document.createElement('div');
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(<BooruSiteCredentialForm site={site} schema="username+session-cookie"
+      loading={false} testing={false}
+      onSave={vi.fn(async () => site)} onTest={vi.fn()} onClearTags={vi.fn()} onDelete={vi.fn()} />);
+  });
+  // A button inside a label for an input is a second control the label names.
+  expect(container.querySelector('label[for] button')).toBeNull();
+  const clears = Array.from(container.querySelectorAll('button'))
+    .filter((button) => button.textContent?.trim() === 'clear');
+  expect(clears.length).toBeGreaterThan(0);
+  for (const button of clears) {
+    expect(button.getAttribute('aria-label')).toBe('Clear the saved cookies a and b');
+  }
+});

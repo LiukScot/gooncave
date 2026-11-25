@@ -184,6 +184,7 @@ export function BooruSiteCredentialForm({
               <button
                 type="button"
                 className="btn btn-link btn-sm p-0 align-baseline text-destructive"
+                aria-label={`Clear the saved ${fields.apiKeyLabel.toLowerCase()}`}
                 onClick={() => clearSecret('apiKey')}
                 disabled={loading}
               >
@@ -219,6 +220,7 @@ export function BooruSiteCredentialForm({
                 <button
                   type="button"
                   className="btn btn-link btn-sm p-0 ml-2 align-baseline text-destructive"
+                  aria-label="Clear the saved cookies a and b"
                   onClick={() => clearSecret('sessionCookie')}
                   disabled={loading}
                 >
@@ -242,25 +244,28 @@ export function BooruSiteCredentialForm({
             ) : null}
           </div>
           <div>
-            <label
-              className="form-label text-sm mb-1 text-muted-foreground"
-              htmlFor={cookieBId}
-            >
-              Cookie b
-              {site.hasSessionCookie ? (
-                <>
+            <div className="flex items-center gap-2 mb-1">
+              <label
+                className="form-label text-sm mb-0 text-muted-foreground"
+                htmlFor={cookieBId}
+              >
+                Cookie b
+                {site.hasSessionCookie ? (
                   <span className="text-muted-foreground"> · saved</span>
-                  <button
-                    type="button"
-                    className="btn btn-link btn-sm p-0 ml-2 align-baseline text-destructive"
-                    onClick={() => clearSecret('sessionCookie')}
-                    disabled={loading}
-                  >
-                    clear
-                  </button>
-                </>
+                ) : null}
+              </label>
+              {site.hasSessionCookie ? (
+                <button
+                  type="button"
+                  className="btn btn-link btn-sm p-0 ml-2 align-baseline text-destructive"
+                  aria-label="Clear the saved cookies a and b"
+                  onClick={() => clearSecret('sessionCookie')}
+                  disabled={loading}
+                >
+                  clear
+                </button>
               ) : null}
-            </label>
+            </div>
             <input
               id={cookieBId}
               type="password"
@@ -292,6 +297,7 @@ export function BooruSiteCredentialForm({
               <button
                 type="button"
                 className="btn btn-link btn-sm p-0 ml-2 align-baseline text-destructive"
+                aria-label="Clear the saved session cookie"
                 onClick={() => clearSecret('sessionCookie')}
                 disabled={loading}
               >
