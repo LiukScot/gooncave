@@ -1,13 +1,14 @@
 import { Pause, Play, Volume2, VolumeX } from 'lucide-react';
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type CSSProperties,
   type ComponentProps
 } from 'react';
 
-import { DOUBLE_TAP_MS, useTouchDoubleTap, videoThird } from './useDoubleTapFullscreen';
+import { DOUBLE_TAP_MS, SKIP_EVENT, useTouchDoubleTap, videoThird } from './useDoubleTapFullscreen';
 import { togglePlayback } from './videoLoop';
 
 import { formatDuration } from '@/lib/format';
@@ -77,6 +78,19 @@ export function VideoPlayer({
     touchDoubleTapAt.current = performance.now();
     skipFrom(event.currentTarget as HTMLVideoElement, x);
   });
+
+  // A double tap on the band beside the video (useDoubleTapFullscreen).
+  const skipRef = useRef(skipFrom);
+  skipRef.current = skipFrom;
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onSkip = (event: Event) => {
+      skipRef.current(video, (event as CustomEvent<number>).detail);
+    };
+    video.addEventListener(SKIP_EVENT, onSkip);
+    return () => video.removeEventListener(SKIP_EVENT, onSkip);
+  }, []);
 
   const audible = sound.muted ? 0 : sound.volume;
 

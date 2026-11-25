@@ -48,9 +48,16 @@ export function useTouchDoubleTap(onDoubleTap: (event: TouchEvent, x: number, y:
   };
 }
 
-/** Where a tap at `x` falls on a video: its left third, middle or right third. */
+/** Sent to a video with the tap's `clientX` when a double tap beside it should skip. */
+export const SKIP_EVENT = 'gooncave:video-skip';
+
+/**
+ * Where a tap at `x` falls on a video: the left third, middle or right third of the area it is
+ * shown in, so the bands beside a narrow video count as its sides.
+ */
 export const videoThird = (video: HTMLVideoElement, x: number): 'back' | 'middle' | 'forward' => {
-  const { left, width } = video.getBoundingClientRect();
+  const area = video.closest('.file-detail-media-wrap') ?? video;
+  const { left, width } = area.getBoundingClientRect();
   const at = (x - left) / width;
   return at <= 1 / 3 ? 'back' : at >= 2 / 3 ? 'forward' : 'middle';
 };
@@ -86,7 +93,15 @@ export function useDoubleTapFullscreen({
       target instanceof HTMLVideoElement ||
       (target instanceof Element && target.classList.contains('file-detail-media-wrap'));
     if (!onPicture) return;
-    if (fullscreen && action === 'zoom') zoom.zoomInOn(point);
+    const video =
+      target instanceof HTMLVideoElement ? target : (target as Element).querySelector('video');
+    if (video && target !== video && videoThird(video, point.x) !== 'middle') {
+      // A band beside the video: the video skips, as on its own sides (VideoPlayer).
+      video.dispatchEvent(new CustomEvent<number>(SKIP_EVENT, { detail: point.x }));
+      return;
+    }
+    // A video zooms only with a pinch: a double tap on it skips or toggles fullscreen.
+    if (fullscreen && action === 'zoom' && !video) zoom.zoomInOn(point);
     else toggle();
   };
 
