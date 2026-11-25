@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './helpers';
 
 const surfaces = (page: Page) =>
   page.evaluate(() => {

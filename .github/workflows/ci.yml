@@ -229,6 +229,10 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
+      # Specs must import `test` from tests/helpers.ts, or they skip its console check.
+      - name: Lint browser tests
+        run: npx eslint --max-warnings=0 tests playwright.config.ts 'desktop/electron/*.ts'
+
       # vite build does not typecheck, so without this the frontend can ship
       # references that do not exist.
       - name: Typecheck frontend

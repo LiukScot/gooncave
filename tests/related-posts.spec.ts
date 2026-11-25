@@ -1,6 +1,4 @@
-import { expect, test } from '@playwright/test';
-
-import { thumbnailablePng, uploadSampleImages } from './helpers';
+import { expect, test, thumbnailablePng, uploadSampleImages } from './helpers';
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 

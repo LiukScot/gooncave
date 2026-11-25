@@ -1,6 +1,4 @@
-import { expect, test } from '@playwright/test';
-
-import { videoFixture } from './helpers';
+import { expect, test, videoFixture } from './helpers';
 
 test.describe('desktop video controls', () => {
   test.use({ viewport: { width: 1280, height: 800 } });

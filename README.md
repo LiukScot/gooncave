@@ -123,7 +123,8 @@ npm run test:desktop
 ```
 
 `npm run test:desktop` opens the desktop window in Electron; run
-`npm ci --prefix desktop/electron` once first.
+`npm ci --prefix desktop/electron` once first. [What the tests cover](docs/testing.md)
+lists what each suite sees and the checks to make by hand.
 
 Enable the pre-commit hook with `npm run prepare`.
 
