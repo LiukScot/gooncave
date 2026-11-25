@@ -1012,6 +1012,11 @@ export const api = {
     const data = await handle<unknown>(res);
     return z.object({ version: z.string(), commit: z.string(), platform: z.string(), schema: z.string(), jobs: z.array(z.string()).max(20), log: z.string() }).parse(data);
   },
+  getAppUpdate: async () => {
+    const res = await apiFetch(`${API_BASE}/update`);
+    const data = await handle<unknown>(res);
+    return z.object({ current: z.string(), latest: z.string().nullable(), newer: z.boolean(), url: z.string().url() }).parse(data);
+  },
   reportWindowError: async (message: string) => {
     const res = await apiFetch(`${API_BASE}/report/window-error`, {
       method: 'POST',

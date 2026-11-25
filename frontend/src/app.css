@@ -1212,6 +1212,7 @@ html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::after
 }
 
 .app-menu-button {
+  position: relative;
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -1228,6 +1229,31 @@ html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::after
 .app-menu-button > svg {
   width: 1.625rem;
   height: 1.625rem;
+}
+
+/* A new version is out: see the first row of Settings. */
+.update-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+}
+
+.app-menu-link > .update-dot {
+  margin-left: auto;
+}
+
+/* The active link is filled with the dot's colour. */
+.app-menu-link.is-active > .update-dot {
+  background: currentColor;
+}
+
+.app-menu-button > .update-dot {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  box-shadow: 0 0 0 2px hsl(var(--background));
 }
 
 @media (hover: hover) {

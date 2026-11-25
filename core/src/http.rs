@@ -244,6 +244,7 @@ fn routes(database: Database) -> Router {
         )
         .route("/files/{id}/content", get(content))
         .merge(crate::app_log::routes())
+        .merge(crate::app_update::routes())
         .merge(crate::source_routes::routes())
         .merge(crate::wd14::routes())
         .merge(crate::duplicates::routes())

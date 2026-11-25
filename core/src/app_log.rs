@@ -88,7 +88,7 @@ fn clean(message: &str) -> String {
         .collect()
 }
 
-fn version() -> &'static str {
+pub(crate) fn version() -> &'static str {
     // Release builds receive it from the release workflow; see docs/versioning.md.
     option_env!("GOONCAVE_VERSION").unwrap_or("development")
 }

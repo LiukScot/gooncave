@@ -10,6 +10,7 @@ macro_rules! eprintln {
 }
 
 pub mod app_log;
+mod app_update;
 mod auto_favorite;
 pub mod background;
 mod backup;

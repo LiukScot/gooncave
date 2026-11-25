@@ -5,6 +5,7 @@ export const queryKeys = {
   tagDatabase: ['tag-database'] as const,
   originals: ['originals'] as const,
   report: ['report'] as const,
+  appUpdate: ['app-update'] as const,
   folders: {
     all: ['folders'] as const,
     list: () => [...queryKeys.folders.all, 'list'] as const

@@ -2,7 +2,9 @@ import { Link } from '@tanstack/react-router';
 import {
   Bug,
   ChevronRight,
+  ExternalLink,
   Copy,
+  Download,
   EyeOff,
   FolderSync,
   Keyboard,
@@ -17,6 +19,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 
 import { PageTitle } from '@/features/shell/PageTitle';
+import { useAppUpdate } from '@/hooks/appUpdate';
 
 
 const SETTINGS_ITEMS: {
@@ -105,12 +108,33 @@ const SETTINGS_ITEMS: {
 ];
 
 export function SettingsMenu() {
+  const update = useAppUpdate().data;
 
   return (
     <div className="page-chrome">
       <PageTitle icon={<Settings className="page-title-icon" aria-hidden="true" />}>
         Settings
       </PageTitle>
+      {update?.newer ? (
+        <div className="list-group list-group-segmented mb-4">
+          <a
+            href={update.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="list-group-item flex items-center gap-3"
+          >
+            <Download className="size-5 text-primary shrink-0" aria-hidden="true" />
+            <span className="flex-1 min-w-0">
+              <span className="block font-medium">GoonCave {update.latest?.replace(/^v/, '')} is out</span>
+              <span className="block text-muted-foreground text-xs">
+                You have {update.current}. Open the releases page to get it. On Linux the update
+                arrives through your software center.
+              </span>
+            </span>
+            <ExternalLink className="size-4 text-muted-foreground shrink-0" aria-hidden="true" />
+          </a>
+        </div>
+      ) : null}
       <div className="list-group list-group-segmented">
         {SETTINGS_ITEMS.map(({ to, label, description, icon: Icon }) => (
           <Link

@@ -94,6 +94,11 @@ it during its build; source package
 versions remain development placeholders. CI builds use the same package
 filenames inside run-specific artifacts and are not releases.
 
+Once a day a release build asks GitHub for the latest published release. When
+its tag is higher than the running version, the menu shows a dot and Settings
+opens with a row that links to the releases page. Drafts do not count, and a
+build without `GOONCAVE_VERSION` never asks.
+
 The agent that started the run writes `**New**` and `**Fixed**` lists; omit
 empty lists. Mention the platform when a change applies only there. Compare
 with the previous release's code; PR descriptions and labels are only hints.

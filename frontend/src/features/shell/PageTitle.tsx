@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 
 import { OfflineChip } from './OfflineChip';
 
+import { useAppUpdate } from '@/hooks/appUpdate';
 import { useAppMenuStore } from '@/stores/appMenuStore';
 
 /** Near the top of the page the heading always shows. */
@@ -65,15 +66,17 @@ export function PageTitle({
 }) {
   const setOpen = useAppMenuStore((state) => state.setOpen);
   const hidden = useHiddenWhileScrollingDown();
+  const newer = useAppUpdate().data?.newer === true;
   return (
     <div className={`page-header mb-4${hidden ? ' is-scrolled-away' : ''}`}>
       <button
         type="button"
         className="app-menu-button"
-        aria-label="Open menu"
+        aria-label={newer ? 'Open menu, a new version is out' : 'Open menu'}
         onClick={() => setOpen(true)}
       >
         <PanelLeft aria-hidden="true" />
+        {newer ? <span className="update-dot" aria-hidden="true" /> : null}
       </button>
       <h1 className="uppercase font-semibold file-detail-section-title page-title">
         {icon}
