@@ -6177,3 +6177,19 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   aspect-ratio: 1;
   padding: 0;
 }
+
+/* A feed under an open post. Unlike display: none it keeps the cards' layout, so going back does
+   not lay out every loaded card again in the frame the back gesture needs. */
+.kept-under-detail {
+  content-visibility: hidden;
+}
+/* Thumbnails keep loading under the post. Out of sight their fade would never finish: the
+   browser kept each one as a pending transition until the feed showed again. */
+.kept-under-detail * {
+  transition: none !important;
+}
+@supports not (content-visibility: hidden) {
+  .kept-under-detail {
+    display: none;
+  }
+}

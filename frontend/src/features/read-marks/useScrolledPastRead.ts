@@ -21,6 +21,9 @@ const FALLBACK_ROW_HEIGHT = 220;
  * Taking a single card's height instead made the threshold jump between runs:
  * the first tile can be a portrait twice the height of the next one.
  */
+/** How many cards the row height is averaged on. */
+const ROW_SAMPLE = 48;
+
 export const averageRowHeight = (cardHeights: readonly number[]): number => {
   const laidOut = cardHeights.filter((height) => height > 0);
   if (!laidOut.length) return FALLBACK_ROW_HEIGHT;
@@ -91,8 +94,9 @@ export function useScrolledPastRead(
     const cards = [...grid.querySelectorAll<HTMLElement>('[data-read-key]')];
     if (!cards.length) return;
 
+    // A sample: measuring every card of a long feed laid it all out in one frame.
     const rowHeight = averageRowHeight(
-      cards.map((card) => card.getBoundingClientRect().height)
+      cards.slice(0, ROW_SAMPLE).map((card) => card.getBoundingClientRect().height)
     );
     const readDistance = Math.round(ROWS_BEHIND * rowHeight);
     const mark = (key: string, target?: Element) => {
