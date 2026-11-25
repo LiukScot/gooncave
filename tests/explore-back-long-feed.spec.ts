@@ -6,9 +6,10 @@ test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 }
 
 /**
  * The longest frame of the way back from a post opened far down a feed of `count` cards, with the
- * CPU slowed like a phone's. Explore keeps every loaded card mounted under the open post.
+ * CPU slowed like a phone's, and the time a fixed piece of work takes at that speed. Explore keeps
+ * every loaded card mounted under the open post.
  */
-async function backFrameMs(page: Page, count: number): Promise<number> {
+async function backFrame(page: Page, count: number): Promise<{ frame: number; reference: number }> {
   const posts: ExplorePost[] = Array.from({ length: count }, (_, index) => ({
     remoteId: String(index + 1), siteId: 'fixture', siteName: 'Fixture', engine: 'e621',
     previewUrl: `https://img.fixture.invalid/${index + 1}.png`, sampleUrl: null,
@@ -30,13 +31,25 @@ async function backFrameMs(page: Page, count: number): Promise<number> {
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
   try {
     // No locator polls while the frames are recorded: a poll's own work would count as the app's.
-    return await page.evaluate(() => new Promise<number>((resolve) => {
+    return await page.evaluate(() => new Promise<{ frame: number; reference: number }>((resolve) => {
+      // The same work on any machine: styling and laying out 3000 plain boxes once.
+      const start = performance.now();
+      const boxes = document.createElement('div');
+      for (let index = 0; index < 3_000; index += 1) {
+        const box = boxes.appendChild(document.createElement('div'));
+        box.style.cssText = `width:${index % 7 + 40}px;height:${index % 5 + 20}px;display:inline-block`;
+        box.textContent = String(index);
+      }
+      document.body.append(boxes);
+      void boxes.offsetHeight;
+      boxes.remove();
+      const reference = performance.now() - start;
       let longest = 0;
       new PerformanceObserver((list) => {
         for (const frame of list.getEntries()) longest = Math.max(longest, frame.duration);
       }).observe({ type: 'long-animation-frame' });
       history.back();
-      setTimeout(() => resolve(longest), 2_500);
+      setTimeout(() => resolve({ frame: longest, reference }), 2_500);
     }));
   } finally {
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
@@ -53,8 +66,10 @@ test('going back from a post far down a long feed does not freeze the back gestu
     engineCredentialSchema: 'username_api_key', sortOrder: 0
   }] } }));
   await page.route('https://img.fixture.invalid/**', (route) => route.fulfill({ contentType: 'image/png', body: Buffer.from(thumbnailablePng, 'base64') }));
-  const longest = await backFrameMs(page, 1_500);
-  console.log(`[developer] Longest frame going back after 1500 cards: ${Math.round(longest)} ms`);
-  // Measured at 4x: 885-1042 ms while every card was laid out and redrawn again, about 250 ms since.
-  expect(longest).toBeLessThan(500);
+  const { frame, reference } = await backFrame(page, 1_500);
+  console.log(`[developer] Longest frame going back after 1500 cards: ${Math.round(frame)} ms, ${(frame / reference).toFixed(1)} times the reference work`);
+  // In milliseconds the frame changes with the machine (250 to 850 ms with the fix on the same
+  // laptop), so it is compared with work of a fixed size. Measured at 4x: 11.2-11.5 times while every
+  // card was laid out and redrawn again, 4.7-4.9 since.
+  expect(frame / reference).toBeLessThan(8);
 });
