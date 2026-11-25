@@ -23,31 +23,44 @@ function releaseOnDetach(video: HTMLVideoElement | null) {
   };
 }
 
+/** Calls `grant` once one of `limit` places is free; the returned function gives the place back
+    or leaves the queue, and does nothing when called again. */
+function places(limit: number) {
+  let free = limit;
+  const waiting: Array<() => void> = [];
+  return (grant: () => void): (() => void) => {
+    let held = false;
+    let left = false;
+    const take = () => {
+      held = true;
+      free -= 1;
+      grant();
+    };
+    if (free > 0) take();
+    else waiting.push(take);
+    return () => {
+      if (left) return;
+      left = true;
+      if (held) {
+        free += 1;
+        waiting.shift()?.();
+      } else {
+        waiting.splice(waiting.indexOf(take), 1);
+      }
+    };
+  };
+}
+
 /** Tiles that may play at once. Each one holds a video decoder, and the iPhone web view is
     closed and reloaded when too many run together. */
 export const MAX_PLAYING_TILES = 6;
-let freeSlots = MAX_PLAYING_TILES;
-const waiting: Array<() => void> = [];
+const claimSlot = places(MAX_PLAYING_TILES);
 
-/** Calls `grant` once a slot is free; the returned function gives the slot back or leaves the queue. */
-function claimSlot(grant: () => void): () => void {
-  let held = false;
-  const take = () => {
-    held = true;
-    freeSlots -= 1;
-    grant();
-  };
-  if (freeSlots > 0) take();
-  else waiting.push(take);
-  return () => {
-    if (held) {
-      freeSlots += 1;
-      waiting.shift()?.();
-    } else {
-      waiting.splice(waiting.indexOf(take), 1);
-    }
-  };
-}
+/** Previews downloading at once. The browser opens at most 6 connections to the core; six slow
+    GIF conversions held all of them, and the open post's video waited for one to end. The core
+    converts 2 GIFs at a time, so more downloads would only wait there too. */
+export const MAX_PREVIEW_DOWNLOADS = 2;
+const claimDownload = places(MAX_PREVIEW_DOWNLOADS);
 
 function NearViewportMotion({ src, fetchPreview = false }: { src: string; fetchPreview?: boolean }) {
   const anchor = useRef<HTMLSpanElement>(null);
@@ -98,23 +111,27 @@ function MotionVideo({ src, fetchPreview, onError }: { src: string; fetchPreview
     if (!fetchPreview) return;
     const controller = new AbortController();
     let url: string | undefined;
-    void fetch(src, { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error(`Preview request failed (${response.status})`);
-        return response.blob();
-      })
-      .then((preview) => {
-        if (controller.signal.aborted) return;
-        url = URL.createObjectURL(preview);
-        setBlob(url);
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        console.warn('[developer] Cannot load the animated thumbnail.', error);
-        onError();
-      });
+    const release = claimDownload(() => {
+      void fetch(src, { signal: controller.signal })
+        .then((response) => {
+          if (!response.ok) throw new Error(`Preview request failed (${response.status})`);
+          return response.blob();
+        })
+        .then((preview) => {
+          if (controller.signal.aborted) return;
+          url = URL.createObjectURL(preview);
+          setBlob(url);
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          console.warn('[developer] Cannot load the animated thumbnail.', error);
+          onError();
+        })
+        .finally(() => release());
+    });
     return () => {
       controller.abort();
+      release();
       if (url) URL.revokeObjectURL(url);
     };
   }, [fetchPreview, onError, src]);

@@ -4,7 +4,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { MAX_PLAYING_TILES, ThumbnailMotion } from './ThumbnailMotion';
+import { MAX_PLAYING_TILES, MAX_PREVIEW_DOWNLOADS, ThumbnailMotion } from './ThumbnailMotion';
 
 import { API_BASE } from '@/api';
 
@@ -48,6 +48,46 @@ it('plays only a bounded number of GIF tiles at once, and a waiting tile takes a
   await act(async () => render([providerPoster, '/thumbnails/still.jpg'], providerPoster));
   expect([...container.querySelectorAll('video')].map((video) => video.getAttribute('src')))
     .toEqual([`blob:${API_BASE}${providerPoster}?motion=1`]);
+
+  await act(async () => root.unmount());
+  container.remove();
+});
+
+it('downloads only a bounded number of previews at once, so other requests to the core still get a connection', async () => {
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      constructor(private readonly callback: IntersectionObserverCallback) {}
+      observe() {
+        this.callback([{ isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver);
+      }
+      disconnect() {}
+    }
+  );
+  const pending: Array<() => void> = [];
+  const started: string[] = [];
+  vi.stubGlobal('fetch', (src: string) => {
+    started.push(src);
+    return new Promise((resolve) => pending.push(() => resolve({ ok: true, blob: () => Promise.resolve({ src }) })));
+  });
+  vi.spyOn(URL, 'createObjectURL').mockImplementation((preview) => `blob:${(preview as unknown as { src: string }).src}`);
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+  const tiles = Array.from({ length: MAX_PLAYING_TILES }, (_, index) => `/thumbnails/slow${index}-motion.jpg`);
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+
+  await act(async () => root.render(<>{tiles.map((poster) => <ThumbnailMotion key={poster} poster={poster} />)}</>));
+  expect(started).toHaveLength(MAX_PREVIEW_DOWNLOADS);
+
+  await act(async () => pending.shift()?.());
+  expect(started).toHaveLength(MAX_PREVIEW_DOWNLOADS + 1);
+  expect(container.querySelectorAll('video')).toHaveLength(1);
+
+  // A tile that leaves before its download ends gives its place to a waiting one.
+  await act(async () => root.render(<>{tiles.slice(0, 1).concat(tiles.slice(3)).map((poster) => <ThumbnailMotion key={poster} poster={poster} />)}</>));
+  expect(started).toHaveLength(MAX_PREVIEW_DOWNLOADS + 3);
 
   await act(async () => root.unmount());
   container.remove();
