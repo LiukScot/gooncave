@@ -4,8 +4,8 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 
-const queueReads = vi.hoisted(() => vi.fn());
-vi.mock('@/features/read-marks/readQueue', () => ({ queueReads }));
+const queueLoadedReads = vi.hoisted(() => vi.fn());
+vi.mock('@/features/read-marks/readQueue', () => ({ queueLoadedReads }));
 
 import { ExploreReadFooter } from './ExploreReadFooter';
 
@@ -16,7 +16,7 @@ let root: ReturnType<typeof createRoot> | null = null;
 afterEach(() => {
   act(() => root?.unmount());
   root = null;
-  queueReads.mockReset();
+  queueLoadedReads.mockReset();
 });
 
 it('marks the loaded Popular page even when Unread only is off', () => {
@@ -25,7 +25,7 @@ it('marks the loaded Popular page even when Unread only is off', () => {
   root = createRoot(container);
   act(() => root?.render(
     <ExploreReadFooter
-      posts={[{ siteId: 'site', remoteId: '1' }, { siteId: 'site', remoteId: '2' }]}
+      posts={[{ siteId: 'site', siteName: 'Site', remoteId: '1' }, { siteId: 'site', siteName: 'Site', remoteId: '2' }]}
       hasMore
       readHidden={false}
       readTrackingEnabled
@@ -37,7 +37,10 @@ it('marks the loaded Popular page even when Unread only is off', () => {
   ));
 
   act(() => container.querySelector('button')?.click());
-  expect(queueReads).toHaveBeenCalledWith('post', ['site:1', 'site:2']);
+  expect(queueLoadedReads).toHaveBeenCalledWith('Load more', [
+    { siteId: 'site', siteName: 'Site', remoteId: '1' },
+    { siteId: 'site', siteName: 'Site', remoteId: '2' }
+  ]);
   expect(loadMore).toHaveBeenCalledOnce();
 });
 
@@ -47,7 +50,7 @@ it('offers completion on the last unread page', () => {
   root = createRoot(container);
   act(() => root?.render(
     <ExploreReadFooter
-      posts={[{ siteId: 'site', remoteId: '1' }]}
+      posts={[{ siteId: 'site', siteName: 'Site', remoteId: '1' }]}
       hasMore={false}
       readHidden={false}
       readTrackingEnabled
@@ -68,7 +71,7 @@ it('loads more without marking posts when read tracking is off', () => {
   root = createRoot(container);
   act(() => root?.render(
     <ExploreReadFooter
-      posts={[{ siteId: 'site', remoteId: '1' }]}
+      posts={[{ siteId: 'site', siteName: 'Site', remoteId: '1' }]}
       hasMore
       readHidden={false}
       readTrackingEnabled={false}
@@ -80,6 +83,6 @@ it('loads more without marking posts when read tracking is off', () => {
   ));
 
   act(() => container.querySelector('button')?.click());
-  expect(queueReads).not.toHaveBeenCalled();
+  expect(queueLoadedReads).not.toHaveBeenCalled();
   expect(loadMore).toHaveBeenCalledOnce();
 });

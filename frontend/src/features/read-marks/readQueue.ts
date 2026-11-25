@@ -1,4 +1,5 @@
 import { api, API_BASE, type ExplorePost } from '@/api';
+import { logDeveloper } from '@/lib/windowErrorLog';
 
 export type ReadScope = 'post';
 
@@ -151,6 +152,8 @@ const isRetryable = (error: unknown): boolean => {
 const send = async (scope: ReadScope): Promise<boolean> => {
   const keys = [...pending[scope]];
   if (!keys.length) return true;
+  // A scroll sends a few marks at a time; more than one batch came from a button or a reload.
+  if (keys.length > MAX_BATCH) logDeveloper(`Sending ${keys.length} read marks at once.`);
   for (const batch of batches(keys)) {
     try {
       await api.markRead(scope, batch, postsFor(batch));
@@ -248,6 +251,22 @@ export const queueReads = (scope: ReadScope, keys: readonly string[]) => {
     timer = null;
     for (const scope of SCOPES) void sendScope(scope);
   }, FLUSH_DELAY_MS);
+};
+
+/**
+ * Marks every loaded post read at once, from a button that does so. The app log names the button
+ * and counts the posts of each site: a feed found all read can then be traced to the press.
+ */
+export const queueLoadedReads = (
+  origin: 'Load more' | 'Mark as read',
+  posts: readonly Pick<ExplorePost, 'siteId' | 'siteName' | 'remoteId'>[]
+) => {
+  if (!posts.length) return;
+  const bySite = new Map<string, number>();
+  for (const post of posts) bySite.set(post.siteName, (bySite.get(post.siteName) ?? 0) + 1);
+  const counts = [...bySite].map(([site, count]) => `${site} ${count}`).join(', ');
+  logDeveloper(`${origin} marked ${posts.length} loaded posts read (${counts}).`);
+  queueReads('post', posts.map((post) => `${post.siteId}:${post.remoteId}`));
 };
 
 /** Records one card without requiring callers to build an array. */

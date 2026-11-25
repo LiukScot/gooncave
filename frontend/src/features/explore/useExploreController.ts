@@ -58,7 +58,7 @@ import { appendTagTerm, TAG_SEARCH_DELAY_MS } from '@/features/library/tagInputT
 import {
   flushReadQueue,
   queueRead,
-  queueReads,
+  queueLoadedReads,
   rememberReadPosts
 } from '@/features/read-marks/readQueue';
 import {
@@ -1395,7 +1395,7 @@ export function useExploreController({
 
   const markLoadedRead = useCallback(() => {
     if (!readTrackingEnabled) return;
-    queueReads('post', posts.map(explorePostKey));
+    queueLoadedReads('Mark as read', posts);
     setPosts([]);
     setReadHidden(true);
   }, [posts, readTrackingEnabled]);
