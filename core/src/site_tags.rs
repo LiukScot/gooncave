@@ -102,11 +102,14 @@ async fn cancel(State(db): State<Database>) -> Json<Value> {
     Json(json!({"cancelled":running}))
 }
 
-/// Files tagged from a source with a post address and no categorised tag.
+/// Files tagged from a source with a post address whose tags were never written from a full
+/// answer of that source (`site_tag_reads`). A categorised tag does not tell: the tag vocabulary
+/// categorises tags a site sent as general, and Rule34 shows its own categories only on the page.
 const STALE: &str = "FROM file_tags t
     JOIN files f ON f.id=t.file_id JOIN library_folders fo ON fo.id=f.folder_id
-    WHERE t.source=?1 AND fo.user_id=?2 AND t.source_url IS NOT NULL";
-const UNCATEGORISED: &str = "GROUP BY t.file_id HAVING SUM(t.category<>'general')=0";
+    WHERE t.source=?1 AND fo.user_id=?2 AND t.source_url IS NOT NULL
+      AND NOT EXISTS(SELECT 1 FROM site_tag_reads r WHERE r.file_id=t.file_id AND r.source=t.source)";
+const BY_FILE: &str = "GROUP BY t.file_id";
 
 /// Up to `limit` targets after `after`, in file order.
 fn targets(
@@ -116,7 +119,7 @@ fn targets(
     limit: i64,
 ) -> Result<Vec<(String, String)>> {
     let mut statement = c.prepare(&format!(
-        "SELECT t.file_id,MAX(t.source_url) {STALE} AND t.file_id>?3 {UNCATEGORISED} ORDER BY t.file_id LIMIT ?4"
+        "SELECT t.file_id,MAX(t.source_url) {STALE} AND t.file_id>?3 {BY_FILE} ORDER BY t.file_id LIMIT ?4"
     ))?;
     let rows = statement
         .query_map(params![source, OWNER_ID, after, limit], |r| {
@@ -196,7 +199,7 @@ async fn begin(
     let total = db
         .call(move |c| {
             Ok(c.query_row(
-                &format!("SELECT count(*) FROM (SELECT 1 {STALE} {UNCATEGORISED})"),
+                &format!("SELECT count(*) FROM (SELECT 1 {STALE} {BY_FILE})"),
                 params![key, OWNER_ID],
                 |r| r.get::<_, i64>(0),
             )?)
@@ -313,16 +316,26 @@ mod tests {
             "INSERT INTO active_library_folders (id) VALUES ('folder')",
             [],
         )?;
-        for (id, category) in [("stale", "general"), ("categorised", "artist")] {
+        // `vocabulary` has a category the tag vocabulary gave it, as a Rule34 favorite saved
+        // before the app read Rule34's pages; only `read` was written from a full answer.
+        for (id, category) in [
+            ("stale", "general"),
+            ("read", "artist"),
+            ("vocabulary", "species"),
+        ] {
             let path = root.join(format!("{id}.png"));
             c.execute(&format!("INSERT INTO files (id,folder_id,location_type,path,size_bytes,mtime,sha256,media_type,created_at,updated_at) VALUES (?1,'folder','LOCAL',?2,1,{NOW},?1,'IMAGE',{NOW},{NOW})"),params![id,path.to_string_lossy()])?;
             c.execute(&format!("INSERT INTO file_tags (file_id,tag,canonical_tag,category,source,source_url,created_at,updated_at) VALUES (?1,'old_tag','old_tag',?2,'fixture',?3,{NOW},{NOW})"),params![id,category,format!("{base}/posts/7")])?;
         }
+        c.execute(
+            "INSERT INTO site_tag_reads (file_id,source) VALUES ('read','fixture')",
+            [],
+        )?;
         Ok(())
     }
 
     #[tokio::test]
-    async fn rereads_only_uncategorised_posts_and_keeps_tags_it_cannot_improve() {
+    async fn rereads_each_post_until_its_site_answered_in_full() {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
         let app = Router::new().route(
@@ -338,22 +351,20 @@ mod tests {
         db.call(move |c| Ok(seed(c, &base, &root)?)).await.unwrap();
         let site = boorus::site(&db, "fixture".into()).await.unwrap().unwrap();
         db.site_tags.update(|s| s["processed"] = json!(0)).unwrap();
-        run(
-            &db,
-            &Transport {
-                allow_loopback: true,
-            },
-            &site,
-            Duration::ZERO,
-        )
-        .await
-        .unwrap();
+        let transport = Transport {
+            allow_loopback: true,
+        };
+        run(&db, &transport, &site, Duration::ZERO).await.unwrap();
+        let first = db.site_tags.state().unwrap();
+        // Read in full once, nothing is asked again.
+        db.site_tags.update(|s| s["processed"] = json!(0)).unwrap();
+        run(&db, &transport, &site, Duration::ZERO).await.unwrap();
+        assert_eq!(db.site_tags.state().unwrap()["processed"].as_u64(), Some(0));
         server.abort();
-        let state = db.site_tags.state().unwrap();
         assert_eq!(
-            (state["processed"].as_u64(), state["updated"].as_u64()),
-            (Some(1), Some(1)),
-            "{state}"
+            (first["processed"].as_u64(), first["updated"].as_u64()),
+            (Some(2), Some(2)),
+            "{first}"
         );
         let tags = db
             .call(|c| {
@@ -376,9 +387,11 @@ mod tests {
         assert_eq!(
             tags,
             [
-                "categorised:old_tag:artist",
+                "read:old_tag:artist",
                 "stale:new_artist:artist",
-                "stale:new_tag:general"
+                "stale:new_tag:general",
+                "vocabulary:new_artist:artist",
+                "vocabulary:new_tag:general"
             ]
         );
     }
@@ -474,7 +487,7 @@ mod tests {
             .unwrap();
         let (status, started) = request(&db, "POST", "/booru-sites/fixture/tags/refresh").await;
         assert_eq!((status, started["status"].as_str()), (200, Some("started")));
-        assert_eq!(started["progress"]["total"], 1);
+        assert_eq!(started["progress"]["total"], 2);
         assert_eq!(started["progress"]["siteId"], "fixture");
         assert!(!started.to_string().contains("fake-key"));
     }

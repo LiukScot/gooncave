@@ -232,6 +232,11 @@ pub(crate) fn apply_tags(
     if validated.is_empty() {
         return Ok(false);
     }
+    // The site answered in full: the tag refresh has nothing more to ask it about this file.
+    connection.execute(
+        "INSERT OR IGNORE INTO site_tag_reads (file_id, source) VALUES (?1, ?2)",
+        params![snapshot.id, provider],
+    )?;
     let categorized = validated.iter().any(|(_, c)| c != "general");
     let has_categories:bool=connection.query_row("SELECT EXISTS(SELECT 1 FROM file_tags WHERE file_id=?1 AND source=?2 AND category<>'general')",params![snapshot.id,provider],|r|r.get(0))?;
     if !categorized && has_categories {
