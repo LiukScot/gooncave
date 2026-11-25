@@ -12,6 +12,7 @@ import {
   type AutomaticFavoriteQueueItem
 } from './automaticDuplicateFavorites';
 import { shouldAutoVote } from './autoVote';
+import { detailBack } from './detailBack';
 import {
   readExploreQuery,
   readExploreSnapshot,
@@ -1465,37 +1466,44 @@ export function useExploreController({
       if (animated) transitionView('detail-close', update);
       else update();
     };
-    // Reading a pool: back belongs to the pool the reader came from, not to
-    // an explore search they may never have run.
-    if (poolContext) {
-      const { siteId, poolId } = poolContext;
-      setPoolContext(null);
-      setSelectedPost(null);
-      void navigate({
-        to: '/app/pool',
-        search: { site: siteId, pool: poolId }
-      });
-      return;
-    }
-    if (excursionNav) {
-      changeView(() => {
+    const back = detailBack({
+      inPool: Boolean(poolContext),
+      excursion: excursionNav,
+      entryPushed: detailEntryPushedRef.current
+    });
+    switch (back.to) {
+      case 'pool': {
+        if (!poolContext) return;
+        // Reading a pool: back belongs to the pool the reader came from, not to
+        // an explore search they may never have run.
+        const { siteId, poolId } = poolContext;
+        setPoolContext(null);
         setSelectedPost(null);
-        setExcursionNav(null);
-        excursionNav.close();
-      });
-      return;
+        void navigate({
+          to: '/app/pool',
+          search: { site: siteId, pool: poolId }
+        });
+        return;
+      }
+      case 'excursion':
+        changeView(() => {
+          setSelectedPost(null);
+          setExcursionNav(null);
+          excursionNav?.close();
+        });
+        return;
+      case 'pushed':
+        detailEntryPushedRef.current = false;
+        // The post only leaves the screen once the URL has dropped it, in the
+        // sync effect below; this tells that pass the close was asked for
+        // here, so it animates. A browser back does not: iOS already animates
+        // its own.
+        closeRequestedRef.current = animated;
+        router.history.back();
+        return;
+      case 'grid':
+        changeView(() => setSelectedPost(null));
     }
-    if (detailEntryPushedRef.current) {
-      detailEntryPushedRef.current = false;
-      // The post only leaves the screen once the URL has dropped it, in the
-      // sync effect below; this tells that pass the close was asked for
-      // here, so it animates. A browser back does not: iOS already animates
-      // its own.
-      closeRequestedRef.current = animated;
-      router.history.back();
-      return;
-    }
-    changeView(() => setSelectedPost(null));
   }, [
     excursionNav,
     navigate,
@@ -1516,32 +1524,44 @@ export function useExploreController({
       const post = selectedPost;
       swipedPostRef.current = post;
       const leave = () => closeDetail(false);
-      if (excursionNav?.returnsByBack) return true;
-      if (poolContext || excursionNav) {
-        return {
-          leave,
-          stay: () => {
-            setPoolContext(poolContext);
-            setExcursionNav(excursionNav);
-            setPendingPost({
-              post,
-              anchors: false,
-              place: poolContext?.posts.find((each) => explorePostKey(each) === anchorKey)
-            });
-            // Leaving for a pool pushed an entry, and the excursions replaced theirs.
-            if (poolContext) {
-              router.history.back();
-              return;
-            }
-            void navigate({
-              to: '/app/explore',
-              replace: true,
-              search: { post: explorePostKey(post), feed }
-            });
-          }
-        };
+      const back = detailBack({
+        inPool: Boolean(poolContext),
+        excursion: excursionNav,
+        entryPushed: detailEntryPushedRef.current
+      });
+      switch (back.to) {
+        case 'pushed':
+          return true;
+        case 'grid':
+          return { leave, stay: () => setSelectedPost(post) };
+        case 'excursion':
+          if (back.byHistory) return true;
+          break;
+        case 'pool':
+          break;
       }
-      return detailEntryPushedRef.current || { leave, stay: () => setSelectedPost(post) };
+      return {
+        leave,
+        stay: () => {
+          setPoolContext(poolContext);
+          setExcursionNav(excursionNav);
+          setPendingPost({
+            post,
+            anchors: false,
+            place: poolContext?.posts.find((each) => explorePostKey(each) === anchorKey)
+          });
+          // Leaving for a pool pushed an entry, and the excursions replaced theirs.
+          if (poolContext) {
+            router.history.back();
+            return;
+          }
+          void navigate({
+            to: '/app/explore',
+            replace: true,
+            search: { post: explorePostKey(post), feed }
+          });
+        }
+      };
     },
     () => {
       detailEntryPushedRef.current = true;
