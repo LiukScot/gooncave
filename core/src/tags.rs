@@ -35,6 +35,44 @@ pub(crate) fn unusable(value: &str) -> bool {
     value == "invalid_tag" || value.ends_with("_(disambiguation)")
 }
 
+/// Gives each `{tag, category}` in the posts' `tags` that a site sent as `general` the category
+/// the tag vocabulary knows for it. Sites without categories (Rule34, gelbooru) send every tag as
+/// general; every path that shows or stores a site's tags goes through here, so an artist the
+/// vocabulary knows is an artist on every screen.
+pub(crate) fn categorize_general(connection: &Connection, posts: &mut [Value]) -> Result<()> {
+    let names: Vec<String> = posts
+        .iter()
+        .flat_map(|post| post["tags"].as_array().into_iter().flatten())
+        .filter(|entry| entry["category"] == "general")
+        .filter_map(|entry| entry["tag"].as_str().map(normalize))
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let mut known = HashMap::new();
+    for chunk in names.chunks(500) {
+        let placeholders = vec!["?"; chunk.len()].join(",");
+        let mut statement = connection.prepare(&format!(
+            "SELECT tag, category FROM tag_categories WHERE tag IN ({placeholders})"
+        ))?;
+        for row in statement.query_map(params_from_iter(chunk), |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })? {
+            let (tag, category) = row?;
+            known.insert(tag, category);
+        }
+    }
+    for entry in posts
+        .iter_mut()
+        .flat_map(|post| post["tags"].as_array_mut().into_iter().flatten())
+        .filter(|entry| entry["category"] == "general")
+    {
+        if let Some(category) = entry["tag"].as_str().and_then(|t| known.get(&normalize(t))) {
+            entry["category"] = json!(category);
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn canonical(connection: &Connection, tag: &str) -> Result<String> {
     let mut current = tag.to_owned();
     let mut seen = HashSet::from([current.clone()]);

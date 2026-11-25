@@ -4,9 +4,15 @@ import { api, type ExplorePost } from '@/api';
 import { loadExplorePostDetails } from '@/features/explore/explorePostDetails';
 import { queryKeys } from '@/lib/query-keys';
 
-/** Whether the open post asks its site for tags: the search answer files every tag as general. */
-export const needsDetailTags = (post: Pick<ExplorePost, 'tags'>): boolean =>
-  post.tags.length === 0 || post.tags.every((entry) => entry.category === 'general');
+/**
+ * Whether the open post asks its site for tags. A gelbooru-engine site (Rule34) sends every tag
+ * as general and only its page has the categories; the core fills the ones its vocabulary knows,
+ * so a few categorised tags do not mean the page was read.
+ */
+export const needsDetailTags = (post: Pick<ExplorePost, 'tags' | 'engine'>): boolean =>
+  post.engine === 'gelbooru' ||
+  post.tags.length === 0 ||
+  post.tags.every((entry) => entry.category === 'general');
 
 /**
  * Asks for what the previous and next post will show, so stepping to one finds its tags,

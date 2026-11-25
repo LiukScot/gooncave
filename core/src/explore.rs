@@ -198,6 +198,12 @@ pub(crate) async fn decorate(
     mut posts: Vec<Value>,
     key: &[u8],
 ) -> Result<Vec<Value>> {
+    let mut posts = db
+        .call(move |c| {
+            crate::tags::categorize_general(c, &mut posts)?;
+            Ok(posts)
+        })
+        .await?;
     let keys: Vec<String> = posts
         .iter()
         .map(|p| format!("{}:{}", site.id, p["remoteId"].as_str().unwrap()))
@@ -1420,6 +1426,38 @@ mod tests {
         drop(db);
         let db = Database::open(&data, &library).unwrap();
         assert_eq!(media_key(&db).await.unwrap(), key);
+    }
+    #[tokio::test]
+    async fn a_post_from_a_site_without_categories_takes_the_vocabulary_categories() {
+        // Rule34 sends every tag as general; Subscriptions, Explore and History all show posts
+        // through `decorate`, so an artist the vocabulary knows is an artist on each of them.
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(&dir.path().join("data"), &dir.path().join("library")).unwrap();
+        db.call(|c| {
+            c.execute("INSERT INTO tag_categories (tag,category) VALUES ('known_artist','artist'),('fox','species')", [])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let key = media_key(&db).await.unwrap();
+        let site = Site {
+            id: "rule34".into(),
+            name: "Rule34".into(),
+            engine: "gelbooru".into(),
+            base: "https://api.rule34.xxx".into(),
+            username: None,
+            key: None,
+            cookie: None,
+            enabled: true,
+            public: Value::Null,
+        };
+        let post = json!({"remoteId":"1","previewUrl":"https://cdn.example.com/a.jpg","sampleUrl":null,"fileUrl":"https://cdn.example.com/a.png","fileExt":"png","favorited":null,
+            "tags":[{"tag":"known_artist","category":"general"},{"tag":"Fox","category":"general"},{"tag":"unknown_tag","category":"general"},{"tag":"comic","category":"meta"}]});
+        let decorated = decorate(&db, &site, vec![post], &key).await.unwrap();
+        assert_eq!(
+            decorated[0]["tags"],
+            json!([{"tag":"known_artist","category":"artist"},{"tag":"Fox","category":"species"},{"tag":"unknown_tag","category":"general"},{"tag":"comic","category":"meta"}])
+        );
     }
     #[test]
     fn a_post_with_a_parent_and_children_finds_both_generations() {

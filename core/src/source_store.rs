@@ -192,6 +192,8 @@ pub(crate) fn apply_tags(
     if !same_site {
         return Ok(false);
     }
+    let mut post = post.clone();
+    tags::categorize_general(connection, std::slice::from_mut(&mut post))?;
     let entries = post["tags"]
         .as_array()
         .filter(|v| v.len() <= 10_000)
@@ -222,16 +224,6 @@ pub(crate) fn apply_tags(
         if !name.is_empty() && !tags::unusable(&name) {
             let category = match category {
                 "metadata" => "meta".to_owned(),
-                // Sites without categories (rule34) send every tag as general: the vocabulary
-                // knows the artists and characters among them.
-                "general" => connection
-                    .query_row(
-                        "SELECT category FROM tag_categories WHERE tag=?1",
-                        [&name],
-                        |r| r.get(0),
-                    )
-                    .optional()?
-                    .unwrap_or_else(|| "general".to_owned()),
                 other => other.to_owned(),
             };
             validated.push((name, category));
