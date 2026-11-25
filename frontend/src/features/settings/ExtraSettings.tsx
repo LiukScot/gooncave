@@ -31,10 +31,10 @@ const TOGGLES: {
   description: string;
 }[] = [
   {
-    key: 'voteSystemEnabled',
-    label: 'Gallery vote system',
+    key: 'starsEnabled',
+    label: 'Gallery stars',
     description:
-      'Rate a file up or down once every 24 hours, and sort the gallery by score.'
+      'Give a file a star once every 24 hours, and sort the gallery by stars.'
   },
   {
     key: 'autoVoteOnFavorite',
@@ -63,7 +63,7 @@ const TOGGLES: {
     key: 'fullscreenActions',
     label: 'Actions in fullscreen',
     description:
-      'Show the More actions button in fullscreen, beside the button that leaves it, to vote, share, favorite or delete without leaving.'
+      'Show the More actions button in fullscreen, beside the button that leaves it, to give a star, vote, share, favorite or delete without leaving.'
   },
   {
     key: 'readTrackingEnabled',

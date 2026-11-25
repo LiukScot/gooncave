@@ -88,15 +88,15 @@ test('a provider-only GIF plays over an existing still poster in the phone Galle
   await expect.poll(() => tile.locator('video').evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0);
 });
 
-test('browses the library folder, votes a file and deletes another', async ({ page }) => {
+test('browses the library folder, stars a file and deletes another', async ({ page }) => {
   // Browsing local files must not start remote refresh work.
   const booruCalls: string[] = [];
   page.on('request', (request) => {
     if (/\/tags\/refresh|\/explore\/subscriptions\/refresh/.test(request.url())) booruCalls.push(request.url());
   });
   const original = await (await page.request.get('/settings/extra')).json();
-  const vote = await page.request.put('/settings/extra', { data: { voteSystemEnabled: true } });
-  expect(vote.ok(), 'failed to enable votes').toBeTruthy();
+  const stars = await page.request.put('/settings/extra', { data: { starsEnabled: true } });
+  expect(stars.ok(), 'failed to enable stars').toBeTruthy();
   try {
     // The playwright config put these two files in the library folder before the core started.
     await page.goto('/app/gallery');
@@ -110,16 +110,16 @@ test('browses the library folder, votes a file and deletes another', async ({ pa
     await page.goto('/app/gallery');
     await card(page, uploaded).click();
     await expect(page).toHaveURL(/fileId=/);
-    const votePosted = page.waitForResponse((res) => res.url().includes('/vote') && res.request().method() === 'POST');
+    const starPosted = page.waitForResponse((res) => res.url().includes('/star') && res.request().method() === 'POST');
     await page.getByRole('button', { name: 'More actions' }).click();
     // The one action that loses something comes last.
     await expect(page.locator('.more-actions-pills button').last()).toHaveText('Delete file');
-    await page.getByRole('button', { name: 'Vote up' }).click();
+    await page.getByRole('button', { name: 'Give a star' }).click();
     await page.getByRole('button', { name: 'Back to gallery' }).click();
-    expect((await votePosted).ok()).toBeTruthy();
+    expect((await starPosted).ok()).toBeTruthy();
     await page.reload();
-    const galleryVote = card(page, uploaded).locator('..').getByRole('button', { name: /Votable again in .*; score 1/ });
-    await expect(galleryVote).toHaveText('1');
+    const galleryStar = card(page, uploaded).locator('..').getByRole('button', { name: /Can get a star again in .*; 1 star$/ });
+    await expect(galleryStar).toHaveText('1');
 
     // The centre of a video tile is its inline play button; the rest of the tile opens the file.
     await card(page, 'clip.mp4').click({ position: { x: 8, y: 8 } });
@@ -281,7 +281,7 @@ test('a file asks for its comments only when the reader gets near them', async (
   await expect.poll(() => asked).toBe(1);
 });
 
-test('in fullscreen a pinch zooms, the wheel does not, and dragging pans the picture instead of dragging the image out', async ({ page }) => {
+test('in fullscreen a mouse wheel and a pinch zoom, a touchpad slide does not, and dragging pans the picture instead of dragging the image out', async ({ page }) => {
   await page.goto('/app/gallery');
   await card(page, 'landscape.png').click();
   const wrap = page.locator('.file-detail-panel-current .file-detail-media-wrap');
@@ -296,17 +296,28 @@ test('in fullscreen a pinch zooms, the wheel does not, and dragging pans the pic
   const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.move(center.x, center.y);
   const zoomed = () => wrap.evaluate((element) => (element as HTMLElement).style.getPropertyValue('--file-detail-zoom'));
-  // A wheel without Ctrl may be two fingers sliding on a touchpad: it does not zoom.
+  // Two fingers sliding on a touchpad send small wheel steps: they do not zoom.
   const unzoomed = await zoomed();
-  await page.mouse.wheel(0, -100);
-  await page.waitForTimeout(100);
+  for (const step of [-14, -26, -18]) await page.mouse.wheel(0, step);
+  await page.waitForTimeout(200);
   await expect(wrap).not.toHaveClass(/is-zoomed/);
   expect(await zoomed()).toBe(unzoomed);
+  // A mouse wheel notch is 120: it zooms in.
+  await page.mouse.wheel(0, -120);
+  await expect(wrap).toHaveClass(/is-zoomed/);
+  const wheeled = await zoomed();
   // A pinch: the touchpad sends it as a wheel with Ctrl held.
   await page.keyboard.down('Control');
   await page.mouse.wheel(0, -150);
   await page.keyboard.up('Control');
-  await expect(wrap).toHaveClass(/is-zoomed/);
+  await expect.poll(zoomed).not.toBe(wheeled);
+  // A slide moves the zoomed picture and keeps its size.
+  const pinched = await zoomed();
+  const scaleOf = (transform: string) => transform.match(/scale\(([^)]+)\)/)?.[1];
+  await page.waitForTimeout(200);
+  await page.mouse.wheel(0, 20);
+  await expect.poll(zoomed).not.toBe(pinched);
+  expect(scaleOf(await zoomed())).toBe(scaleOf(pinched));
   // The thumbnail under the picture does not zoom, so panning would uncover it.
   expect(await wrap.evaluate((element) => getComputedStyle(element, '::before').display)).toBe('none');
   const zoom = () => wrap.evaluate((element) => (element as HTMLElement).style.getPropertyValue('--file-detail-zoom'));
@@ -321,6 +332,23 @@ test('in fullscreen a pinch zooms, the wheel does not, and dragging pans the pic
   await page.mouse.up();
   await expect(page.locator('body')).not.toHaveAttribute('data-dragged', 'true');
   await expect.poll(zoom).not.toBe(before);
+});
+
+test('a gallery picture does not drag out of the app as its address', async ({ page }) => {
+  await page.goto('/app/gallery');
+  const picture = card(page, 'landscape.png').locator('img');
+  await expect(picture).toBeVisible();
+  await page.evaluate(() => {
+    document.addEventListener('dragstart', (event) => {
+      if (!event.defaultPrevented) document.body.setAttribute('data-dragged', 'true');
+    });
+  });
+  const box = (await picture.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 150, box.y + box.height / 2 + 100, { steps: 10 });
+  await page.mouse.up();
+  await expect(page.locator('body')).not.toHaveAttribute('data-dragged', 'true');
 });
 
 test('a file a running sync adds shows up in the gallery while the sync goes on', async ({ page }) => {
@@ -610,24 +638,57 @@ test('closing a file, the picture leaves with the page instead of staying alone 
   await expect(page.locator('.file-detail-panel-current .file-detail-media-wrap img')).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0);
   await page.getByRole('button', { name: 'Back to gallery' }).first().click();
-  const ends = await page.evaluate(async () => {
-    for (let frame = 0; frame < 120; frame++) {
-      const found = new Map<string, number>();
-      for (const animation of document.getAnimations()) {
-        const pseudo = (animation.effect as KeyframeEffect | null)?.pseudoElement;
-        const end = animation.effect?.getComputedTiming().endTime;
-        if (pseudo && typeof end === 'number') {
-          found.set(pseudo, Math.max(found.get(pseudo) ?? 0, end));
-        }
-      }
-      if (found.has('::view-transition-old(root)')) return Object.fromEntries(found);
-      await new Promise(requestAnimationFrame);
+  // The page sinking away is a copy, and the picture is part of it.
+  const closing = await page.evaluate(() => ({
+    viewTransition: document.documentElement.matches(':active-view-transition'),
+    sinking: document.querySelectorAll('.page-leaving.is-sinking').length,
+    pictureInCopy: document.querySelectorAll('.page-leaving .file-detail-panel-current .file-detail-media-wrap').length,
+    pictureOutside: document.querySelectorAll('.page-shell:not(.page-leaving) .file-detail-media-wrap').length
+  }));
+  expect(closing).toEqual({ viewTransition: false, sinking: 1, pictureInCopy: 1, pictureOutside: 0 });
+  await expect(page.locator('.page-leaving')).toHaveCount(0);
+});
+
+test('opening a file, the gallery stays in place under the rising page and the picture grows out of its tile', async ({ page }) => {
+  await page.goto('/app/gallery');
+  const tile = card(page, 'landscape.png');
+  await expect(tile).toBeVisible();
+  const tileBox = await tile.locator('img').boundingBox();
+  const menuBox = await page.locator('.app-menu').boundingBox();
+  await tile.click();
+  const opening = await page.evaluate(() => {
+    for (const animation of document.getAnimations()) {
+      animation.pause();
+      animation.currentTime = 0;
     }
-    return null;
+    const box = (element: Element | null | undefined) => {
+      const rect = element?.getBoundingClientRect();
+      return rect && { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    };
+    const copy = document.querySelector('.page-leaving');
+    const hero = document.querySelector('.page-hero');
+    const live = document.querySelector('.page-shell:not(.page-leaving) .file-detail-panel-current .file-detail-media');
+    return {
+      viewTransition: document.documentElement.matches(':active-view-transition'),
+      rising: document.querySelectorAll('.page-shell.is-rising').length,
+      copiedTile: box(copy?.querySelector('[data-test-id="file-card"][aria-label*="landscape.png"] img')),
+      copiedMenu: box(copy?.querySelector('.app-menu')),
+      hero: box(hero),
+      heroOpacity: hero ? getComputedStyle(hero).opacity : null,
+      livePicture: live ? getComputedStyle(live).visibility : null
+    };
   });
-  if (!ends) throw new Error('The closing animation did not run');
-  const pageEnd = ends['::view-transition-old(root)'];
-  for (const [pseudo, end] of Object.entries(ends)) {
-    if (pseudo.includes('detail-media')) expect(end, pseudo).toBeLessThanOrEqual(pageEnd);
+  expect(opening).toMatchObject({ viewTransition: false, rising: 1, heroOpacity: '1', livePicture: 'hidden' });
+  // The gallery left, menu included, does not move while the file rises over it.
+  for (const key of ['x', 'y', 'width', 'height'] as const) {
+    expect(opening.copiedTile?.[key]).toBeCloseTo(tileBox![key], 0);
+    expect(opening.copiedMenu?.[key]).toBeCloseTo(menuBox![key], 0);
+    // The picture starts as the tile, whole and opaque, not faded in with the page.
+    expect(opening.hero?.[key]).toBeCloseTo(tileBox![key], 0);
   }
+  // Stalled animations still give the page back.
+  await expect(page.locator('.page-leaving')).toHaveCount(0, { timeout: 2500 });
+  await expect(page.locator('.page-hero')).toHaveCount(0);
+  await expect(page.locator('.page-shell.is-rising')).toHaveCount(0);
+  await expect(page.locator('.file-detail-panel-current .file-detail-media')).toBeVisible();
 });

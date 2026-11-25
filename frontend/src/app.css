@@ -1140,11 +1140,6 @@ html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::befor
   }
 }
 
-/* In the desktop window a link is a button of the app, not a web address to drag away. */
-.has-window-controls a {
-  -webkit-user-drag: none;
-}
-
 .has-window-controls .page-header.is-scrolled-away:not(:has(:focus-visible)) {
   transform: none;
 }
@@ -1458,6 +1453,11 @@ html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::after
 /* The lens lives outside the page, which hides it from a file left open. */
 body:has(.file-detail-frame) :is(.search-lens, .search-lens-actions) {
   display: none;
+}
+
+/* While tiles are selected the selection bar takes the corner's row. */
+body:has(.selection-bar) :is(.search-lens, .search-lens-actions) {
+  visibility: hidden;
 }
 
 /* The menu pushes the page aside by its own width (lib/fingerOpening.ts moves
@@ -3299,7 +3299,7 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   display: none;
 }
 
-.file-detail-vote-score {
+.file-detail-star-count {
   font-variant-numeric: tabular-nums;
 }
 
@@ -3307,7 +3307,7 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
    hidden while a file is open). The action is a text button: an outlined
    one inside a pill puts a rounded rectangle inside a capsule and the two
    profiles fight. */
-.file-detail-vote-undo {
+.file-detail-star-undo {
   bottom: var(--toast-offset-bottom);
   z-index: 600;
   display: flex;
@@ -3318,19 +3318,19 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   white-space: nowrap;
 }
 
-.file-detail-frame.is-fullscreen .file-detail-vote-undo {
+.file-detail-frame.is-fullscreen .file-detail-star-undo {
   bottom: calc(12px + env(safe-area-inset-bottom) + 2 * (var(--file-detail-overlay-size) + var(--file-detail-overlay-gap)));
 }
 
 /* A message like any toast, so it wears the toast's fill and its action
    the toast's underlined link (see the capsule rules above). */
-.file-detail-vote-undo {
+.file-detail-star-undo {
   border-color: hsl(var(--primary));
   background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
 }
 
-.file-detail-vote-undo .btn-link {
+.file-detail-star-undo .btn-link {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 4px;
@@ -5058,43 +5058,43 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   }
 }
 
-/* Page transitions (see lib/viewTransitions.ts). Names are given only while
-   a transition of the matching type runs: a standing view-transition-name
-   makes a stacking context, and the controls' menus would open underneath
-   the grid. */
-
-/* Opening a file, and closing it: the tile grows into the picture at the
-   top of the detail page. */
-:root:active-view-transition-type(detail-open, detail-close)
-  .file-detail-panel-current
-  .file-detail-media-wrap {
-  view-transition-name: detail-media;
+/* Opening a file and closing it (lib/viewTransitions.ts). The page left is a
+   still copy of its elements, fixed where it showed: Chromium draws a
+   view-transition picture of it white under a fractional display scale. Both
+   sit where the pinned headings do (400), over the desktop window bar (300)
+   and under the menu. */
+.page-leaving {
+  position: fixed;
+  z-index: 400;
+  margin: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: hsl(var(--page-background));
 }
 
-/* These stay in place: what changes on them changes at once. */
-::view-transition-group(app-menu) {
-  animation: none;
+.page-shell.is-rising {
+  position: relative;
+  z-index: 401;
+  animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-rise;
 }
 
-::view-transition-old(app-menu) {
-  display: none;
+/* The tile's picture flying to the file's, over the page rising (402). */
+.page-hero {
+  position: fixed;
+  z-index: 402;
+  margin: 0;
+  object-fit: cover;
+  border-radius: var(--radius);
+  pointer-events: none;
 }
 
-::view-transition-new(app-menu) {
-  animation: none;
+.file-detail-media-wrap[data-landing]::before,
+.file-detail-media-wrap[data-landing] .file-detail-media {
+  visibility: hidden;
 }
 
-::view-transition-group(*) {
-  animation-duration: 0.4s;
-  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
-}
-
-/* A tile is cropped and the picture is not, so the two differ in shape;
-   each keeps its own instead of being stretched to the other's. */
-::view-transition-old(detail-media),
-::view-transition-new(detail-media) {
-  height: 100%;
-  object-fit: contain;
+.page-leaving.is-sinking {
+  animation: 0.25s cubic-bezier(0.3, 0, 1, 1) both vt-sink;
 }
 
 @keyframes vt-rise {
@@ -5123,34 +5123,6 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 :root:active-view-transition-type(swipe-back)::view-transition-old(root) {
   z-index: 1;
   box-shadow: -0.5rem 0 1.5rem rgba(0, 0, 0, 0.35);
-}
-
-/* Reduced motion keeps the browser's own cross-fade and drops the travel. */
-@media (prefers-reduced-motion: no-preference) {
-  :root:active-view-transition-type(detail-open)::view-transition-new(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both vt-rise;
-  }
-
-  :root:active-view-transition-type(detail-close)::view-transition-old(root) {
-    animation: 0.25s cubic-bezier(0.3, 0, 1, 1) both vt-sink;
-    z-index: 1;
-  }
-
-  /* The picture sinks with its page: left behind, it stood alone over the
-     grid after the page had gone, a white flash when it is light. */
-  :root:active-view-transition-type(detail-close)::view-transition-group(detail-media) {
-    animation: none;
-  }
-
-  :root:active-view-transition-type(detail-close)::view-transition-old(detail-media) {
-    animation: 0.25s cubic-bezier(0.3, 0, 1, 1) both vt-sink;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(detail-media) {
-    animation: none;
-  }
 }
 
 @media (min-width: 768px) {
@@ -5191,6 +5163,10 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   .app-menu:not(.is-hidden) ~ .page-shell {
     padding-top: 1.25rem;
     padding-left: 16.5rem;
+  }
+
+  .app-menu:not(.is-hidden) ~ .page-shell .selection-bar {
+    --selection-bar-left: calc(15.5rem + var(--corner-button-edge));
   }
 
   .app-menu-drawer {
@@ -5272,6 +5248,21 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 /* A choice dialog with three actions or more reads as a menu: the plain
    actions stack as one segmented group, the settings list's shape, and a
    separated action (such as a destructive one) stands on its own below. */
+/* A tag's dialog: its name, and a small button that copies it beside the name. */
+.confirm-title-copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.confirm-title-copy > button {
+  flex: none;
+  color: hsl(var(--muted-foreground));
+}
+
 .confirm-menu {
   gap: 2px;
 }
@@ -5697,35 +5688,64 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 }
 
 /* Opening a Settings page slides it over the list, and leaving it slides it
-   back. The menu keeps its place. */
-:root:active-view-transition-type(push, pop) .app-menu {
-  view-transition-name: app-menu;
+   back (lib/settingsSlide.ts). The page being left is a copy of its elements:
+   Chromium draws a view-transition picture of it white under a fractional
+   display scale. The stacking and clipping last only while the pages move.
+   The layer sits where the pinned headings do (400), over the desktop window
+   bar (300) and under the menu: lower, the bar would cover the headings. */
+.settings-leaving {
+  display: none;
 }
 
-:root:active-view-transition-type(push, pop)::view-transition-old(root), :root:active-view-transition-type(push, pop)::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
+.settings-stage[data-slide] {
+  position: relative;
+  z-index: 400;
+  overflow-x: clip;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  :root:active-view-transition-type(push)::view-transition-new(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-push-in;
-    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
-  }
+.settings-stage[data-slide] > .settings-page {
+  position: relative;
+  background: hsl(var(--page-background));
+}
 
-  :root:active-view-transition-type(push)::view-transition-old(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-push-under;
-  }
+/* Fixed to the page's column, so the copy is clipped there and the menu beside it stays clear. */
+.settings-stage[data-slide] > .settings-leaving {
+  display: block;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
 
-  :root:active-view-transition-type(pop)::view-transition-old(root) {
-    z-index: 1;
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-pop-out;
-    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
-  }
+.settings-leaving > * {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: hsl(var(--page-background));
+}
 
-  :root:active-view-transition-type(pop)::view-transition-new(root) {
-    animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-pop-under;
-  }
+.settings-stage[data-slide='push'] > .settings-page {
+  z-index: 1;
+  animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-push-in;
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
+}
+
+.settings-stage[data-slide='push'] > .settings-leaving > * {
+  animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-push-under;
+}
+
+.settings-stage[data-slide='pop'] > .settings-leaving {
+  z-index: 1;
+}
+
+.settings-stage[data-slide='pop'] > .settings-leaving > * {
+  animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-pop-out;
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.35);
+}
+
+.settings-stage[data-slide='pop'] > .settings-page {
+  animation: 0.4s cubic-bezier(0.2, 0, 0, 1) both ios-pop-under;
 }
 
 @keyframes ios-push-in {
@@ -6041,4 +6061,119 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 .explore-new-posts-button:focus-visible {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
+}
+
+/* Selection mode (features/selection). A long press selects, so the browser's own image
+   menu and text selection must not take it. */
+[data-select-key] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* The colour around selected tiles (features/selection/SelectionLayer.tsx): one shape under
+   the tiles of its grid, which shows through the gaps. */
+.gallery-masonry {
+  position: relative;
+}
+
+.selection-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  fill: hsl(var(--primary));
+  pointer-events: none;
+}
+
+/* Colour is not the only signal: a selected tile also carries a check, in its middle. */
+.selection-check {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  box-shadow: 0 0 0 0.375rem hsl(0 0% 0% / 0.25);
+  transform: translate(-50%, -50%);
+  animation: selection-check-in 220ms cubic-bezier(0.3, 0.7, 0.2, 1.3) both;
+  pointer-events: none;
+}
+
+.selection-check > svg {
+  width: 2rem;
+  height: 2rem;
+  stroke-width: 2.5;
+}
+
+@keyframes selection-check-in {
+  from {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .selection-check {
+    animation: none;
+  }
+}
+
+/* Over the page, under menus and dialogs, like the phone actions. */
+.selection-bar {
+  --selection-bar-left: max(var(--corner-button-edge), env(safe-area-inset-left));
+  position: fixed;
+  z-index: 600;
+  /* Bottom right, on the row of the corner buttons it hides. */
+  right: max(var(--corner-button-edge), env(safe-area-inset-right));
+  bottom: var(--corner-button-edge);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: max-content;
+  height: var(--floating-button-size);
+  max-width: calc(100vw - var(--selection-bar-left) - max(var(--corner-button-edge), env(safe-area-inset-right)));
+  /* The last button sits as far from the end as from the top and bottom, so their curves
+     share a centre. */
+  padding: 0 calc((var(--floating-button-size) - var(--floating-action-size)) / 2) 0 1rem;
+  border-radius: calc(var(--floating-button-size) / 2);
+  background: hsl(var(--section));
+  box-shadow: var(--floating-button-shadow);
+}
+
+.selection-bar-count {
+  flex: none;
+  font-weight: 600;
+  white-space: nowrap;
+  padding-inline: 0.25rem;
+}
+
+.selection-bar-actions {
+  display: flex;
+  /* One row, so the bar stays as tall as the corner button. A row that does not fit moves
+     into the Actions menu (SelectionBar.tsx), which measures it through this overflow. */
+  min-width: 0;
+  overflow: hidden;
+  gap: 0.5rem;
+}
+
+/* As tall as the actions beside the corner button, the smallest a button gets. */
+.selection-bar-button {
+  flex: none;
+  height: var(--floating-action-size);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.selection-bar-round {
+  justify-content: center;
+  aspect-ratio: 1;
+  padding: 0;
 }

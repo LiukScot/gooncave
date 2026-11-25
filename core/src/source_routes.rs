@@ -90,8 +90,10 @@ fn overview(c: &rusqlite::Connection) -> Result<Value> {
     let config = settings(c)?;
     let mut s=c.prepare("SELECT lower(coalesce(site.preset_key,site.id)),site.name,coalesce(found.hits,0)
         FROM user_booru_sites site LEFT JOIN (
-            SELECT ft.source,count(DISTINCT ft.file_id) AS hits FROM file_tags ft JOIN files f ON f.id=ft.file_id JOIN library_folders folders ON folders.id=f.folder_id
-            WHERE folders.user_id=?1 AND ft.source_url IS NOT NULL GROUP BY ft.source
+            SELECT pairs.source,count(*) AS hits
+            FROM (SELECT DISTINCT source,file_id FROM file_tags WHERE source_url IS NOT NULL) pairs
+            JOIN files f ON f.id=pairs.file_id JOIN library_folders folders ON folders.id=f.folder_id
+            WHERE folders.user_id=?1 GROUP BY pairs.source
         ) found ON found.source=coalesce(site.preset_key,site.id)
         WHERE site.user_id=?1 AND site.enabled=1 ORDER BY coalesce(found.hits,0) DESC,site.sort_order,site.id LIMIT 64")?;
     let mut sources = s
@@ -100,7 +102,7 @@ fn overview(c: &rusqlite::Connection) -> Result<Value> {
             Ok(json!({"key":key,"label":r.get::<_,String>(1)?,"count":r.get::<_,i64>(2)?}))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    let wd14_count: i64 = c.query_row("SELECT count(DISTINCT ft.file_id) FROM file_tags ft JOIN files f ON f.id=ft.file_id JOIN library_folders folders ON folders.id=f.folder_id WHERE folders.user_id=?1 AND ft.source='WD14'",[OWNER_ID],|r|r.get(0))?;
+    let wd14_count: i64 = c.query_row("SELECT count(*) FROM (SELECT DISTINCT file_id FROM file_tags WHERE source='WD14') tagged JOIN files f ON f.id=tagged.file_id JOIN library_folders folders ON folders.id=f.folder_id WHERE folders.user_id=?1",[OWNER_ID],|r|r.get(0))?;
     if wd14_count > 0 || crate::wd14_store::enabled(c)? {
         sources.push(json!({"key":"wd14","label":"WD14","count":wd14_count}));
     }

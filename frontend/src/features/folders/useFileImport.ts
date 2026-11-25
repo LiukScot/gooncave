@@ -126,7 +126,7 @@ export function useFileImport(folderId: string | null, onImported: () => void) {
       }
     };
 
-    // A drag that starts in this page (a gallery picture) is not a file
+    // A drag that starts in this page (selected text) is not a file
     // arriving from outside, even though Chromium hands it over as a file.
     let fromPage = false;
     // A drag the page cancelled, like panning a zoomed picture, never starts

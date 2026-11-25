@@ -1,5 +1,5 @@
 import { observeWindowOffset, useWindowVirtualizer } from '@tanstack/react-virtual';
-import { ChevronUp, Clock, CloudDownload, Images, Play } from 'lucide-react';
+import { Check, Clock, CloudDownload, Images, Play, Star } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { stackGalleryFiles, type GalleryStack } from './galleryDuplicateStacks';
@@ -11,14 +11,16 @@ import { useGalleryAnchor } from './useGalleryAnchor';
 import type { BooruSite, DuplicateGroup, FileItem } from '@/api';
 import { API_BASE } from '@/api';
 import { ThumbnailMotion } from '@/components/ThumbnailMotion';
-import { formatVoteCooldown } from '@/features/file-detail/vote';
+import { formatStarCooldown } from '@/features/file-detail/star';
 import { CardVideo } from '@/features/library/CardVideo';
 import { tileRatio } from '@/features/library/masonry';
+import { SelectionLayer } from '@/features/selection/SelectionLayer';
 import { formatDuration } from '@/lib/format';
 import { isIos } from '@/lib/platform';
 import { useAppMenuStore } from '@/stores/appMenuStore';
 
 const THUMB_SIZE = 220;
+const starCount = (stars: number) => `${stars} ${stars === 1 ? 'star' : 'stars'}`;
 const MIN_COLUMNS = 2;
 const EMPTY_DUPLICATE_GROUPS: DuplicateGroup[] = [];
 const EMPTY_SOURCE_SITES: BooruSite[] = [];
@@ -85,10 +87,12 @@ function useMasonryMetrics(maxGridColumns: number) {
 }
 
 export function VirtualGalleryMasonry({
+  selected,
+  gridProps,
   files,
   duplicateGroups = EMPTY_DUPLICATE_GROUPS,
   sourceSites = EMPTY_SOURCE_SITES,
-  voteSystemEnabled,
+  starsEnabled,
   maxGridColumns = 0,
   openFileId = null,
   location,
@@ -96,12 +100,15 @@ export function VirtualGalleryMasonry({
   hasMore = false,
   onLoadMore,
   onFileOpen,
-  onUpvote
+  onGiveStar
 }: {
+  /** Selection mode (`useGridSelection`): the selected tiles, by anchor file id. */
+  selected?: ReadonlySet<string>;
+  gridProps?: React.HTMLAttributes<HTMLDivElement>;
   files: FileItem[];
   duplicateGroups?: DuplicateGroup[];
   sourceSites?: BooruSite[];
-  voteSystemEnabled: boolean;
+  starsEnabled: boolean;
   maxGridColumns?: number;
   openFileId?: string | null;
   location?: string;
@@ -109,7 +116,7 @@ export function VirtualGalleryMasonry({
   hasMore?: boolean;
   onLoadMore?: () => void;
   onFileOpen: (file: FileItem) => void;
-  onUpvote: (fileId: string) => Promise<void>;
+  onGiveStar: (fileId: string) => Promise<void>;
 }) {
   const [metrics, masonryRef] = useMasonryMetrics(maxGridColumns);
   const stacks = useMemo(
@@ -165,10 +172,12 @@ export function VirtualGalleryMasonry({
 
   return (
     <div
+      {...gridProps}
       className="gallery-masonry is-virtual"
       ref={setMasonryElement}
       style={{ height: virtualizer.getTotalSize() }}
     >
+      {selected ? <SelectionLayer selected={selected} /> : null}
       {virtualItems.map((item) => {
         const stack = stacks[item.index];
         return (
@@ -184,10 +193,11 @@ export function VirtualGalleryMasonry({
             <GalleryCard
               key={stack.anchor.id}
               stack={stack}
+              selected={selected?.has(stack.anchor.id) ?? false}
               sourceSites={sourceSites}
-              voteSystemEnabled={voteSystemEnabled}
+              starsEnabled={starsEnabled}
               onFileOpen={onFileOpen}
-              onUpvote={onUpvote}
+              onGiveStar={onGiveStar}
             />
           </div>
         );
@@ -198,19 +208,21 @@ export function VirtualGalleryMasonry({
 
 const GalleryCard = memo(function GalleryCard({
   stack,
+  selected,
   sourceSites,
-  voteSystemEnabled,
+  starsEnabled,
   onFileOpen,
-  onUpvote
+  onGiveStar
 }: {
   stack: GalleryStack;
+  selected: boolean;
   sourceSites: BooruSite[];
-  voteSystemEnabled: boolean;
+  starsEnabled: boolean;
   onFileOpen: (file: FileItem) => void;
-  onUpvote: (fileId: string) => Promise<void>;
+  onGiveStar: (fileId: string) => Promise<void>;
 }) {
   const file = stack.anchor;
-  const [voteBusy, setVoteBusy] = useState(false);
+  const [starBusy, setStarBusy] = useState(false);
   const [playing, setPlaying] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -228,55 +240,61 @@ const GalleryCard = memo(function GalleryCard({
   }, [playing]);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!file.nextVoteAt) return;
+    if (!file.nextStarAt) return;
     setNow(Date.now());
-    const remaining = Date.parse(file.nextVoteAt) - Date.now();
+    const remaining = Date.parse(file.nextStarAt) - Date.now();
     if (!Number.isFinite(remaining) || remaining <= 0) return;
     const timer = window.setTimeout(() => setNow(Date.now()), remaining);
     return () => window.clearTimeout(timer);
-  }, [file.nextVoteAt]);
-  const cooldownText = formatVoteCooldown(file.nextVoteAt, now);
+  }, [file.nextStarAt]);
+  const cooldownText = formatStarCooldown(file.nextStarAt, now);
   const sourceIcons = gallerySourceIcons(stack.members, sourceSites);
-  const voteScore = file.voteScore;
+  const stars = file.stars;
   const hasRelations = file.hasRelations;
   const remote = file.locationType === 'REMOTE';
   const thumbRatio = cardRatio(stack.anchor);
 
-  // The score; a playing video takes it into its own row.
-  const voteChip = voteSystemEnabled ? (
+  // The star count; a playing video takes it into its own row.
+  const starChip = starsEnabled ? (
     <button
       type="button"
-      data-test-id="card-upvote"
+      data-test-id="card-star"
       className={`gallery-chip gallery-chip-bottom gallery-vote-button right-2${cooldownText !== null ? ' is-voted' : ''}`}
-      disabled={voteBusy || cooldownText !== null}
+      disabled={starBusy || cooldownText !== null}
       aria-label={cooldownText
-        ? `Votable again in ${cooldownText}; score ${voteScore}`
-        : `Upvote; score ${voteScore}`}
-      title={cooldownText ? `Votable again in ${cooldownText}` : 'Upvote'}
+        ? `Can get a star again in ${cooldownText}; ${starCount(stars)}`
+        : `Give a star; ${starCount(stars)}`}
+      title={cooldownText ? `Can get a star again in ${cooldownText}` : 'Give a star'}
       onClick={async () => {
-        if (voteBusy || cooldownText) return;
-        setVoteBusy(true);
+        if (starBusy || cooldownText) return;
+        setStarBusy(true);
         try {
-          await onUpvote(file.id);
+          await onGiveStar(file.id);
         } finally {
-          setVoteBusy(false);
+          setStarBusy(false);
         }
       }}
     >
       {cooldownText
         ? <Clock className="size-3" aria-hidden="true" />
-        : <ChevronUp className="size-3" aria-hidden="true" />}
-      <span>{voteScore}</span>
+        : <Star className="size-3" aria-hidden="true" />}
+      <span>{stars}</span>
     </button>
   ) : null;
 
   return (
     <div
       ref={cardRef}
-      className="gallery-thumb is-sized"
+      className={`gallery-thumb is-sized${selected ? ' is-selected' : ''}`}
       data-file-id={file.id}
+      data-select-key={file.id}
       style={{ '--gallery-thumb-ratio': thumbRatio } as React.CSSProperties}
     >
+      {selected ? (
+        <span className="selection-check" aria-hidden="true">
+          <Check />
+        </span>
+      ) : null}
       <button
         type="button"
         className="block border-0 bg-transparent p-0 text-left w-full h-full"
@@ -284,8 +302,8 @@ const GalleryCard = memo(function GalleryCard({
         aria-label={`Open ${file.path}${
           file.mediaType === 'VIDEO' ? ' (video)' : ''
         }${
-          voteSystemEnabled && voteScore > 0
-            ? `, score ${voteScore}`
+          starsEnabled && stars > 0
+            ? `, ${starCount(stars)}`
             : ''
         }${hasRelations ? ', has related posts' : ''}${remote ? ', not on this device' : ''}`}
         onClick={() => onFileOpen(file)}
@@ -343,7 +361,7 @@ const GalleryCard = memo(function GalleryCard({
             src={`${API_BASE}/files/${file.id}/content`}
             testId="gallery-inline-video"
             onOpen={() => onFileOpen(file)}
-            trailing={voteChip}
+            trailing={starChip}
           />
         </>
       ) : null}
@@ -358,7 +376,7 @@ const GalleryCard = memo(function GalleryCard({
           <Play aria-hidden="true" fill="currentColor" className="size-10 p-2" />
         </button>
       ) : null}
-      {playing ? null : voteChip}
+      {playing ? null : starChip}
       <div className="gallery-source-icons" role="group" aria-label={`Sources: ${sourceIcons.map((icon) => icon.label).join(', ')}`}>
         <GallerySourceIconList icons={sourceIcons} />
       </div>

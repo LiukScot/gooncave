@@ -6,7 +6,15 @@ const TOUCHABLE =
 /** A tap that also changes a value (a checkbox, a radio) gives one haptic, not two. */
 export const PRESS_CHANGE_MS = 600;
 
-/** Gives a haptic on touch controls and value changes. Returns the cleanup. */
+let pulse: (() => void) | null = null;
+
+/** One haptic now, for a gesture that is not a click (a long press). */
+export function haptic() {
+  if (pulse) pulse();
+  else navigator.vibrate?.(10);
+}
+
+/** Gives a haptic on touch controls and value changes, and makes `haptic` reach the app. Returns the cleanup. */
 export function listenForHaptics(impact: () => Promise<void> = () => invoke('haptic')): () => void {
   let lastPress = -Infinity;
   let stopped = false;
@@ -34,7 +42,9 @@ export function listenForHaptics(impact: () => Promise<void> = () => invoke('hap
 
   window.addEventListener('click', press, true);
   window.addEventListener('change', change, true);
+  pulse = tap;
   return () => {
+    pulse = null;
     window.removeEventListener('click', press, true);
     window.removeEventListener('change', change, true);
   };

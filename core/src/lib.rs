@@ -74,6 +74,8 @@ pub enum Error {
     Invalid(String),
     Unavailable(&'static str),
     Remote(String),
+    /// The post no longer exists on its site, so nothing can be done to it there.
+    Gone(String),
     /// A booru asking for a pause (a CAPTCHA or a rate limit) that lifts by
     /// itself; `code` tells the client it may send the request again later.
     Refused {
@@ -87,9 +89,10 @@ impl fmt::Display for Error {
         match self {
             Self::Io(error) => error.fmt(formatter),
             Self::Sqlite(error) => error.fmt(formatter),
-            Self::Storage(message) | Self::Invalid(message) | Self::Remote(message) => {
-                formatter.write_str(message)
-            }
+            Self::Storage(message)
+            | Self::Invalid(message)
+            | Self::Remote(message)
+            | Self::Gone(message) => formatter.write_str(message),
             Self::Unavailable(message) => formatter.write_str(message),
             Self::Refused { message, .. } => formatter.write_str(message),
         }

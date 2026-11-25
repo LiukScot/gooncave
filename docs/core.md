@@ -15,7 +15,7 @@ with storage and running-instance recovery guidance.
 ## Available behavior
 
 The app opens the gallery without login. It shows the pictures and videos
-in the library folder, with thumbnails, the file detail, votes and deletion.
+in the library folder, with thumbnails, the file detail, stars and deletion.
 You can add tags and categories to files, remove tags, and search with booru
 syntax. Autocomplete uses the active library's canonical tags. Appearance
 stays on the device in browser storage. Extra settings, keyboard shortcuts
@@ -29,7 +29,7 @@ FurAffinity's watchlist in one feed, synced in the background. File source match
 and SauceNAO and refreshes tags from configured booru sites. Optional WD14
 tagging runs on Linux x86-64 computers with AVX2 and on the iPhone. The gallery stacks visual
 copies into one tile, and a confirmed duplicate policy resolves them. Device
-sync through a WebDAV folder shares tags, votes, favorites, read marks,
+sync through a WebDAV folder shares tags, stars, favorites, read marks,
 sources and settings; media files are not copied yet.
 
 The browser suite is `tests/`: `core-foundations`, `core-library` and
@@ -174,9 +174,9 @@ allowlist is enabled.
 | `GET/PUT /settings/extra` | Existing boolean settings and `maxGridColumns`, an integer from 0 through 12; PUT is a partial update |
 | `GET/PUT /settings/shortcuts` | `{ "bindings": { "action": "key" } }`; at most 64 entries, names and keys from 1 through 32 characters |
 | `GET/PUT /settings/blacklist` | `tags` (at most 500 strings, each from 1 through 100 characters), `applyToExplore`, `applyToGallery`, `applyToSubscriptions` (off by default, also for a setting saved without it); PUT is a partial update |
-| `GET /files` | `{ files, total }` with `folderId`, `mediaType`, `location` (`LOCAL` for originals on this device, or `REMOTE`), `limit` (1–1000), `offset` and `sort` (`mtime_desc`, `mtime_asc`, `rated`, `random` with an optional `seed`; default newest import first). `mtime_*` and the ties of `rated` follow `gallery_at`, the date the content first entered the library, or the last time it was uploaded or shared again, which is the same on every device. `tags` supports required terms, `~` alternatives, `-` exclusions, `score:` comparisons, `parent:any` and `pool:any`; at most 60 terms and 16 KiB |
+| `GET /files` | `{ files, total }` with `folderId`, `mediaType`, `location` (`LOCAL` for originals on this device, or `REMOTE`), `limit` (1–1000), `offset` and `sort` (`mtime_desc`, `mtime_asc`, `rated`, `random` with an optional `seed`; default newest import first). `mtime_*` and the ties of `rated` follow `gallery_at`, the date the content first entered the library, or the last time it was uploaded or shared again, which is the same on every device. `tags` supports required terms, `~` alternatives, `-` exclusions, `score:` (or `stars:`) comparisons, `parent:any` and `pool:any`; at most 60 terms and 16 KiB |
 | `DELETE /files/{id}` | Deletes the file from disk, its row, read marks and an unshared thumbnail |
-| `POST /files/{id}/vote` | `{ "value": 1 }` or `-1`; one vote per file every 24 hours, never below 0. A refused vote returns HTTP 409 with the current `voteScore` and `nextVoteAt` |
+| `POST /files/{id}/star` | `{ "value": 1 }` gives a star, `-1` takes one back; one change per file every 24 hours, never below 0. A refused change returns HTTP 409 with the current `stars` and `nextStarAt`. Stars are stored in `file_votes`, the name synced devices share |
 | `GET /files/{id}/tags` | Stored tags minus removals, derived implied tags and favorite source links |
 | `POST /files/{id}/tags/manual` | Add a tag or change its manual category; normalise names and resolve aliases |
 | `POST /files/{id}/tags/suppress` | Remove 1–64 canonical tag names; delete manual rows and suppress provider rows |
@@ -192,7 +192,7 @@ allowlist is enabled.
 | `GET /files/{id}/content` | Streams only a recorded file inside its selected local folder, with HTTP byte ranges, ETag validation and stale If-Range recovery. `download=1` adds an attachment `Content-Disposition` |
 | `GET /thumbnails/{name}` | A cached thumbnail referenced by a file in the active library. For a GIF poster, `?motion=1` serves its platform video preview with byte ranges when available. |
 | `GET /folders` | The library folder and its direct subfolders, with `status` (`IDLE` or `SCANNING`) and `lastScanAt`. `POST /folders` and `DELETE /folders/{id}` return HTTP 400 with guidance |
-| `GET /library/version` | `{ version }`: a number that changes on every write to what the gallery shows (files, tags, votes, favorites, relations, trash, folders), from any job, sync or screen. Only a change means something; the gallery polls it every 3 seconds and refetches its files when it moves |
+| `GET /library/version` | `{ version }`: a number that changes on every write to what the gallery shows (files, tags, stars, favorites, relations, trash, folders), from any job, sync or screen. Only a change means something; the gallery polls it every 3 seconds and refetches its files when it moves |
 | `GET /library/progress` | `{ scanning, files, found, waiting }`: whether a library scan runs, files in the library, media files the latest walk found on disk, and synced or imported records still waiting for their file |
 | `POST /folders/{id}/uploads` | Multipart upload, at most 500 MiB. Each file is refused when its name exists, its type is unsupported, or its bytes do not match its extension. Up to four files are processed at once; `rejected` is not in upload order |
 | `POST /read-marks`, `DELETE /read-marks?scope=` | Scope `file`, `post` or `opened` (a file opened in the Gallery); 1–500 keys of 1–256 characters. For `post`, optional `posts` maps a key to the post Explore showed; the core keeps its own fields (no tags), and a copy that is not that post is left out of History |
@@ -326,11 +326,11 @@ npm run test:desktop
 
 Core integration tests use temporary SQLite databases and loopback ports.
 They verify restart persistence, migrations, validation, origin checks,
-media ranges, scans, thumbnails, votes, deletion, uploads, read marks, tags,
+media ranges, scans, thumbnails, stars, deletion, uploads, read marks, tags,
 alias search, suggestions and atomic vocabulary replacement;
 they need FFmpeg. Browser tests launch the Rust core with a temporary
 database and a library folder holding a picture and a video. They verify
-startup, saved settings, visible recovery, and opening, voting and deleting
+startup, saved settings, visible recovery, and opening, starring and deleting
 library files.
 The separate WD14 integration test explicitly downloads the pinned model
 and compares three neutral images with the Python 1.30 reference: identical

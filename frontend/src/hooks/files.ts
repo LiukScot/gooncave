@@ -28,10 +28,10 @@ export function useDeleteFile() {
   });
 }
 
-export function useVoteFile() {
+export function useStarFile() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (fileId: string) => api.voteFile(fileId),
+    mutationFn: (fileId: string) => api.starFile(fileId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.files.all });
     }

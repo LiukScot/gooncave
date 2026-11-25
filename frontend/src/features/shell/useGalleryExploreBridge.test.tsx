@@ -31,8 +31,8 @@ const file = (id: string): FileItem => ({
   durationMs: null,
   thumbPath: null,
   thumbUrl: null,
-  voteScore: 0,
-  nextVoteAt: null,
+  stars: 0,
+  nextStarAt: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z'
 });

@@ -135,9 +135,9 @@ export type FileItem = {
   /** Why a file missing here still has no preview, e.g. its site is not answering. */
   previewProblem?: string | null;
   providerGif?: boolean;
-  voteScore: number;
+  stars: number;
   /** ISO timestamp of the next allowed vote, null when never voted. */
-  nextVoteAt: string | null;
+  nextStarAt: string | null;
   providers?: Partial<Record<'SAUCENAO' | 'FLUFFLE', ProviderRun>>;
   favoriteProviders?: string[];
   /** The booru post this file came from has a parent or children. */
@@ -150,7 +150,7 @@ export type DoubleTapAction = 'zoom' | 'exit';
 
 export type ExtraSettings = {
   gamesTabEnabled: boolean;
-  voteSystemEnabled: boolean;
+  starsEnabled: boolean;
   autoVoteOnFavorite: boolean;
   /** Marks Explore posts read and offers "Unread only" there. */
   readTrackingEnabled: boolean;
@@ -180,7 +180,7 @@ export type CacheLimitGb = (typeof CACHE_LIMITS_GB)[number];
  */
 export const EXTRA_SETTINGS_DEFAULTS: ExtraSettings = {
   gamesTabEnabled: true,
-  voteSystemEnabled: false,
+  starsEnabled: false,
   autoVoteOnFavorite: true,
   readTrackingEnabled: true,
   exploreStackDuplicates: false,
@@ -210,7 +210,12 @@ export const BLACKLIST_DEFAULTS: BlacklistSettings = {
 };
 
 /** The saved searches and followed artists, as stored. */
-export type SubscriptionTargets = { tags: string[]; artists: string[] };
+export type SubscriptionTargets = {
+  tags: string[];
+  artists: string[];
+  /** Searches the tag vocabulary renamed, with the tag their posts now carry instead. */
+  aliases?: Record<string, string>;
+};
 
 /** A FurAffinity account whose watchlist could not be synced with the artists. */
 export type ArtistSyncError = {
@@ -749,10 +754,10 @@ type DuplicateScanStartResponse = {
 type DuplicateScanStatusResponse = DuplicateScanStatus;
 type DuplicateSettingsResponse = DuplicateSettings;
 type ClearTagsResponse = { status: string; removed: number };
-type FileVoteResponse = {
+type FileStarResponse = {
   status: string;
-  voteScore: number;
-  nextVoteAt: string | null;
+  stars: number;
+  nextStarAt: string | null;
 };
 type FavoriteSyncResult = {
   provider: string;
@@ -1138,13 +1143,13 @@ export const api = {
     });
     return handle<{ status: string; errors?: string[] }>(res);
   },
-  voteFile: async (fileId: string) => {
-    const res = await apiFetch(`${API_BASE}/files/${fileId}/vote`, {
+  starFile: async (fileId: string) => {
+    const res = await apiFetch(`${API_BASE}/files/${fileId}/star`, {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify({ value: 1 })
     });
-    return handle<FileVoteResponse>(res);
+    return handle<FileStarResponse>(res);
   },
   runProvider: async (fileId: string, provider: 'saucenao' | 'fluffle') => {
     const res = await apiFetch(
@@ -1384,6 +1389,10 @@ export const api = {
     siteIds: string[];
     cursor: string | null;
     limit: number;
+    /** Tags every entry must have, separated by spaces. */
+    tags?: string;
+    /** Only entries read at or after this RFC 3339 time. */
+    since?: string | null;
     signal?: AbortSignal;
   }) => {
     const query = new URLSearchParams({
@@ -1391,11 +1400,22 @@ export const api = {
       limit: String(params.limit)
     });
     if (params.cursor) query.set('cursor', params.cursor);
+    if (params.tags) query.set('tags', params.tags);
+    if (params.since) query.set('since', params.since);
     const res = await apiFetch(
       `${API_BASE}/read-marks/history?${query.toString()}`,
       params.signal ? { signal: params.signal } : undefined
     );
     return handle<{ posts: ExplorePost[]; nextCursor: string | null }>(res);
+  },
+  /** Drops the read marks behind History entries (`siteId:remoteId`), so they count as unread again. */
+  removeHistory: async (entries: string[]) => {
+    const res = await apiFetch(`${API_BASE}/read-marks/history/remove`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ entries })
+    });
+    return handle<{ removed: number }>(res);
   },
   exploreGalleryMatches: async (
     posts: ExplorePost[],

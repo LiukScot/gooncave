@@ -49,10 +49,34 @@ fn text(v: &Value, key: &str, max: usize) -> Result<String> {
 }
 /// The saved searches and artists as stored, without the FurAffinity sync `settings` runs.
 async fn tags(State(db): State<Database>) -> Result<Json<Value>> {
-    let (tags, artists) = db
-        .call(|c| Ok((store::searches(c)?, store::artists(c)?)))
+    let (tags, artists, aliases) = db
+        .call(|c| {
+            let tags = store::searches(c)?;
+            let aliases = aliases(c, &tags)?;
+            Ok((tags, store::artists(c)?, aliases))
+        })
         .await?;
-    Ok(Json(json!({"tags":tags,"artists":artists})))
+    Ok(Json(
+        json!({"tags":tags,"artists":artists,"aliases":aliases}),
+    ))
+}
+/// The saved single-tag searches the tag vocabulary has renamed, with the tag they now go by: a
+/// site answers the old name with posts carrying only the new one.
+pub(crate) fn aliases(
+    c: &rusqlite::Connection,
+    tags: &[String],
+) -> Result<HashMap<String, String>> {
+    let mut renamed = HashMap::new();
+    for tag in tags {
+        if tag.contains([' ', ':', '*']) || tag.starts_with(['-', '~']) {
+            continue;
+        }
+        let now = crate::tags::canonical(c, &crate::tags::normalize(tag))?;
+        if now != crate::tags::normalize(tag) {
+            renamed.insert(tag.clone(), now);
+        }
+    }
+    Ok(renamed)
 }
 async fn settings(State(db): State<Database>) -> Result<Json<Value>> {
     // A running sync (the feed's first page, or a follow) covers the watchlists; the page must
@@ -793,6 +817,8 @@ pub(crate) async fn record_site_hits(
     posts: &[(usize, Value)],
 ) -> Result<()> {
     let entries = tags.iter().chain(artists).cloned().collect::<Vec<_>>();
+    let held = tags.to_vec();
+    let renamed = db.call(move |c| aliases(c, &held)).await?;
     let mut found = HashSet::new();
     for (index, post) in posts {
         let site = &sites[*index];
@@ -805,7 +831,13 @@ pub(crate) async fn record_site_hits(
             .flatten()
             .filter_map(|t| t["tag"].as_str().map(crate::tags::normalize))
             .collect();
-        for entry in entries.iter().filter(|e| matches_search(e, &post_tags)) {
+        let matches = |entry: &String| {
+            matches_search(entry, &post_tags)
+                || renamed
+                    .get(entry)
+                    .is_some_and(|now| post_tags.contains(now))
+        };
+        for entry in entries.iter().filter(|e| matches(e)) {
             found.insert((entry.clone(), site.id.clone()));
         }
     }
@@ -1305,6 +1337,33 @@ mod tests {
         assert_eq!(artists.len(), 2);
         let (tags, _) = added(&db, json!({"search":"-nawka"})).await;
         assert_eq!(tags.last().unwrap(), "-nawka");
+    }
+    #[tokio::test]
+    async fn a_search_the_vocabulary_renamed_matches_posts_under_its_new_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        db.call(|c| {
+            c.execute("INSERT INTO tag_aliases(antecedent,consequent,source) VALUES ('old_artist','new_artist','e621')", [])?;
+            c.execute("INSERT INTO user_booru_sites(id,user_id,name,engine,base_url,is_preset,enabled,sort_order,created_at,updated_at)
+                VALUES ('fixture',?1,'Fixture','e621','https://fixture.invalid',0,1,0,'2026-10-12','2026-10-12')", [crate::db::OWNER_ID])?;
+            crate::db::write_setting(c, "subscriptions.tags", &json!(["old_artist", "fox", "old_artist score:>5"]))?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+        // The tile's label reads the new name from here.
+        let Json(listed) = tags(State(db.clone())).await.unwrap();
+        assert_eq!(listed["aliases"], json!({"old_artist": "new_artist"}));
+        // Settings counts the site where the renamed search had results.
+        let site = boorus::site(&db, "fixture".into()).await.unwrap().unwrap();
+        let tags = vec!["old_artist".to_owned(), "fox".to_owned()];
+        let post = json!({"tags": [{"tag": "new_artist", "category": "artist"}]});
+        record_site_hits(&db, &[site], &tags, &[], &[(0, post)])
+            .await
+            .unwrap();
+        let hits = db.call(|c| store::site_hits(c)).await.unwrap();
+        assert_eq!(hits.get("old_artist"), Some(&vec!["fixture".to_owned()]));
+        assert_eq!(hits.get("fox"), None);
     }
     #[test]
     fn a_search_matches_posts_by_its_positive_tags_only() {

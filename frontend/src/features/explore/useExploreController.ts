@@ -19,6 +19,7 @@ import {
   writeExploreSnapshot
 } from './exploreSnapshot';
 import { sendWhenSiteAllows } from './favoriteRetryQueue';
+import { historySince } from './historyPeriod';
 import {
   fillPages,
   openStreams,
@@ -168,6 +169,10 @@ export function useExploreController({
   const resumed = readExploreQuery();
   const [tagInput, setTagInput] = useState(resumed?.tagInput ?? '');
   const [tagQuery, setTagQuery] = useState(resumed?.tagQuery ?? '');
+  // History has its own filters: an Explore search left in the box must not narrow it.
+  const [historyTagInput, setHistoryTagInput] = useState('');
+  const [historyTags, setHistoryTags] = useState('');
+  const [historyPeriod, setHistoryPeriod] = useState<ExploreWindow>('all');
   const subscriptionsAvailable = capabilities?.subscriptions !== false;
   const navigate = useNavigate();
   const location = useLocation();
@@ -468,12 +473,23 @@ export function useExploreController({
         siteIds: activeSiteIds,
         cursor,
         limit: PAGE_SIZE,
+        tags: historyTags,
+        since: historySince(historyPeriod),
         signal
       });
       return { posts: page.posts.filter(keepPost), nextCursor: page.nextCursor };
     },
-    [activeSiteIds, keepPost]
+    [activeSiteIds, keepPost, historyTags, historyPeriod]
   );
+
+  /** Takes posts out of History; they count as unread again. */
+  const removeFromHistory = useCallback(async (removed: ExplorePost[]) => {
+    // A read mark still waiting in the queue would put a removed post straight back.
+    await flushReadQueue('post');
+    await api.removeHistory(removed.map(explorePostKey));
+    const keys = new Set(removed.map(explorePostKey));
+    setPosts((current) => current.filter((post) => !keys.has(explorePostKey(post))));
+  }, []);
 
   const fillOptions = useCallback(
     (signal: AbortSignal): FillOptions => ({
@@ -679,7 +695,8 @@ export function useExploreController({
     subscriptionKey,
     effectiveUnreadOnly ? 'unread' : 'all',
     exploreStackDuplicates ? 'stacked' : 'separate',
-    favoriteEveryMatchedCopy ? 'favorite-matches' : 'leave-matches'
+    favoriteEveryMatchedCopy ? 'favorite-matches' : 'leave-matches',
+    sort === 'history' ? `${historyTags}\u0001${historyPeriod}` : ''
   ].join('\u0000');
 
   // Wait for the site list and the blacklist before the first fetch: without
@@ -776,7 +793,9 @@ export function useExploreController({
     subscriptionKey,
     effectiveUnreadOnly,
     exploreStackDuplicates,
-    favoriteEveryMatchedCopy
+    favoriteEveryMatchedCopy,
+    historyTags,
+    historyPeriod
   ]);
 
   useWindowScrollScreen(
@@ -987,6 +1006,12 @@ export function useExploreController({
     }, TAG_SEARCH_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [applySearch, tagInput]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setHistoryTags(historyTagInput.trim().toLowerCase());
+    }, TAG_SEARCH_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [historyTagInput]);
 
   /**
    * Runs the explore search off a tag pill. Same two actions as the gallery,
@@ -997,6 +1022,7 @@ export function useExploreController({
     async (tag: string, category: string) => {
       const mode = await choose('', {
         title: tag,
+        copyTitle: true,
         actions: [
           { value: 'search', label: 'Search tag' },
           ...(subscriptionsAvailable ? [subscriptionActionFor(tag)] : []),
@@ -1063,7 +1089,7 @@ export function useExploreController({
       applyDelta(delta);
       if (favoriteWorkersRef.current.has(key)) {
         deferredFavoriteVoteRef.current.set(key, nextVote);
-        return;
+        return true;
       }
       setPendingVoteKey(key);
       try {
@@ -1073,10 +1099,12 @@ export function useExploreController({
           score: nextVote ?? 0,
           previousScore: nextVote === null ? previousVote ?? undefined : undefined
         });
+        return true;
       } catch (err) {
         setVotedKeys((current) => new Map(current).set(key, previousVote));
         applyDelta(-delta);
         notifyActionError(`Could not save your vote on ${post.siteName}`, err);
+        return false;
       } finally {
         setPendingVoteKey(null);
       }
@@ -1122,7 +1150,11 @@ export function useExploreController({
       // slow writes and re-checks that state after each response, collapsing
       // any number of rapid clicks into at most the calls needed to reach the
       // final choice.
-      if (favoriteWorkersRef.current.has(key)) return;
+      const running = favoriteWorkersRef.current.get(key);
+      if (running) {
+        await running;
+        return favoriteDesiredRef.current.get(key) === desired;
+      }
 
       const previousVote = voteOf(post);
       const optimisticAutoVote = desired && shouldAutoVote(
@@ -1273,6 +1305,8 @@ export function useExploreController({
       })();
       favoriteWorkersRef.current.set(key, worker);
       await worker;
+      // A failure puts the desired state back to what the site has.
+      return favoriteDesiredRef.current.get(key) === desired;
     },
     [
       autoVoteOnFavorite,
@@ -1309,7 +1343,9 @@ export function useExploreController({
     const worker = drainAutomaticFavoriteQueue(
       automaticFavoriteQueueRef.current,
       () => automaticFavoriteGenerationRef.current,
-      (post) => toggleFavorite(post, false, false)
+      async (post) => {
+        await toggleFavorite(post, false, false);
+      }
     ).finally(() => {
       if (automaticFavoriteWorkerRef.current === worker) {
         automaticFavoriteWorkerRef.current = null;
@@ -1669,6 +1705,17 @@ export function useExploreController({
     toggleUnreadOnly,
     readHidden,
 
+    historyTagInput,
+    setHistoryTagInput,
+    /** Applies the History tag box now, without waiting for typing to settle. */
+    searchHistoryNow: (value: string) => {
+      setHistoryTagInput(value);
+      setHistoryTags(value.trim().toLowerCase());
+    },
+    historyPeriod,
+    setHistoryPeriod,
+    removeFromHistory,
+
     sort,
     setSort,
     popularWindow,
@@ -1711,6 +1758,7 @@ export function useExploreController({
     hasSubscriptions,
     subscribedTags,
     subscribedPools,
+    subscriptionAliases: subscriptionTags.data?.aliases,
     subscriptionsLoading:
       sort === 'subscribed' &&
       (subscriptionTags.isLoading || subscriptionPools.isLoading)

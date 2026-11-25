@@ -5,13 +5,13 @@ import { createPortal } from 'react-dom';
 
 import type { TagEntry, TagGroup } from './FileDetailPanel';
 import { sortTagGroups, withImpliedTags } from './sections';
+import { formatStarCooldown, useNow } from './star';
 import {
   fileTypeFromPath,
   formatDateTime,
   formatDuration,
   formatSizeMb
 } from './utils';
-import { formatVoteCooldown, useNow } from './vote';
 
 import type { FileItem, FileSiteInfo, RelatedPost } from '@/api';
 import { FoldedBox } from '@/components/FoldedBox';
@@ -29,7 +29,7 @@ import { useBlacklistSettings, useSubscriptionTags } from '@/hooks/settings';
 
 /**
  * One of the controls that float on top of the media: the back button, and
- * the vote / delete / favourite buttons beside the picture.
+ * the star / delete / favourite buttons beside the picture.
  * Shared so the gallery's detail view and explore's cannot drift apart.
  */
 export function OverlayButton({
@@ -101,18 +101,18 @@ export function WindowBarBack({ label, onClick }: { label: string; onClick: () =
 export function FileInfoList({
   file,
   siteInfo = null,
-  voteSystemEnabled,
+  starsEnabled,
   testId
 }: {
   file: FileItem;
   /** What the booru said about the post this file came from, when it is known. */
   siteInfo?: FileSiteInfo | null;
-  voteSystemEnabled: boolean;
+  starsEnabled: boolean;
   /** Set by the panel only, so tests never match the preview copies. */
   testId?: string;
 }): React.ReactElement {
-  const cooldown = formatVoteCooldown(file.nextVoteAt, useNow(60_000));
-  // The site's score and GoonCave's own vote share a word, so both say whose they are.
+  const cooldown = formatStarCooldown(file.nextStarAt, useNow(60_000));
+  // The site's score is the site's; GoonCave's own count is its stars.
   const site: [string, string][] = siteInfo
     ? [
         ...(siteInfo.uploader ? [['Uploader', siteInfo.uploader] as [string, string]] : []),
@@ -154,14 +154,14 @@ export function FileInfoList({
           <span className="font-semibold file-detail-label">{label}:</span> {value}
         </React.Fragment>
       ))}
-      {voteSystemEnabled ? (
+      {starsEnabled ? (
         <>
           <br />
-          <span className="font-semibold file-detail-label">Score (GoonCave):</span>{' '}
-          <span data-test-id={testId} className="file-detail-vote-score">
-            {file.voteScore > 0 ? `+${file.voteScore}` : file.voteScore}
+          <span className="font-semibold file-detail-label">Stars:</span>{' '}
+          <span data-test-id={testId} className="file-detail-star-count">
+            {file.stars}
           </span>
-          {cooldown ? <span data-test-id="vote-cooldown-info"> · votable again in {cooldown}</span> : null}
+          {cooldown ? <span data-test-id="star-cooldown-info"> · can get a star again in {cooldown}</span> : null}
         </>
       ) : null}
     </div>

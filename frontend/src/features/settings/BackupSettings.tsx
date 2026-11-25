@@ -40,7 +40,7 @@ function WaitingRecords({ imported }: { imported: boolean }) {
             <progress className="progress mt-2" aria-label="Library files read" max={value.found} value={value.files} />
           )}
           <p className="text-muted-foreground text-xs mt-2">
-            Tags, votes and favorites belong to files, so {records(value.waiting)} wait until GoonCave reads their
+            Tags, stars and favorites belong to files, so {records(value.waiting)} wait until GoonCave reads their
             file and then apply on their own. A large library takes a while. Keep GoonCave open: closing it pauses
             the work, and it continues on the next start.
           </p>
@@ -88,7 +88,7 @@ function useImport<T>(run: (input: T) => Promise<ImportResult>) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: run,
-    // Votes, tags and favorites may have changed on every screen.
+    // Stars, tags and favorites may have changed on every screen.
     onSuccess: () => void client.invalidateQueries()
   });
 }
@@ -108,7 +108,7 @@ export function BackupFile() {
   return (
     <div className="list-group-item">
       <p className="text-muted-foreground text-xs">
-        A file with your tags, votes, favorites, read marks, sources, sites and shared settings. It holds no
+        A file with your tags, stars, favorites, read marks, sources, sites and shared settings. It holds no
         booru passwords, keys or media files. Importing one adds and updates records; nothing on this device is
         deleted. Records of files GoonCave has not read yet apply as the library scan reads them.
       </p>
@@ -175,7 +175,7 @@ export function OldServerImport() {
         {takeOver.isPending ? 'Importing from the old server…' : 'Import from the old server'}
       </button>
       <p className="text-muted-foreground text-xs mt-2">
-        Votes, tags, favorites, read marks, sources, sites with their keys and shared settings come over. Settings
+        Stars, tags, favorites, read marks, sources, sites with their keys and shared settings come over. Settings
         kept per device, such as grid columns, stay as they are here.
       </p>
       {takeOver.data ? (

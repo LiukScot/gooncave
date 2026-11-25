@@ -26,6 +26,10 @@ if (isIos()) {
 }
 
 installWindowErrorLog(window);
+// A picture or link dragged out of the app hands over its local address, not the file.
+document.addEventListener('dragstart', (event) => {
+  if (event.target instanceof Element && event.target.closest('img, video, a')) event.preventDefault();
+});
 applyScreenCorner();
 
 // Electron's window without a system title bar; `navigator.windowControlsOverlay` is not in
@@ -64,7 +68,7 @@ root.render(
       {/* No richColors: it replaces the token mapping in components/ui/sonner
           with sonner's own palette, and the toasts stopped looking like the
           app. The type still reads from the per-type icon declared there.
-          No closeButton either: a toast is the same capsule as the vote-undo
+          No closeButton either: a toast is the same capsule as the star-undo
           pill, which carries its action inside and nothing in its corner.
           They still go on a swipe, and none of them outlives its own
           timeout. */}

@@ -1,6 +1,6 @@
 import { Outlet, useRouter, useSearch } from '@tanstack/react-router';
 import { Images } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { useAppShellContext } from './AppShell';
 import { FeatureUnavailable } from './FeatureUnavailable';
@@ -30,6 +30,7 @@ import { SyncSettings } from '@/features/settings/SyncSettings';
 import { TrashSettings } from '@/features/settings/TrashSettings';
 import { useExtraSettings } from '@/hooks/settings';
 import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
+import { useSettingsSlide } from '@/lib/settingsSlide';
 
 export function GalleryRouteView() {
   const { authUser, galleryCtl, fileDetailCtl, openGalleryFile, sourceFavoritesCtl, addFiles, addFromPhotos } = useAppShellContext();
@@ -123,8 +124,9 @@ export function GamesRouteView() {
   return <GamesView />;
 }
 
-// Layout for /app/settings/*: just the outlet. The index route renders the
-// hub menu; each subgroup route below renders its own full page.
+// Layout for /app/settings/*: the outlet, and the copy of the page being left
+// while it slides away. The index route renders the hub menu; each subgroup
+// route below renders its own full page.
 export function SettingsRouteView() {
   const router = useRouter();
   // Here and not in each page: the hook has to outlive the page it takes
@@ -135,7 +137,17 @@ export function SettingsRouteView() {
     undefined,
     { fromAnywhere: true }
   );
-  return <Outlet />;
+  const stageRef = useRef<HTMLDivElement>(null);
+  const leavingRef = useRef<HTMLDivElement>(null);
+  useSettingsSlide(stageRef, leavingRef);
+  return (
+    <div ref={stageRef} className="settings-stage">
+      <div className="settings-page">
+        <Outlet />
+      </div>
+      <div ref={leavingRef} className="settings-leaving" aria-hidden="true" />
+    </div>
+  );
 }
 
 export function SettingsIndexRouteView() {

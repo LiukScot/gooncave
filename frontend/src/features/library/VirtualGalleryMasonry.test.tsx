@@ -56,8 +56,8 @@ const fileAt = (index: number): FileItem => ({
   durationMs: null,
   thumbPath: null,
   thumbUrl: `/thumbnails/${index}.jpg`,
-  voteScore: 0,
-  nextVoteAt: null,
+  stars: 0,
+  nextStarAt: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z'
 });
@@ -82,15 +82,15 @@ it('does not recompute unchanged card sources when the scroll range updates', as
   const duplicateGroups: [] = [];
   const sourceSites: BooruSite[] = [];
   const onFileOpen = vi.fn();
-  const onUpvote = vi.fn().mockResolvedValue(undefined);
+  const onGiveStar = vi.fn().mockResolvedValue(undefined);
   const render = () => root?.render(
     <VirtualGalleryMasonry
       files={files}
       duplicateGroups={duplicateGroups}
       sourceSites={sourceSites}
-      voteSystemEnabled={false}
+      starsEnabled={false}
       onFileOpen={onFileOpen}
-      onUpvote={onUpvote}
+      onGiveStar={onGiveStar}
     />
   );
   await act(async () => {
@@ -145,9 +145,9 @@ it.each([200, 1_000, 5_000, 10_000])(
       root?.render(
         <VirtualGalleryMasonry
           files={Array.from({ length: count }, (_, index) => fileAt(index))}
-          voteSystemEnabled={false}
+          starsEnabled={false}
           onFileOpen={() => undefined}
-          onUpvote={async () => undefined}
+          onGiveStar={async () => undefined}
         />
       );
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -197,9 +197,9 @@ it('shows sources from an off-page copy on one fixed tile without a switch', asy
           { id: 'danbooru-site', name: 'Danbooru', baseUrl: 'https://danbooru.donmai.us', presetKey: null },
           { id: 'e-site', name: 'e', baseUrl: 'https://rule34.xxx', presetKey: null }
         ] as BooruSite[]}
-        voteSystemEnabled={false}
+        starsEnabled={false}
         onFileOpen={onFileOpen}
-        onUpvote={async () => undefined}
+        onGiveStar={async () => undefined}
       />
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -235,9 +235,9 @@ it('uses a bounded animated thumbnail and a placeholder when no thumbnail exists
           { ...fileAt(0), path: '/library/animated.gif', thumbUrl: '/thumbnails/animated.webp' },
           { ...fileAt(1), thumbUrl: null }
         ]}
-        voteSystemEnabled={false}
+        starsEnabled={false}
         onFileOpen={() => undefined}
-        onUpvote={async () => undefined}
+        onGiveStar={async () => undefined}
       />
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -268,9 +268,9 @@ it('caps gallery columns and grows tiles on a wide screen', async () => {
       <VirtualGalleryMasonry
         files={[fileAt(0), fileAt(1)]}
         maxGridColumns={2}
-        voteSystemEnabled={false}
+        starsEnabled={false}
         onFileOpen={() => undefined}
-        onUpvote={async () => undefined}
+        onGiveStar={async () => undefined}
       />
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -297,9 +297,9 @@ it('draws and packs a file of unknown size as a square, so no hole opens under i
       <VirtualGalleryMasonry
         files={[unprobed(0), unprobed(1), unprobed(2)]}
         maxGridColumns={2}
-        voteSystemEnabled={false}
+        starsEnabled={false}
         onFileOpen={() => undefined}
-        onUpvote={async () => undefined}
+        onGiveStar={async () => undefined}
       />
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -314,7 +314,7 @@ it('draws and packs a file of unknown size as a square, so no hole opens under i
   container.remove();
 });
 
-it('shows an upvote at zero and replaces it with a cooldown clock after voting', async () => {
+it('shows a star at zero and replaces it with a cooldown clock after giving one', async () => {
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
     function (this: HTMLElement) {
@@ -324,7 +324,7 @@ it('shows an upvote at zero and replaces it with a cooldown clock after voting',
   );
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
   const onFileOpen = vi.fn();
-  const onUpvote = vi.fn().mockResolvedValue(undefined);
+  const onGiveStar = vi.fn().mockResolvedValue(undefined);
   const container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
@@ -332,35 +332,35 @@ it('shows an upvote at zero and replaces it with a cooldown clock after voting',
     root?.render(
       <VirtualGalleryMasonry
         files={[fileAt(0)]}
-        voteSystemEnabled
+        starsEnabled
         onFileOpen={onFileOpen}
-        onUpvote={onUpvote}
+        onGiveStar={onGiveStar}
       />
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
-  const upvote = container.querySelector<HTMLButtonElement>('[data-test-id="card-upvote"]');
-  expect(upvote?.disabled).toBe(false);
-  expect(upvote?.getAttribute('aria-label')).toBe('Upvote; score 0');
-  expect(upvote?.querySelector('svg.lucide-chevron-up')).not.toBeNull();
-  expect(container.querySelector('[data-test-id="file-card"] [data-test-id="card-upvote"]')).toBeNull();
-  await act(async () => upvote?.click());
-  expect(onUpvote).toHaveBeenCalledOnce();
-  expect(onUpvote).toHaveBeenCalledWith('file-0');
+  const star = container.querySelector<HTMLButtonElement>('[data-test-id="card-star"]');
+  expect(star?.disabled).toBe(false);
+  expect(star?.getAttribute('aria-label')).toBe('Give a star; 0 stars');
+  expect(star?.querySelector('svg.lucide-star')).not.toBeNull();
+  expect(container.querySelector('[data-test-id="file-card"] [data-test-id="card-star"]')).toBeNull();
+  await act(async () => star?.click());
+  expect(onGiveStar).toHaveBeenCalledOnce();
+  expect(onGiveStar).toHaveBeenCalledWith('file-0');
   expect(onFileOpen).not.toHaveBeenCalled();
 
   await act(async () => {
     root?.render(
       <VirtualGalleryMasonry
-        files={[{ ...fileAt(0), voteScore: 1, nextVoteAt: new Date(Date.now() + 60_000).toISOString() }]}
-        voteSystemEnabled
+        files={[{ ...fileAt(0), stars: 1, nextStarAt: new Date(Date.now() + 60_000).toISOString() }]}
+        starsEnabled
         onFileOpen={onFileOpen}
-        onUpvote={onUpvote}
+        onGiveStar={onGiveStar}
       />
     );
   });
-  const cooldown = container.querySelector<HTMLButtonElement>('[data-test-id="card-upvote"]');
+  const cooldown = container.querySelector<HTMLButtonElement>('[data-test-id="card-star"]');
   expect(cooldown?.disabled).toBe(true);
   expect(cooldown?.querySelector('svg.lucide-clock')).not.toBeNull();
   expect(container.querySelector('button[aria-label^="Vote down"]')).toBeNull();
@@ -389,9 +389,9 @@ it('recomputes masonry positions when width changes within one lane count', asyn
     root?.render(
       <VirtualGalleryMasonry
         files={Array.from({ length: 40 }, (_, index) => fileAt(index))}
-        voteSystemEnabled={false}
+        starsEnabled={false}
         onFileOpen={() => undefined}
-        onUpvote={async () => undefined}
+        onGiveStar={async () => undefined}
       />
     );
   });
@@ -445,9 +445,9 @@ it('plays a video inside its tile and pauses it once the tile leaves the screen'
           { ...fileAt(0), path: '/library/clip.mp4', mediaType: 'VIDEO' },
           fileAt(1)
         ]}
-        voteSystemEnabled={false}
+        starsEnabled={false}
         onFileOpen={(file) => opened.push(file.id)}
-        onUpvote={async () => undefined}
+        onGiveStar={async () => undefined}
       />
     );
     await new Promise((resolve) => setTimeout(resolve, 0));

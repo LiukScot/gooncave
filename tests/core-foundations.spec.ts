@@ -7,7 +7,7 @@ test('opens the gallery without login and keeps a setting after reload', async (
   await expect(page).toHaveURL(/\/app\/gallery$/);
   await expect(page.getByRole('heading', { name: 'Gallery', exact: true })).toBeVisible();
   await page.goto('/app/settings/extra');
-  const setting = page.getByRole('checkbox', { name: 'Gallery vote system' });
+  const setting = page.getByRole('checkbox', { name: 'Gallery stars' });
   const initial = await setting.isChecked();
   const save = page.waitForResponse((response) => response.url().endsWith('/settings/extra') && response.request().method() === 'PUT');
   await setting.click();
