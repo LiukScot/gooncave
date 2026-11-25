@@ -1,9 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ScrollText } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { api } from '@/api';
 import { queryKeys } from '@/lib/query-keys';
+import { useErrorToast } from '@/lib/useErrorToast';
 
 const NEW_ISSUE = 'https://github.com/LiukScot/gooncave/issues/new';
 // GitHub refuses addresses of about 8 KB; this leaves room for the note on removed lines.
@@ -77,6 +79,34 @@ export const issueAddress = (head: string, log: string) => {
     ? { href: address(), removedLines, bodyFits: false }
     : { href: href(removedLines), removedLines, bodyFits: true };
 };
+
+/** Whether the log keeps `[developer]` notes on what the app was doing. Errors are kept either way. */
+function DeveloperLogToggle({ enabled }: { enabled: boolean }) {
+  const client = useQueryClient();
+  const update = useMutation({
+    mutationFn: api.setDeveloperLog,
+    onSuccess: (developerLog) =>
+      client.setQueryData<Report>(queryKeys.report, (report) => report && { ...report, developerLog })
+  });
+  useErrorToast(update.error);
+  return (
+    <div className="list-group mb-6">
+      <div className="list-group-item flex items-center gap-3">
+        <ScrollText className="size-5 text-muted-foreground shrink-0" aria-hidden="true" />
+        <span className="flex-1 min-w-0">
+          <label className="block font-medium" htmlFor="report-developer-log">Detailed log</label>
+          <span className="block text-muted-foreground text-xs">
+            Also notes what the app was doing, such as how many posts a button marked read, so a report
+            shows the cause. Errors are logged either way. Applies to this device.
+          </span>
+        </span>
+        <input className="form-check-input shrink-0" type="checkbox" id="report-developer-log" name="developer-log"
+          checked={enabled} disabled={update.isPending}
+          onChange={() => update.mutate(!enabled)} />
+      </div>
+    </div>
+  );
+}
 
 export function ReportIssueSettings() {
   const report = useQuery({
@@ -179,6 +209,8 @@ export function ReportIssueSettings() {
           <li key={job}>{job}</li>
         ))}
       </ul>
+
+      <DeveloperLogToggle enabled={report.data.developerLog} />
 
       <h2 className="font-medium mb-2" id="report-log-heading">
         Latest log

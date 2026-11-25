@@ -7,12 +7,16 @@ use std::{
     fs::{self, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
-    sync::{atomic::Ordering, LazyLock, Mutex, OnceLock, PoisonError},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        LazyLock, Mutex, OnceLock, PoisonError,
+    },
     time::Duration,
 };
 
 use axum::{
     extract::State,
+    http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
@@ -31,6 +35,10 @@ const MAX_REPORT_LINES: usize = 200;
 const DATABASE_WAIT: Duration = Duration::from_secs(2);
 
 static DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
+/// Whether `[developer]` diagnostics reach the log; errors always do. Turned off from Settings →
+/// Report issue, and kept off by a file in the data folder, so it holds for this device only.
+static DEVELOPER_LINES: AtomicBool = AtomicBool::new(true);
+const DEVELOPER_OFF_FILE: &str = "developer-log-off";
 static WRITING: Mutex<Repeats> = Mutex::new(Repeats {
     last: String::new(),
     count: 0,
@@ -111,6 +119,10 @@ pub fn start(data_directory: &Path) {
         data_directory.to_owned()
     });
     if first {
+        DEVELOPER_LINES.store(
+            !data_directory.join(DEVELOPER_OFF_FILE).exists(),
+            Ordering::Relaxed,
+        );
         log_crashes();
         write_line(&format!(
             "GoonCave {} ({}) started on {}",
@@ -144,7 +156,26 @@ fn log_crashes() {
 }
 
 pub fn record(message: &str) {
-    write_line(&clean(message));
+    if kept(message) {
+        write_line(&clean(message));
+    }
+}
+
+fn kept(message: &str) -> bool {
+    DEVELOPER_LINES.load(Ordering::Relaxed) || !message.starts_with("[developer]")
+}
+
+fn set_developer_lines(directory: Option<&Path>, on: bool) -> io::Result<()> {
+    if let Some(directory) = directory {
+        let marker = directory.join(DEVELOPER_OFF_FILE);
+        match (on, fs::remove_file(&marker)) {
+            (true, Err(error)) if error.kind() != io::ErrorKind::NotFound => return Err(error),
+            (false, _) => fs::write(&marker, b"")?,
+            _ => {}
+        }
+    }
+    DEVELOPER_LINES.store(on, Ordering::Relaxed);
+    Ok(())
 }
 
 fn timestamp() -> String {
@@ -233,6 +264,7 @@ pub(crate) fn routes() -> Router<Database> {
     Router::new()
         .route("/report", get(report))
         .route("/report/window-error", post(window_error))
+        .route("/report/developer-log", post(developer_log))
 }
 
 fn word(value: &Value) -> String {
@@ -327,7 +359,32 @@ async fn report(State(db): State<Database>) -> Json<Value> {
         "schema": schema,
         "jobs": jobs(&db).await,
         "log": log,
+        "developerLog": DEVELOPER_LINES.load(Ordering::Relaxed),
     }))
+}
+
+#[derive(Deserialize)]
+struct DeveloperLog {
+    enabled: bool,
+}
+
+async fn developer_log(
+    Json(choice): Json<DeveloperLog>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let directory = DIRECTORY.get().cloned();
+    tokio::task::spawn_blocking(move || set_developer_lines(directory.as_deref(), choice.enabled))
+        .await
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!(
+                    "The log setting could not be saved: {}",
+                    clean(&error.to_string())
+                ),
+            )
+        })?;
+    Ok(Json(json!({ "developerLog": choice.enabled })))
 }
 
 #[derive(Deserialize)]
@@ -447,6 +504,19 @@ mod tests {
             "[developer] Panel ends at 300px"
         );
         assert_eq!(window_line("boom"), "Window error: boom");
+    }
+
+    #[test]
+    fn developer_lines_stay_out_of_the_log_while_off_also_after_a_restart() {
+        let directory = tempfile::tempdir().unwrap();
+        set_developer_lines(Some(directory.path()), false).unwrap();
+        assert!(directory.path().join(DEVELOPER_OFF_FILE).exists());
+        assert!(!kept("[developer] Load more marked 30 loaded posts read."));
+        assert!(kept("Cannot reach the core"));
+        set_developer_lines(Some(directory.path()), true).unwrap();
+        assert!(!directory.path().join(DEVELOPER_OFF_FILE).exists());
+        assert!(kept("[developer] Load more marked 30 loaded posts read."));
+        set_developer_lines(Some(directory.path()), true).unwrap();
     }
 
     #[test]
