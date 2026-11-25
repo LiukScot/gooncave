@@ -20,7 +20,7 @@ const seedLibrary = [
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: ['core-foundations.spec.ts', 'core-library.spec.ts', 'gallery-scroll-restore.spec.ts', 'touch-overlay.spec.ts', 'button-groups.spec.ts', 'edge-swipe-back.spec.ts', 'detail-controls.spec.ts', 'toast-position.spec.ts', 'appearance.spec.ts', 'side-menu-search.spec.ts', 'offline.spec.ts', 'related-posts.spec.ts', 'desktop-video-controls.spec.ts', 'explore-card-return.spec.ts', 'text-selection.spec.ts', 'grid-selection.spec.ts', 'grid-selection-touch.spec.ts', 'settings-slide.spec.ts', 'navigation-flash.spec.ts', 'video-double-tap.spec.ts', 'explore-back-long-feed.spec.ts', 'update-notice.spec.ts', 'app-lock.spec.ts'],
+  testMatch: ['core-foundations.spec.ts', 'core-library.spec.ts', 'gallery-scroll-restore.spec.ts', 'touch-overlay.spec.ts', 'button-groups.spec.ts', 'edge-swipe-back.spec.ts', 'detail-controls.spec.ts', 'toast-position.spec.ts', 'appearance.spec.ts', 'side-menu-search.spec.ts', 'offline.spec.ts', 'related-posts.spec.ts', 'desktop-video-controls.spec.ts', 'explore-card-return.spec.ts', 'text-selection.spec.ts', 'grid-selection.spec.ts', 'grid-selection-touch.spec.ts', 'settings-slide.spec.ts', 'navigation-flash.spec.ts', 'video-double-tap.spec.ts', 'explore-back-long-feed.spec.ts', 'update-notice.spec.ts', 'app-lock.spec.ts', 'pool-title.spec.ts'],
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,

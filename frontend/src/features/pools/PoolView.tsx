@@ -1,11 +1,12 @@
 import { useSearch } from '@tanstack/react-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { PoolBackButton, PoolHeaderActions } from './PoolHeaderActions';
 import { readPoolSnapshot, writePoolSnapshot } from './poolSnapshot';
 import { PoolTile } from './PoolTile';
 
 import { api, type PoolPage, type PoolPagePost } from '@/api';
+import { MarqueeText } from '@/components/MarqueeText';
 import { WavyProgress } from '@/components/WavyProgress';
 import { useOpenPoolPage } from '@/features/explore/useOpenBooruPost';
 import { OfflineNotice } from '@/features/shell/OfflineNotice';
@@ -25,6 +26,32 @@ import { useOnline } from '@/lib/online';
  * filter and no second site to merge in — the order is the whole point, and
  * bending the explore controller around that would cost more than this does.
  */
+/**
+ * In the desktop window the pool's buttons sit fixed in the top bar, out of the heading's flow:
+ * this measures how much of the heading's width they cover, so the name ends before them.
+ */
+function useBarRoom() {
+  const headRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState(0);
+  useLayoutEffect(() => {
+    const head = headRef.current;
+    const bar = barRef.current;
+    if (!head || !bar) return;
+    const measure = () => {
+      const barBox = bar.getBoundingClientRect();
+      // Outside the desktop window the bar is `display: contents` and has no box of its own.
+      setRoom(barBox.width ? Math.max(0, Math.ceil(head.getBoundingClientRect().right - barBox.left)) : 0);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(head);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
+  return { headRef, barRef, room };
+}
+
 export function PoolView() {
   const { site, pool } = useSearch({ from: '/app/pool' });
   return <PoolContent key={`${site}:${pool}`} site={site} pool={pool} />;
@@ -38,6 +65,7 @@ function PoolContent({ site, pool }: { site: string; pool: string }) {
   const openPoolPage = useOpenPoolPage();
   const online = useOnline();
   const pagesRef = useRef(pages);
+  const { headRef, barRef, room } = useBarRoom();
   pagesRef.current = pages;
   const scrollKey = poolScrollKey(site, pool);
   useWindowScrollScreen({ kind: 'list', key: scrollKey });
@@ -104,10 +132,14 @@ function PoolContent({ site, pool }: { site: string; pool: string }) {
 
   return (
     <div className="page-chrome">
-      <div className="pool-head">
+      <div
+        ref={headRef}
+        className="pool-head"
+        style={room ? ({ '--pool-bar-room': `${room}px` } as React.CSSProperties) : undefined}
+      >
         <div className="pool-head-title">
           <h1 className="uppercase font-semibold file-detail-section-title pool-title mb-1">
-            {head ? head.name : 'Pool'}
+            <MarqueeText>{head ? head.name : 'Pool'}</MarqueeText>
           </h1>
           <div className="text-muted-foreground text-sm">
             {head
@@ -119,7 +151,7 @@ function PoolContent({ site, pool }: { site: string; pool: string }) {
         </div>
         {/* After the title: in the desktop window it drags, and a later drag region takes the
             clicks of an earlier button it overlaps. */}
-        <div className="pool-head-bar">
+        <div ref={barRef} className="pool-head-bar">
           <PoolBackButton />
           <PoolHeaderActions site={site} pool={pool} name={head?.name} />
         </div>

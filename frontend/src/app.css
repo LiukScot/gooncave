@@ -3881,9 +3881,52 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 .file-detail-section-title.pool-title {
   font-size: 1.5rem;
   line-height: 1.2;
-  /* A name like THE_COMMON_GROUNDS has no break point. Left to overflow, it
-     widens the page and iPhone zooms the whole screen out to fit it. */
-  overflow-wrap: anywhere;
+}
+
+/* The desktop window's bar holds the pool's buttons out of the heading's flow (useBarRoom). */
+.has-window-controls .pool-head-title {
+  margin-right: calc(var(--pool-bar-room, 0px) + 1rem);
+}
+
+/* One line of text that scrolls to its end and back when it is longer than its box
+   (components/MarqueeText.tsx). Clipped, so a long name never widens the page: iPhone would
+   zoom the whole screen out to fit it. */
+.marquee {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.marquee-text {
+  display: inline-block;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .marquee.is-overflowing .marquee-text {
+    animation: marquee-scroll var(--marquee-duration) ease-in-out infinite alternate;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee.is-overflowing .marquee-text {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* Still at either end for 15% of each pass (MarqueeText's PAUSE_SHARE split in two). */
+@keyframes marquee-scroll {
+  0%,
+  15% {
+    transform: translateX(0);
+  }
+
+  85%,
+  100% {
+    transform: translateX(calc(-1 * var(--marquee-distance)));
+  }
 }
 
 .pool-head-actions {
