@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { create } from 'zustand';
 
 import { isIos } from '@/lib/platform';
+import { logDeveloper } from '@/lib/windowErrorLog';
 
 export type Biometry = 'faceID' | 'touchID' | 'none';
 
@@ -73,7 +74,7 @@ export const installAppLock = () => {
     })
     .catch((error: unknown) => {
       // Locked stays as the hint left it: an unreadable lock must not open the app.
-      console.error('[developer] The app lock did not answer at launch', error);
+      logDeveloper(`The app lock did not answer at launch: ${error instanceof Error ? error.message : String(error)}`);
     });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden' && useAppLockStore.getState().enabled) {

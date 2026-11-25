@@ -12,6 +12,9 @@ export const ROWS_BEHIND = 2;
 /** Used before the grid has laid out; matches the grid's minimum column width. */
 const FALLBACK_ROW_HEIGHT = 220;
 
+/** How many cards the row height is averaged on. */
+const ROW_SAMPLE = 48;
+
 /**
  * The average height of one masonry row: in a masonry each card is one row of
  * its column, so the mean card height is the row height, whatever mix of tall
@@ -21,9 +24,6 @@ const FALLBACK_ROW_HEIGHT = 220;
  * Taking a single card's height instead made the threshold jump between runs:
  * the first tile can be a portrait twice the height of the next one.
  */
-/** How many cards the row height is averaged on. */
-const ROW_SAMPLE = 48;
-
 export const averageRowHeight = (cardHeights: readonly number[]): number => {
   const laidOut = cardHeights.filter((height) => height > 0);
   if (!laidOut.length) return FALLBACK_ROW_HEIGHT;

@@ -453,36 +453,6 @@ async fn matching_keys(db: &Database, t: &Transport, posts: Vec<Post>) -> Result
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn a_smaller_recompressed_copy_stays_a_candidate() {
-        let remote = super::Remote {
-            key: "rule34:1".into(),
-            width: 400,
-            height: 300,
-            // Four bits apart, as a third-size JPEG copy of a library picture measured.
-            hash: "f0f0f0f0f0f0f0f0".into(),
-            signature: None,
-        };
-        let local = super::Fingerprint {
-            id: "file".into(),
-            folder: "/library".into(),
-            path: "a.png".into(),
-            thumb: None,
-            phash: "f0f0f0f0f0f0f0ff".into(),
-            width: 1200,
-            height: 900,
-        };
-        assert!(super::plausible(&remote, &local));
-        let other = super::Fingerprint {
-            phash: "0f0f0f0f0f0f0f0f".into(),
-            ..local
-        };
-        assert!(
-            !super::plausible(&remote, &other),
-            "a different picture is no candidate"
-        );
-    }
-
     use super::*;
     use crate::{
         db::write_setting,
@@ -509,6 +479,36 @@ mod tests {
             height: Some(120),
             file_ext: Some("png".into()),
         }
+    }
+
+    #[test]
+    fn a_smaller_recompressed_copy_stays_a_candidate() {
+        let remote = Remote {
+            key: "rule34:1".into(),
+            width: 400,
+            height: 300,
+            // Four bits apart, as a third-size JPEG copy of a library picture measured.
+            hash: "f0f0f0f0f0f0f0f0".into(),
+            signature: None,
+        };
+        let local = Fingerprint {
+            id: "file".into(),
+            folder: "/library".into(),
+            path: "a.png".into(),
+            thumb: None,
+            phash: "f0f0f0f0f0f0f0ff".into(),
+            width: 1200,
+            height: 900,
+        };
+        assert!(plausible(&remote, &local));
+        let other = Fingerprint {
+            phash: "0f0f0f0f0f0f0f0f".into(),
+            ..local
+        };
+        assert!(
+            !plausible(&remote, &other),
+            "a different picture is no candidate"
+        );
     }
 
     #[tokio::test]

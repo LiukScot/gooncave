@@ -640,6 +640,7 @@ export function ExploreDetailPanel({
               <ExploreVideo
                 key={postKey}
                 siteName={post.siteName}
+                sourceUrl={post.sourceUrl}
                 src={mediaUrl}
                 skipSeconds={videoSkipSeconds}
                 className="file-detail-media"

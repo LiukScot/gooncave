@@ -1,3 +1,4 @@
+import { isIos } from './platform';
 import { logDeveloper } from './windowErrorLog';
 
 /** A return after this long away is logged even when the page looks fine. */
@@ -14,14 +15,16 @@ const describe = (element: Element | null): string =>
  * screen, which is an overlay when one is left over.
  */
 export const installResumeLog = () => {
+  if (!isIos()) return;
   let hiddenAt: number | null = null;
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
-      hiddenAt = performance.now();
+      // Wall time: the monotonic clock can stop while the phone sleeps.
+      hiddenAt = Date.now();
       return;
     }
     if (hiddenAt === null) return;
-    const away = performance.now() - hiddenAt;
+    const away = Date.now() - hiddenAt;
     hiddenAt = null;
     window.setTimeout(() => {
       // The app lock blocks the page on purpose.

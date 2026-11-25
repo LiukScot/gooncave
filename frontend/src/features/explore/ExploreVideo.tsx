@@ -31,10 +31,11 @@ const describeSource = (src: string): string => {
  */
 export function ExploreVideo({
   siteName,
+  sourceUrl,
   src,
   ref,
   ...props
-}: ComponentProps<typeof VideoPlayer> & { siteName: string; src: string }) {
+}: ComponentProps<typeof VideoPlayer> & { siteName: string; sourceUrl?: string; src: string }) {
   const [attempt, setAttempt] = useState(0);
   const [failure, setFailure] = useState<number | null>(null);
   const [element, setElement] = useState<HTMLVideoElement | null>(null);
@@ -55,17 +56,23 @@ export function ExploreVideo({
   useEffect(() => {
     if (!element) return;
     let askedAt: number | null = null;
+    let started = false;
     const source = describeSource(src);
     const play = () => {
       askedAt ??= performance.now();
     };
     const playing = () => {
       if (askedAt === null) return;
-      const waited = performance.now() - askedAt;
+      const waited = (performance.now() - askedAt) / 1000;
       askedAt = null;
-      if (waited > SLOW_START_MS) {
-        logDeveloper(`An Explore video on ${siteName} took ${(waited / 1000).toFixed(1)} s to start (${source}).`);
+      if (waited * 1000 > SLOW_START_MS) {
+        logDeveloper(
+          started
+            ? `An Explore video on ${siteName} stopped for ${waited.toFixed(1)} s to load (${source}).`
+            : `An Explore video on ${siteName} took ${waited.toFixed(1)} s to start (${source}).`
+        );
       }
+      started = true;
     };
     const error = () => {
       const code = element.error?.code ?? 0;
@@ -96,6 +103,11 @@ export function ExploreVideo({
             ? `${siteName} sent a format this device cannot play, or refused the request. Open the post on ${siteName} to watch it there.`
             : `The video stopped loading from ${siteName}. Check the connection and try again.`}
         </p>
+        {sourceUrl ? (
+          <a className="btn btn-outline-light btn-sm" href={sourceUrl} target="_blank" rel="noreferrer noopener">
+            Open on {siteName}
+          </a>
+        ) : null}
         <button
           className="btn btn-outline-light btn-sm"
           type="button"

@@ -12,7 +12,7 @@ use crate::{
 };
 
 const LATEST: &str = "https://api.github.com/repos/LiukScot/gooncave/releases/latest";
-pub(crate) const RELEASES: &str = "https://github.com/LiukScot/gooncave/releases";
+const RELEASES: &str = "https://github.com/LiukScot/gooncave/releases";
 const TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) fn routes() -> Router<Database> {

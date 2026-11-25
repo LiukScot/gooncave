@@ -929,7 +929,11 @@ async fn execute(db: &Database, id: &str) -> Result<()> {
             processed += 1;
             continue;
         }
-        let canonical = match actions.iter().find(|a| a["kind"] == "reuse_file" && a["provider"].is_null()).and_then(|a| text(a, "fileId")) {
+        let kept = actions
+            .iter()
+            .find(|a| a["kind"] == "reuse_file" && a["provider"].is_null())
+            .and_then(|a| text(a, "fileId"));
+        let canonical = match kept.clone() {
             Some(file) => db.call(move |c| Ok(c.query_row(
                 "SELECT f.path FROM files f JOIN library_folders folders ON folders.id = f.folder_id WHERE f.id = ?1",
                 [file], |r| r.get::<_, String>(0)).optional()?)).await?,
@@ -937,10 +941,6 @@ async fn execute(db: &Database, id: &str) -> Result<()> {
         };
         // The kept copy is the largest, which often arrived last: it takes the Gallery place of
         // the oldest copy, so a merge never moves the picture to the top.
-        let kept = actions
-            .iter()
-            .find(|a| a["kind"] == "reuse_file" && a["provider"].is_null())
-            .and_then(|a| text(a, "fileId"));
         let deleted: Vec<String> = actions
             .iter()
             .filter(|a| a["kind"] == "delete_file")

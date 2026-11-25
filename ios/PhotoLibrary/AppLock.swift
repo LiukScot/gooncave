@@ -1,4 +1,4 @@
-import CryptoKit
+import CommonCrypto
 import LocalAuthentication
 import Security
 import UIKit
@@ -9,20 +9,46 @@ import UIKit
 private let keychainService = "app.gooncave.lock"
 private let keychainAccount = "code"
 private let failuresKey = "GoonCaveLockFailures"
+/// Not secret: lets the cover know the lock is on when the Keychain cannot be read, as while the
+/// phone locks.
+private let enabledKey = "GoonCaveLockEnabled"
 private let waitUntilKey = "GoonCaveLockWaitUntil"
 /// Wrong codes allowed in a row before each further try waits.
 private let freeTries = 5
 private let waitSeconds: TimeInterval = 60
 /// The web page draws its lock screen once it is back on screen; until then the cover stays.
 private let uncoverDelay: TimeInterval = 0.35
+/// Turning the lock off or changing the code needs Face ID or the code this recently.
+private let unlockValidity: TimeInterval = 120
+private let hashRounds: UInt32 = 100_000
+
+/// When Face ID or the code last unlocked; read and written on the main queue only.
+private var unlockedAt: Date?
+
+private func recentlyUnlocked() -> Bool {
+    unlockedAt.map { Date().timeIntervalSince($0) < unlockValidity } ?? false
+}
 
 private struct Stored: Codable {
     let salt: Data
     let hash: Data
 }
 
+/// PBKDF2: a short code must cost real time to guess even from a copy of the Keychain item.
 private func digest(_ code: String, _ salt: Data) -> Data {
-    Data(SHA256.hash(data: salt + Data(code.utf8)))
+    var hash = Data(count: 32)
+    let password = Array(code.utf8).map { CChar(bitPattern: $0) }
+    let status = hash.withUnsafeMutableBytes { output in
+        salt.withUnsafeBytes { saltBytes in
+            CCKeyDerivationPBKDF(
+                CCPBKDFAlgorithm(kCCPBKDF2), password, password.count,
+                saltBytes.bindMemory(to: UInt8.self).baseAddress, salt.count,
+                CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256), hashRounds,
+                output.bindMemory(to: UInt8.self).baseAddress, 32)
+        }
+    }
+    // Empty on failure: `set` refuses to store it and `check` never matches it.
+    return Int(status) == kCCSuccess ? hash : Data()
 }
 
 private func keychainQuery() -> [String: Any] {
@@ -91,7 +117,7 @@ private final class Cover {
     }
 
     func show() {
-        guard view == nil, readStored() != nil else { return }
+        guard view == nil, UserDefaults.standard.bool(forKey: enabledKey) else { return }
         let window = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .flatMap(\.windows)
@@ -112,11 +138,6 @@ private final class Cover {
     }
 }
 
-private func lockReply(_ done: Done, _ context: UnsafeMutableRawPointer?, _ value: [String: Any]) {
-    let data = (try? JSONSerialization.data(withJSONObject: value)) ?? Data(#"{"error":"No answer."}"#.utf8)
-    String(decoding: data, as: UTF8.self).withCString { done(context, $0) }
-}
-
 /// One entry point for the lock, so an older app finds it missing as a whole. `request` is
 /// `{"action", "code"?}`:
 /// - `state`: `{"enabled", "biometry": "faceID" | "touchID" | "none", "wait"}`
@@ -133,52 +154,74 @@ public func appLock(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Un
         _ = Cover.shared
         switch fields["action"] as? String {
         case "state":
-            lockReply(done, context, ["enabled": readStored() != nil, "biometry": biometry(), "wait": remainingWait()])
+            let enabled = readStored() != nil
+            // Keeps the cover's flag right after an update from a version without it.
+            UserDefaults.standard.set(enabled, forKey: enabledKey)
+            reply(done, context, ["enabled": enabled, "biometry": biometry(), "wait": remainingWait()])
         case "set":
+            guard readStored() == nil || recentlyUnlocked() else {
+                return reply(done, context, ["error": "Unlock with Face ID or the code before changing it."])
+            }
             var salt = Data(count: 16)
             let random = salt.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!) }
             guard random == errSecSuccess else {
-                return lockReply(done, context, ["error": "The iPhone could not make a secure code. Try again."])
+                return reply(done, context, ["error": "The iPhone could not make a secure code. Try again."])
             }
-            let status = writeStored(Stored(salt: salt, hash: digest(code, salt)))
+            let hash = digest(code, salt)
+            guard !hash.isEmpty else {
+                return reply(done, context, ["error": "The iPhone could not secure the code. Try again."])
+            }
+            let status = writeStored(Stored(salt: salt, hash: hash))
             guard status == errSecSuccess else {
-                return lockReply(done, context, ["error": "The Keychain did not keep the code (error \(status))."])
+                return reply(done, context, ["error": "The Keychain did not keep the code (error \(status))."])
             }
             resetFailures()
-            lockReply(done, context, ["enabled": true])
+            UserDefaults.standard.set(true, forKey: enabledKey)
+            reply(done, context, ["enabled": true])
         case "check":
             let wait = remainingWait()
-            guard wait == 0 else { return lockReply(done, context, ["ok": false, "wait": wait]) }
+            guard wait == 0 else { return reply(done, context, ["ok": false, "wait": wait]) }
             guard let stored = readStored() else {
-                return lockReply(done, context, ["error": "The lock has no code. Turn it off and on again."])
+                return reply(done, context, ["error": "The lock has no code. Turn it off and on again."])
             }
-            if digest(code, stored.salt) == stored.hash {
+            let hash = digest(code, stored.salt)
+            if !hash.isEmpty, hash == stored.hash {
                 resetFailures()
-                return lockReply(done, context, ["ok": true, "wait": 0])
+                unlockedAt = Date()
+                return reply(done, context, ["ok": true, "wait": 0])
             }
             let failures = UserDefaults.standard.integer(forKey: failuresKey) + 1
             UserDefaults.standard.set(failures, forKey: failuresKey)
             if failures >= freeTries {
                 UserDefaults.standard.set(Date().timeIntervalSince1970 + waitSeconds, forKey: waitUntilKey)
             }
-            lockReply(done, context, ["ok": false, "wait": remainingWait()])
+            reply(done, context, ["ok": false, "wait": remainingWait()])
         case "clear":
+            guard readStored() == nil || recentlyUnlocked() else {
+                return reply(done, context, ["error": "Unlock with Face ID or the code before turning the lock off."])
+            }
             SecItemDelete(keychainQuery() as CFDictionary)
+            UserDefaults.standard.removeObject(forKey: enabledKey)
+            unlockedAt = nil
             resetFailures()
-            lockReply(done, context, ["enabled": false])
+            reply(done, context, ["enabled": false])
         case "biometric":
             let authentication = LAContext()
             authentication.localizedFallbackTitle = "Use code"
             authentication.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "Unlock GoonCave") { ok, error in
                 if ok {
-                    DispatchQueue.main.async { resetFailures() }
-                    return lockReply(done, context, ["ok": true])
+                    // On the main queue before the answer, so a `clear` that follows finds it.
+                    return DispatchQueue.main.async {
+                        resetFailures()
+                        unlockedAt = Date()
+                        reply(done, context, ["ok": true])
+                    }
                 }
                 let fallback = (error as? LAError)?.code == .userFallback
-                lockReply(done, context, ["ok": false, "fallback": fallback])
+                reply(done, context, ["ok": false, "fallback": fallback])
             }
         default:
-            lockReply(done, context, ["error": "The lock does not know this request."])
+            reply(done, context, ["error": "The lock does not know this request."])
         }
     }
 }
