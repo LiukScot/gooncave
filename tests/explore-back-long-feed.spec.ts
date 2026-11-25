@@ -68,8 +68,8 @@ test('going back from a post far down a long feed does not freeze the back gestu
   await page.route('https://img.fixture.invalid/**', (route) => route.fulfill({ contentType: 'image/png', body: Buffer.from(thumbnailablePng, 'base64') }));
   const { frame, reference } = await backFrame(page, 1_500);
   console.log(`[developer] Longest frame going back after 1500 cards: ${Math.round(frame)} ms, ${(frame / reference).toFixed(1)} times the reference work`);
-  // In milliseconds the frame changes with the machine (250 to 850 ms with the fix on the same
-  // laptop), so it is compared with work of a fixed size. Measured at 4x: 11.2-11.5 times while every
-  // card was laid out and redrawn again, 4.7-4.9 since.
-  expect(frame / reference).toBeLessThan(8);
+  // In milliseconds the frame changes with the machine (250 to 850 ms on the same laptop), so it
+  // is compared with work of a fixed size. Measured at 4x: 11.2-11.5 times while every card was
+  // laid out and redrawn again, 4.7-5.3 while off-screen cards were still laid out, 2.5-2.6 since.
+  expect(frame / reference).toBeLessThan(3.8);
 });

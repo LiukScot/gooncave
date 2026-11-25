@@ -2025,6 +2025,13 @@ html.panel-over-keyboard #root {
   height: 100%;
 }
 
+/* Explore keeps every loaded card mounted, also under an open post. Off screen a card is skipped
+   by style, layout and paint; its height still comes from its ratio, so no card moves. Without it
+   going back from a post after 1500 cards laid every card out in the back gesture's frame. */
+.explore-thumb.is-sized {
+  content-visibility: auto;
+}
+
 .explore-card-video {
   position: absolute;
   inset: 0;
