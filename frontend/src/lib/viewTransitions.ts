@@ -36,7 +36,13 @@ const copyInPlace = (page: HTMLElement): HTMLElement => {
   const box = page.getBoundingClientRect();
   const copy = page.cloneNode(true) as HTMLElement;
   // A hidden part (the grid under an open file) shows nothing and would only add a second copy of it.
-  for (const hidden of copy.querySelectorAll('[hidden]')) hidden.remove();
+  for (const hidden of copy.querySelectorAll('[hidden], .kept-under-detail')) hidden.remove();
+  // A lazy, async picture of the copy is drawn a frame late: WebKit showed the page's background
+  // alone, a black frame, before the copy's thumbnails.
+  for (const picture of copy.querySelectorAll('img')) {
+    picture.loading = 'eager';
+    picture.decoding = 'sync';
+  }
   for (const video of copy.querySelectorAll('video')) {
     video.removeAttribute('autoplay');
     video.preload = 'none';
