@@ -16,6 +16,7 @@ import { installExternalLinks } from './lib/externalLinks';
 import { listenForHaptics } from './lib/haptics';
 import { applyScreenCorner, isIos } from './lib/platform';
 import { createQueryClient } from './lib/query-client';
+import { installResumeLog } from './lib/resumeLog';
 import { installWindowErrorLog } from './lib/windowErrorLog';
 import { useAppearanceStore } from './stores/appearanceStore';
 
@@ -26,6 +27,7 @@ if (isIos()) {
 }
 
 installWindowErrorLog(window);
+installResumeLog();
 // A picture or link dragged out of the app hands over its local address, not the file.
 document.addEventListener('dragstart', (event) => {
   if (event.target instanceof Element && event.target.closest('img, video, a')) event.preventDefault();
