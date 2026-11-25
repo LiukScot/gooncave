@@ -846,6 +846,18 @@ async fn act(
     }
 }
 
+/// Gives every row with `kept`'s content the earliest Gallery date among `kept` and `copies`.
+fn keep_oldest_place(c: &Connection, kept: &str, copies: &[String]) -> Result<()> {
+    let ids = json!([&[kept.to_owned()], copies].concat()).to_string();
+    c.execute(
+        "UPDATE files SET gallery_at = (SELECT MIN(gallery_at) FROM files WHERE id IN (SELECT value FROM json_each(?2)))
+         WHERE sha256 = (SELECT sha256 FROM files WHERE id = ?1)
+           AND gallery_at > (SELECT MIN(gallery_at) FROM files WHERE id IN (SELECT value FROM json_each(?2)))",
+        params![kept, ids],
+    )?;
+    Ok(())
+}
+
 /// Deletes a redundant copy and its row. A copy that a favorite still points at is kept.
 async fn delete_copy(db: &Database, id: String) -> Result<()> {
     let lookup = id.clone();
@@ -923,6 +935,21 @@ async fn execute(db: &Database, id: &str) -> Result<()> {
                 [file], |r| r.get::<_, String>(0)).optional()?)).await?,
             None => None,
         };
+        // The kept copy is the largest, which often arrived last: it takes the Gallery place of
+        // the oldest copy, so a merge never moves the picture to the top.
+        let kept = actions
+            .iter()
+            .find(|a| a["kind"] == "reuse_file" && a["provider"].is_null())
+            .and_then(|a| text(a, "fileId"));
+        let deleted: Vec<String> = actions
+            .iter()
+            .filter(|a| a["kind"] == "delete_file")
+            .filter_map(|a| text(a, "fileId"))
+            .collect();
+        if let (Some(kept), false) = (kept, deleted.is_empty()) {
+            db.call(move |c| keep_oldest_place(c, &kept, &deleted))
+                .await?;
+        }
         let mut failed = false;
         for action in &actions {
             let kind = action["kind"].as_str().unwrap_or_default();
@@ -1278,6 +1305,14 @@ mod tests {
             c.execute(&format!("INSERT INTO favorite_items (user_id,provider,remote_id,file_path,created_at,updated_at) VALUES (?1,'fixture','8',?2,{now},{now})", now = library::NOW), params![OWNER_ID, png])?;
             Ok(())
         }).await.unwrap();
+        // The PNG entered the Gallery first; the kept bitmap must take its place, not stay on top.
+        db.call(|c| {
+            c.execute("UPDATE files SET gallery_at = '2020-01-01T00:00:00.000Z' WHERE path LIKE '%copy.png'", [])?;
+            c.execute("UPDATE files SET gallery_at = '2025-01-01T00:00:00.000Z' WHERE path LIKE '%copy.bmp'", [])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
         let preview = preview_and_confirm(&db).await;
         let kinds: Vec<&str> = preview["actions"]
             .as_array()
@@ -1308,6 +1343,20 @@ mod tests {
             .await
             .unwrap();
         assert!(favorite.ends_with("copy.bmp"));
+        let place: String = db
+            .call(|c| {
+                Ok(c.query_row(
+                    "SELECT gallery_at FROM files WHERE path LIKE '%copy.bmp'",
+                    [],
+                    |r| r.get(0),
+                )?)
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            place, "2020-01-01T00:00:00.000Z",
+            "the merge moved the picture in the Gallery"
+        );
         // The removed copy is gone for good: nothing to restore, and its synced record cannot
         // bring it back as a file with no original.
         let ghost = db
