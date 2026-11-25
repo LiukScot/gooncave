@@ -5818,6 +5818,15 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   text-transform: uppercase;
 }
 
+/* Settings → Extra: a short heading over each list of options. */
+.extra-group + .extra-group {
+  margin-top: 1.5rem;
+}
+
+.extra-group-title {
+  padding-inline: 1rem;
+}
+
 .appearance-group-description {
   margin-bottom: 0.75rem;
   color: hsl(var(--muted-foreground));
