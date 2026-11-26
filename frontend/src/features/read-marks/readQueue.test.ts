@@ -93,7 +93,7 @@ describe('queueRead', () => {
         siteId: 'site',
         previewUrl: 'https://cdn.example/1.jpg',
         tags: [{ tag: 'fox', category: 'general' }],
-        visualSignature: [1, 2, 3]
+        sameLookAs: ['site:2']
       } as unknown as ExplorePost
     ]);
     queueRead('post', 'site:1');
@@ -103,7 +103,7 @@ describe('queueRead', () => {
     expect(Object.keys(posts)).toEqual(['site:1']);
     expect(posts['site:1'].previewUrl).toBe('https://cdn.example/1.jpg');
     expect(posts['site:1']).not.toHaveProperty('tags');
-    expect(posts['site:1']).not.toHaveProperty('visualSignature');
+    expect(posts['site:1']).not.toHaveProperty('sameLookAs');
   });
 
   it('sends the same key once', async () => {

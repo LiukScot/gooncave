@@ -436,6 +436,7 @@ async fn verdict(t: &Transport, sites: &[Site], link: &Link, local: &[u8]) -> Ve
         width,
         height,
         file_ext: post["fileExt"].as_str().map(str::to_owned),
+        uploader: None,
     };
     let Some(remote) = gallery_matches::prepare(t, Some(site), candidate, preview.to_owned()).await
     else {

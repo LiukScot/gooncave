@@ -54,8 +54,8 @@ export const BooruSitesPanel = ({
   const capabilities = useDeviceProfile().data?.capabilities;
   const favoritesAvailable = capabilities?.favorites !== false;
   const automaticFavoritesAvailable = favoritesAvailable && capabilities?.favoritesAutoSync !== false;
-  const autoFavoriteAvailable = (capabilities?.autoFavorite ?? capabilities?.processing) !== false;
-  const tagRefreshAvailable = (capabilities?.tagRefresh ?? capabilities?.processing) !== false;
+  const autoFavoriteAvailable = capabilities?.autoFavorite !== false;
+  const tagRefreshAvailable = capabilities?.tagRefresh !== false;
   const signInAvailable = capabilities?.browserSignIn === true;
   const [signingInId, setSigningInId] = useState<string | null>(null);
   const sitesQuery = useBooruSites();

@@ -258,7 +258,7 @@ export function useFileDetailController(
   const suppressFileTagsMutation = useSuppressFileTags();
   const { mutateAsync: refreshFileTags } = useRefreshFileTags();
   const capabilities = useDeviceProfile().data?.capabilities;
-  const tagRefreshAvailable = capabilities?.processing !== false;
+  const tagRefreshAvailable = capabilities?.tagRefresh !== false;
   // The app's own share sheet: the page's one opens on iPhone as a small panel pinned to the button.
   const nativeShare = capabilities?.shareSheet === true;
   const booruSitesQuery = useBooruSites();

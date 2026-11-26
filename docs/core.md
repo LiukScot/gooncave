@@ -170,7 +170,7 @@ allowlist is enabled.
 | `GET /health` | `{ "status": "ok" }` |
 | `GET /report` | `{ "version", "commit", "platform", "schema", "jobs", "log" }`: the app version, the commit it was built from, the operating system and architecture, the newest database migration, one line per background job with states and counts only, and the newest 200 lines of the app log. The core keeps two files of at most 128 KiB, `app.log` and `app.log.1`, in the data folder, and removes addresses, paths, file names, quoted text, secrets and hashes before writing. Each run starts with a line naming the version, and a panic adds a line with its source file and line |
 | `POST /report/window-error` | Adds `{ "message" }` to the app log, for errors of the web page |
-| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.processing`, `capabilities.duplicates`, `capabilities.autoFavorite`, `capabilities.tagRefresh`, `capabilities.sync`, `capabilities.browserSignIn`, true in the desktop and iPhone apps, where FurAffinity and Rule34 sign-in opens a window or a sheet |
+| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.duplicates`, `capabilities.autoFavorite`, `capabilities.tagRefresh`, `capabilities.sync`, `capabilities.browserSignIn`, true in the desktop and iPhone apps, where FurAffinity and Rule34 sign-in opens a window or a sheet |
 | `GET/PUT /settings/extra` | Existing boolean settings and `maxGridColumns`, an integer from 0 through 12; PUT is a partial update |
 | `GET/PUT /settings/shortcuts` | `{ "bindings": { "action": "key" } }`; at most 64 entries, names and keys from 1 through 32 characters |
 | `GET/PUT /settings/blacklist` | `tags` (at most 500 strings, each from 1 through 100 characters), `applyToExplore`, `applyToGallery`, `applyToSubscriptions` (off by default, also for a setting saved without it); PUT is a partial update |
@@ -212,6 +212,7 @@ allowlist is enabled.
 | `GET /cache` | `{ bytes }`: the size of the cache of site answers on this device |
 | `GET/PUT /settings/explore` | `recentSearches`: up to 20 Explore searches, newest first, 1–2000 characters each; shared between devices |
 | `POST /explore/gallery-matches` | `posts` (at most 100: `key`, signed `matchPreviewUrl`, `width`, `height`, `fileExt`) → `keys` of posts whose picture is a library favorite. Empty unless the duplicate policy is `favorite_all`; unsigned links, GIFs, videos and failed downloads are left out |
+| `POST /explore/copies` | `posts` (at most 100) and `earlier` (at most 5000, the posts already in the grid), each `key`, signed `matchPreviewUrl`, `width`, `height`, `fileExt`, `uploader` → `copies`: pairs `[key, otherKey]` where a post of `posts` shows the picture of a post of `earlier` or of one before it in `posts`. Two posts of one uploader on one site are not compared. Each picture's samples are kept in the cache, so an earlier post is not downloaded again. The comparison stops after 2.5 seconds; pictures not read by then are in no pair, and the log says how many |
 | `POST /explore/favorite`, `/explore/unfavorite` | Change the remote favorite and save/remove its managed local copy; body contains `siteId` and `remoteId`. Media URLs are resolved from the original post. The request is recorded in `pending_favorites` before the site is asked and cleared once the file is in the library; the core finishes the leftover rows when it starts. Unsupported auto-voting returns `voteError` without undoing the favorite |
 | `GET /favorites/sync/status`, `POST /favorites/sync`, `/favorites/sync/cancel` | Background import, bounded pagination, progress, per-site errors and cancellation; optional `providers` selects site IDs or preset keys. `deleteMissing=true` removes only managed copies after a complete, error-free remote listing |
 | `GET /credentials`, `PUT /credentials` | Device-only SauceNAO API key; reads return only whether a key is saved |
@@ -416,7 +417,7 @@ samples of every site go through the core's signed `/explore/media` links, so
 the cache keeps them; FurAffinity's files go through them too, because its
 Cloudflare refuses a burst of requests. Other sites' files stream from their CDN. Explore also signs `colorSourceUrl`
 (a page can read the pixels only of same-origin pictures) and `matchPreviewUrl`
-(read by gallery matching). Media requests through the core carry the
+(read by gallery matching and by the comparison of copies). Media requests through the core carry the
 provider's referrer without account credentials. Provider failures
 include recovery guidance without echoing remote response bodies or secrets.
 

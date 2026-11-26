@@ -95,7 +95,7 @@ const TOGGLES: {
     icon: Layers,
     group: 'browsing',
     label: 'Stack duplicate posts in Explore',
-    description: 'Group copies of the same image from different providers on each loaded page.'
+    description: 'Group copies of the same image from different providers.'
   },
   {
     key: 'deleteAddedPhotos',

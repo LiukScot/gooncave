@@ -156,7 +156,7 @@ export function SettingsIndexRouteView() {
 
 export function SettingsFileSourcesRouteView() {
   const { authUser, sourceFavoritesCtl } = useAppShellContext();
-  if ((authUser.capabilities?.sourceMatching ?? authUser.capabilities?.processing) === false) return <FeatureUnavailable feature="Source matching" />;
+  if (authUser.capabilities?.sourceMatching === false) return <FeatureUnavailable feature="Source matching" />;
   return (
     <SettingsSubpage title="File sources">
       <div className="row g-0 settings-sections">
@@ -168,7 +168,7 @@ export function SettingsFileSourcesRouteView() {
 
 export function SettingsDuplicatesRouteView() {
   const { authUser, duplicatesCtl } = useAppShellContext();
-  if ((authUser.capabilities?.duplicates ?? authUser.capabilities?.processing) === false) return <FeatureUnavailable feature="Duplicate matching" />;
+  if (authUser.capabilities?.duplicates === false) return <FeatureUnavailable feature="Duplicate matching" />;
   return (
     <SettingsSubpage title="Matching images">
       <DuplicatesView {...duplicatesCtl.viewProps} />

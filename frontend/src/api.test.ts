@@ -11,7 +11,7 @@ test('device startup validates the local profile without a login request', async
   const profile = {
     id: 'device-owner', username: 'device-owner', libraryRoot: '/example/media',
     createdAt: '2026-01-01', updatedAt: '2026-01-01', lastLoginAt: null,
-    capabilities: { library: false, boorus: false, processing: false, sourceMatching: true }
+    capabilities: { library: false, boorus: false, sourceMatching: true }
   };
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     expect(String(input)).toContain('/device');
