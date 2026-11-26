@@ -1,4 +1,4 @@
-version: 33
+version: 34
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -50,6 +50,12 @@ flagged or rejected with a reference to the rule it breaks.
 - No helpers, factories, or wrappers for hypothetical future needs.
   Extract repeated logic after three concrete uses, or earlier when it
   isolates a substantial contract or risk.
+- One function decides each user-visible behaviour, and every path calls it.
+  Examples: tag categories (`tags::categorize_general`), the Gallery date of
+  merged copies (`duplicate_policy`), "same picture" matching
+  (`gallery_matches`). Before fixing such a behaviour, list every path that
+  computes it (`git grep`) and fix it in the shared function. A fix applied to
+  the one path the report came from lets the other paths keep the bug.
 
 ## 3. Error handling
 
@@ -268,6 +274,11 @@ issues and PRs from being smaller than that cost.
   a breakpoint, scrolling) gets an end-to-end test that emulates that device
   and fails without the fix. A unit test of the logic does not see a CSS rule
   that undoes it.
+- A bug that comes back gets an end-to-end test that repeats the user's steps:
+  the same screen, device viewport and amount of content or scrolling. Run it
+  without the fix and check that it fails.
+- When a fixed bug returns, reopen its issue instead of opening a new one, so
+  the history shows that the earlier fix did not hold.
 - Before keeping a test, name the real error that would make it fail. If only a
   change of mind about colors, sizes or wording would, it is a one-time check
   (a screenshot, a look in the browser) and stays out of the file. The rule

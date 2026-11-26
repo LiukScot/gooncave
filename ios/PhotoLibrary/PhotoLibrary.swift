@@ -10,7 +10,7 @@ public typealias Done = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<
 /// Keeps the picker's delegate alive while the picker is shown.
 private var shown: Picker?
 
-private func reply(_ done: Done, _ context: UnsafeMutableRawPointer?, _ value: [String: Any]) {
+func reply(_ done: Done, _ context: UnsafeMutableRawPointer?, _ value: [String: Any]) {
     let data = (try? JSONSerialization.data(withJSONObject: value)) ?? Data(#"{"error":"No answer."}"#.utf8)
     String(decoding: data, as: UTF8.self).withCString { done(context, $0) }
 }

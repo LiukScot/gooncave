@@ -192,6 +192,8 @@ pub(crate) fn apply_tags(
     if !same_site {
         return Ok(false);
     }
+    let mut post = post.clone();
+    tags::categorize_general(connection, std::slice::from_mut(&mut post))?;
     let entries = post["tags"]
         .as_array()
         .filter(|v| v.len() <= 10_000)
@@ -222,16 +224,6 @@ pub(crate) fn apply_tags(
         if !name.is_empty() && !tags::unusable(&name) {
             let category = match category {
                 "metadata" => "meta".to_owned(),
-                // Sites without categories (rule34) send every tag as general: the vocabulary
-                // knows the artists and characters among them.
-                "general" => connection
-                    .query_row(
-                        "SELECT category FROM tag_categories WHERE tag=?1",
-                        [&name],
-                        |r| r.get(0),
-                    )
-                    .optional()?
-                    .unwrap_or_else(|| "general".to_owned()),
                 other => other.to_owned(),
             };
             validated.push((name, category));
@@ -240,6 +232,11 @@ pub(crate) fn apply_tags(
     if validated.is_empty() {
         return Ok(false);
     }
+    // The site answered in full: the tag refresh has nothing more to ask it about this file.
+    connection.execute(
+        "INSERT OR IGNORE INTO site_tag_reads (file_id, source) VALUES (?1, ?2)",
+        params![snapshot.id, provider],
+    )?;
     let categorized = validated.iter().any(|(_, c)| c != "general");
     let has_categories:bool=connection.query_row("SELECT EXISTS(SELECT 1 FROM file_tags WHERE file_id=?1 AND source=?2 AND category<>'general')",params![snapshot.id,provider],|r|r.get(0))?;
     if !categorized && has_categories {

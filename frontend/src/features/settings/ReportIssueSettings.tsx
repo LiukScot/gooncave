@@ -1,9 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ScrollText } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { api } from '@/api';
 import { queryKeys } from '@/lib/query-keys';
+import { useErrorToast } from '@/lib/useErrorToast';
 
 const NEW_ISSUE = 'https://github.com/LiukScot/gooncave/issues/new';
 // GitHub refuses addresses of about 8 KB; this leaves room for the note on removed lines.
@@ -77,6 +79,35 @@ export const issueAddress = (head: string, log: string) => {
     ? { href: address(), removedLines, bodyFits: false }
     : { href: href(removedLines), removedLines, bodyFits: true };
 };
+
+/** Whether the app writes a log at all. */
+function LoggingToggle({ enabled }: { enabled: boolean }) {
+  const client = useQueryClient();
+  const update = useMutation({
+    mutationFn: api.setLogging,
+    onSuccess: (logging) =>
+      client.setQueryData<Report>(queryKeys.report, (report) => report && { ...report, logging })
+  });
+  useErrorToast(update.error);
+  return (
+    <div className="list-group mb-6">
+      <div className="list-group-item flex items-center gap-3">
+        <ScrollText className="size-5 text-muted-foreground shrink-0" aria-hidden="true" />
+        <span className="flex-1 min-w-0">
+          <label className="block font-medium" htmlFor="report-logging">Keep a log</label>
+          <span className="block text-muted-foreground text-xs">
+            Notes errors and what the app was doing, such as how many posts a button marked read, so a
+            report shows the cause. Off: nothing is written, and lines already in the log stay below.
+            Applies to this device.
+          </span>
+        </span>
+        <input className="form-check-input shrink-0" type="checkbox" id="report-logging" name="logging"
+          checked={enabled} disabled={update.isPending}
+          onChange={() => update.mutate(!enabled)} />
+      </div>
+    </div>
+  );
+}
 
 export function ReportIssueSettings() {
   const report = useQuery({
@@ -179,6 +210,8 @@ export function ReportIssueSettings() {
           <li key={job}>{job}</li>
         ))}
       </ul>
+
+      <LoggingToggle enabled={report.data.logging} />
 
       <h2 className="font-medium mb-2" id="report-log-heading">
         Latest log

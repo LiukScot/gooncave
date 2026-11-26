@@ -3,6 +3,16 @@ import { api } from '@/api';
 const MAX_MESSAGE_LENGTH = 2000;
 const MAX_MESSAGES = 50;
 
+/**
+ * Adds a `[developer]` line to the app log, which an iPhone has no other way to reach. Names,
+ * states and counts only: never addresses, searches or post contents.
+ */
+export const logDeveloper = (message: string) => {
+  api.reportWindowError(`[developer] ${message}`.slice(0, MAX_MESSAGE_LENGTH)).catch((error: unknown) => {
+    console.warn('Cannot add a line to the app log', error);
+  });
+};
+
 /** Adds errors of the web page to the app log, so a report also explains a broken screen. */
 export const installWindowErrorLog = (target: Pick<Window, 'addEventListener'>) => {
   const seen = new Set<string>();

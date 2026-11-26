@@ -1212,6 +1212,7 @@ html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::after
 }
 
 .app-menu-button {
+  position: relative;
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -1228,6 +1229,31 @@ html.has-window-controls:not(:has(.file-detail-frame.is-fullscreen)) body::after
 .app-menu-button > svg {
   width: 1.625rem;
   height: 1.625rem;
+}
+
+/* A new version is out: see the first row of Settings. */
+.update-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+}
+
+.app-menu-link > .update-dot {
+  margin-left: auto;
+}
+
+/* The active link is filled with the dot's colour. */
+.app-menu-link.is-active > .update-dot {
+  background: currentColor;
+}
+
+.app-menu-button > .update-dot {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  box-shadow: 0 0 0 2px hsl(var(--background));
 }
 
 @media (hover: hover) {
@@ -1997,6 +2023,13 @@ html.panel-over-keyboard #root {
 
 .explore-thumb.is-sized .explore-card-face {
   height: 100%;
+}
+
+/* Explore keeps every loaded card mounted, also under an open post. Off screen a card is skipped
+   by style, layout and paint; its height still comes from its ratio, so no card moves. Without it
+   going back from a post after 1500 cards laid every card out in the back gesture's frame. */
+.explore-thumb.is-sized {
+  content-visibility: auto;
 }
 
 .explore-card-video {
@@ -3848,9 +3881,52 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 .file-detail-section-title.pool-title {
   font-size: 1.5rem;
   line-height: 1.2;
-  /* A name like THE_COMMON_GROUNDS has no break point. Left to overflow, it
-     widens the page and iPhone zooms the whole screen out to fit it. */
-  overflow-wrap: anywhere;
+}
+
+/* The desktop window's bar holds the pool's buttons out of the heading's flow (useBarRoom). */
+.has-window-controls .pool-head-title {
+  margin-right: calc(var(--pool-bar-room, 0px) + 1rem);
+}
+
+/* One line of text that scrolls to its end and back when it is longer than its box
+   (components/MarqueeText.tsx). Clipped, so a long name never widens the page: iPhone would
+   zoom the whole screen out to fit it. */
+.marquee {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.marquee-text {
+  display: inline-block;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .marquee.is-overflowing .marquee-text {
+    animation: marquee-scroll var(--marquee-duration) ease-in-out infinite alternate;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee.is-overflowing .marquee-text {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* Still at either end for 15% of each pass (MarqueeText's PAUSE_SHARE split in two). */
+@keyframes marquee-scroll {
+  0%,
+  15% {
+    transform: translateX(0);
+  }
+
+  85%,
+  100% {
+    transform: translateX(calc(-1 * var(--marquee-distance)));
+  }
 }
 
 .pool-head-actions {
@@ -5792,6 +5868,53 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   text-transform: uppercase;
 }
 
+/* Settings → Extra: a short heading over each list of options. */
+.extra-group + .extra-group {
+  margin-top: 1.5rem;
+}
+
+.extra-group-title {
+  padding-inline: 1rem;
+}
+
+/* The app lock: over everything, including toasts and open dialogs. */
+.app-lock {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: max(1.5rem, env(safe-area-inset-top)) 1.5rem max(1.5rem, env(safe-area-inset-bottom));
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+.app-lock-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  color: hsl(var(--primary));
+}
+
+.app-lock-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.app-lock-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: min(100%, 20rem);
+}
+
+.app-lock-code {
+  letter-spacing: 0.3em;
+  text-align: center;
+}
+
 .appearance-group-description {
   margin-bottom: 0.75rem;
   color: hsl(var(--muted-foreground));
@@ -6176,4 +6299,20 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   justify-content: center;
   aspect-ratio: 1;
   padding: 0;
+}
+
+/* A feed under an open post. Unlike display: none it keeps the cards' layout, so going back does
+   not lay out every loaded card again in the frame the back gesture needs. */
+.kept-under-detail {
+  content-visibility: hidden;
+}
+/* Thumbnails keep loading under the post. Out of sight their fade would never finish: the
+   browser kept each one as a pending transition until the feed showed again. */
+.kept-under-detail * {
+  transition: none !important;
+}
+@supports not (content-visibility: hidden) {
+  .kept-under-detail {
+    display: none;
+  }
 }

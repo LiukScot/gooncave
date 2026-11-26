@@ -8,6 +8,7 @@ import { handleViewReselect } from './viewReselect';
 
 import type { ExploreFeed } from '@/api';
 import { DialogPortal, DialogOverlay } from '@/components/ui/dialog';
+import { useAppUpdate } from '@/hooks/appUpdate';
 import { useFingerOpening } from '@/lib/fingerOpening';
 import { useAppMenuStore } from '@/stores/appMenuStore';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
@@ -66,11 +67,14 @@ const clearViewSearch = ({ to, feed }: MenuItem): void => {
 function MenuLink({
   item,
   detailOpen,
-  onReselect
+  onReselect,
+  dot = false
 }: {
   item: MenuItem;
   detailOpen: boolean;
   onReselect?: () => void;
+  /** Something waits on that page, such as a new version in Settings. */
+  dot?: boolean;
 }) {
   const { pathname, feed } = useMenuLocation();
   const active = pathname.startsWith(item.to) && feed === item.feed;
@@ -100,6 +104,12 @@ function MenuLink({
     >
       <Icon aria-hidden="true" />
       {item.label}
+      {dot ? (
+        <>
+          <span className="update-dot" aria-hidden="true" />
+          <span className="sr-only">, a new version is out</span>
+        </>
+      ) : null}
     </Link>
   );
 }
@@ -111,6 +121,7 @@ function MenuBody({
   detailOpen: boolean;
   onReselect?: () => void;
 }) {
+  const newer = useAppUpdate().data?.newer === true;
   return (
     <nav className="app-menu-body" aria-label="Main menu">
       <p className="app-menu-brand">GoonCave</p>
@@ -127,6 +138,7 @@ function MenuBody({
           item={SETTINGS_ITEM}
           detailOpen={detailOpen}
           onReselect={onReselect}
+          dot={newer}
         />
       </div>
     </nav>

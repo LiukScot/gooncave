@@ -29,7 +29,9 @@ for (const mode of ['dark', 'light'] as const) {
     test('opening a file and going back to the gallery draws no white or black flash', async ({ page }) => {
       await openIn(page, mode, '/app/gallery');
       // No upload: the test server starts with files, and other specs keep seeing the same library.
-      const tile = page.locator('[data-test-id="file-card"]').first();
+      // The picture, not the first tile: the library's order follows file times, and a video
+      // first in the grid kept the test waiting until it timed out.
+      const tile = page.locator('[data-test-id="file-card"][aria-label$=".png"]').first();
       await expect(tile).toBeVisible();
       await expectNoFlash(page, () => tile.click());
       await expect(page.locator('.file-detail-frame')).toBeVisible();

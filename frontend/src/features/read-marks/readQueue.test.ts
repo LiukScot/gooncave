@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExplorePost } from '@/api';
 
 const markRead = vi.fn();
+const reportWindowError = vi.fn();
 
 const memoryStorage = () => {
   const values = new Map<string, string>();
@@ -14,7 +15,10 @@ const memoryStorage = () => {
 };
 
 vi.mock('@/api', () => ({
-  api: { markRead: (...args: unknown[]) => markRead(...args) },
+  api: {
+    markRead: (...args: unknown[]) => markRead(...args),
+    reportWindowError: (...args: unknown[]) => reportWindowError(...args)
+  },
   API_BASE: '/api'
 }));
 
@@ -32,6 +36,8 @@ const httpError = (status: number) => {
 
 beforeEach(() => {
   markRead.mockReset();
+  reportWindowError.mockReset();
+  reportWindowError.mockResolvedValue(undefined);
   markRead.mockResolvedValue({ marked: 1 });
   vi.useFakeTimers();
 });
@@ -236,5 +242,23 @@ describe('flushReadQueue', () => {
 
     await flushReadQueue();
     expect(markRead).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('queueLoadedReads', () => {
+  it('logs which button marked the loaded posts and how many of each site, then sends them all', async () => {
+    const { queueLoadedReads, flushReadQueue } = await loadQueue();
+    const posts = Array.from({ length: 30 }, (_, index) => ({
+      siteId: index < 20 ? 'fa' : 'e6',
+      siteName: index < 20 ? 'FurAffinity' : 'e621',
+      remoteId: String(index)
+    }));
+    queueLoadedReads('Load more', posts);
+    await flushReadQueue();
+    expect(reportWindowError.mock.calls.map(([line]) => line)).toEqual([
+      '[developer] Load more marked 30 loaded posts read (FurAffinity 20, e621 10).',
+      '[developer] Sending 30 read marks at once.'
+    ]);
+    expect(markRead.mock.calls.flatMap(([, keys]) => keys as string[])).toHaveLength(30);
   });
 });

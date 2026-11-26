@@ -23,6 +23,7 @@ use tokio::{
 mod background;
 #[cfg(target_os = "ios")]
 mod browser;
+mod lock;
 #[cfg(target_os = "ios")]
 mod media;
 #[cfg(target_os = "ios")]
@@ -36,6 +37,9 @@ mod transfers;
 
 const WINDOW: &str = "main";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(1);
+/// How long a page back from the background has to answer before it is loaded again.
+#[cfg(mobile)]
+const WINDOW_ANSWER_TIMEOUT: Duration = Duration::from_secs(5);
 /// Where Tauri serves the bundled `ios/ui` pages on Apple platforms.
 const BUNDLED_PAGES: &str = "tauri://localhost/";
 static FRONTEND: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../frontend/dist");
@@ -169,6 +173,47 @@ impl Core {
                 if let Some(window) = app.get_webview_window(WINDOW) {
                     if let Err(error) = window.navigate(error_page(&reason)) {
                         eprintln!("Cannot show why the library did not open: {error}");
+                    }
+                }
+            }
+        });
+    }
+
+    /// iOS can end the web view's content process in the background, and the window then stays
+    /// black. Back in the foreground the page is asked to answer; one that does not is loaded again.
+    #[cfg(mobile)]
+    fn check_window(&self, app: &AppHandle) {
+        let Some(window) = app.get_webview_window(WINDOW) else {
+            return;
+        };
+        let asked = std::time::Instant::now();
+        let (answered, answer) = oneshot::channel();
+        let answered = Mutex::new(Some(answered));
+        if let Err(error) = window.eval_with_callback("1 + 1", move |result| {
+            if let Some(answered) = answered.lock().unwrap_or_else(|p| p.into_inner()).take() {
+                let _ = answered.send(result);
+            }
+        }) {
+            eprintln!("[developer] Cannot ask the window whether it answers: {error}");
+            return;
+        }
+        self.runtime.spawn(async move {
+            match tokio::time::timeout(WINDOW_ANSWER_TIMEOUT, answer).await {
+                Ok(Ok(result)) if result.trim() == "2" => eprintln!(
+                    "[developer] Back from the background: the window answered in {} ms.",
+                    asked.elapsed().as_millis()
+                ),
+                outcome => {
+                    let why = match outcome {
+                        Ok(Ok(_)) => "answered with an error",
+                        _ => "did not answer",
+                    };
+                    eprintln!(
+                        "[developer] Back from the background: the window {why} within {} s, so it is loaded again.",
+                        WINDOW_ANSWER_TIMEOUT.as_secs()
+                    );
+                    if let Err(error) = window.reload() {
+                        eprintln!("[developer] Cannot load the window again: {error}");
                     }
                 }
             }
@@ -376,7 +421,7 @@ pub fn run() {
     background::register();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![retry, haptic])
+        .invoke_handler(tauri::generate_handler![retry, haptic, lock::app_lock])
         .setup(|app| {
             #[cfg(target_os = "ios")]
             gooncave_core::decoder::register(Box::new(media::Native));
@@ -419,7 +464,11 @@ pub fn run() {
             RunEvent::WindowEvent {
                 event: tauri::WindowEvent::Resumed,
                 ..
-            } => core.resumed(app.clone()),
+            } => {
+                core.resumed(app.clone());
+                // Only here: `RunEvent::Resumed` also comes at launch, while the page loads.
+                core.check_window(app);
+            }
             RunEvent::Exit => core.stop(),
             _ => {}
         }

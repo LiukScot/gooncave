@@ -7,12 +7,16 @@ use std::{
     fs::{self, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
-    sync::{atomic::Ordering, LazyLock, Mutex, OnceLock, PoisonError},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        LazyLock, Mutex, OnceLock, PoisonError,
+    },
     time::Duration,
 };
 
 use axum::{
     extract::State,
+    http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
@@ -31,6 +35,10 @@ const MAX_REPORT_LINES: usize = 200;
 const DATABASE_WAIT: Duration = Duration::from_secs(2);
 
 static DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
+/// Whether anything is written to the log. Turned off from Settings → Report issue, and kept off
+/// by a file in the data folder, so it holds for this device only. Off, lines still reach stderr.
+static LOGGING: AtomicBool = AtomicBool::new(true);
+const LOG_OFF_FILE: &str = "log-off";
 static WRITING: Mutex<Repeats> = Mutex::new(Repeats {
     last: String::new(),
     count: 0,
@@ -88,7 +96,7 @@ fn clean(message: &str) -> String {
         .collect()
 }
 
-fn version() -> &'static str {
+pub(crate) fn version() -> &'static str {
     // Release builds receive it from the release workflow; see docs/versioning.md.
     option_env!("GOONCAVE_VERSION").unwrap_or("development")
 }
@@ -111,6 +119,7 @@ pub fn start(data_directory: &Path) {
         data_directory.to_owned()
     });
     if first {
+        LOGGING.store(logging_kept_on(data_directory), Ordering::Relaxed);
         log_crashes();
         write_line(&format!(
             "GoonCave {} ({}) started on {}",
@@ -147,6 +156,23 @@ pub fn record(message: &str) {
     write_line(&clean(message));
 }
 
+fn logging_kept_on(directory: &Path) -> bool {
+    !directory.join(LOG_OFF_FILE).exists()
+}
+
+fn set_logging(directory: Option<&Path>, on: bool) -> io::Result<()> {
+    if let Some(directory) = directory {
+        let marker = directory.join(LOG_OFF_FILE);
+        match (on, fs::remove_file(&marker)) {
+            (true, Err(error)) if error.kind() != io::ErrorKind::NotFound => return Err(error),
+            (false, _) => fs::write(&marker, b"")?,
+            _ => {}
+        }
+    }
+    LOGGING.store(on, Ordering::Relaxed);
+    Ok(())
+}
+
 fn timestamp() -> String {
     chrono::Utc::now()
         .format("%Y-%m-%d %H:%M:%S UTC")
@@ -158,6 +184,9 @@ fn repeat_note(count: u32) -> String {
 }
 
 fn write_line(text: &str) {
+    if !LOGGING.load(Ordering::Relaxed) {
+        return;
+    }
     let Some(directory) = DIRECTORY.get() else {
         return;
     };
@@ -233,6 +262,7 @@ pub(crate) fn routes() -> Router<Database> {
     Router::new()
         .route("/report", get(report))
         .route("/report/window-error", post(window_error))
+        .route("/report/logging", post(logging))
 }
 
 fn word(value: &Value) -> String {
@@ -327,7 +357,30 @@ async fn report(State(db): State<Database>) -> Json<Value> {
         "schema": schema,
         "jobs": jobs(&db).await,
         "log": log,
+        "logging": LOGGING.load(Ordering::Relaxed),
     }))
+}
+
+#[derive(Deserialize)]
+struct Logging {
+    enabled: bool,
+}
+
+async fn logging(Json(choice): Json<Logging>) -> Result<Json<Value>, (StatusCode, String)> {
+    let directory = DIRECTORY.get().cloned();
+    tokio::task::spawn_blocking(move || set_logging(directory.as_deref(), choice.enabled))
+        .await
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!(
+                    "The log setting could not be saved: {}",
+                    clean(&error.to_string())
+                ),
+            )
+        })?;
+    Ok(Json(json!({ "logging": choice.enabled })))
 }
 
 #[derive(Deserialize)]
@@ -447,6 +500,17 @@ mod tests {
             "[developer] Panel ends at 300px"
         );
         assert_eq!(window_line("boom"), "Window error: boom");
+    }
+
+    #[test]
+    fn the_log_stays_off_after_a_restart_until_turned_on() {
+        let directory = tempfile::tempdir().unwrap();
+        assert!(logging_kept_on(directory.path()));
+        set_logging(Some(directory.path()), false).unwrap();
+        assert!(!logging_kept_on(directory.path()));
+        set_logging(Some(directory.path()), true).unwrap();
+        assert!(logging_kept_on(directory.path()));
+        set_logging(Some(directory.path()), true).unwrap();
     }
 
     #[test]

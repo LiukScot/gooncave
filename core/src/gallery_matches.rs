@@ -22,7 +22,10 @@ use tokio::io::AsyncWriteExt;
 const MAX_POSTS: usize = 100;
 const MATCH_CONCURRENCY: usize = 4;
 const FINGERPRINT_PAGE_SIZE: usize = 500;
-const MAX_HASH_DISTANCE: u32 = 2;
+/// Only narrows the candidates; `same_picture` decides. Measured on 40 library pictures against a
+/// copy at a third of the size re-saved as JPEG: the same picture is 0-4 bits apart, two different
+/// pictures 19 or more.
+const MAX_HASH_DISTANCE: u32 = 8;
 pub(crate) const MAX_RATIO_DIFFERENCE: f64 = 0.03;
 const MAX_PIXEL_DIFFERENCE: f64 = 0.01;
 /// A remote preview is a different encoding and scale, so this is looser than for two local
@@ -476,6 +479,36 @@ mod tests {
             height: Some(120),
             file_ext: Some("png".into()),
         }
+    }
+
+    #[test]
+    fn a_smaller_recompressed_copy_stays_a_candidate() {
+        let remote = Remote {
+            key: "rule34:1".into(),
+            width: 400,
+            height: 300,
+            // Four bits apart, as a third-size JPEG copy of a library picture measured.
+            hash: "f0f0f0f0f0f0f0f0".into(),
+            signature: None,
+        };
+        let local = Fingerprint {
+            id: "file".into(),
+            folder: "/library".into(),
+            path: "a.png".into(),
+            thumb: None,
+            phash: "f0f0f0f0f0f0f0ff".into(),
+            width: 1200,
+            height: 900,
+        };
+        assert!(plausible(&remote, &local));
+        let other = Fingerprint {
+            phash: "0f0f0f0f0f0f0f0f".into(),
+            ..local
+        };
+        assert!(
+            !plausible(&remote, &other),
+            "a different picture is no candidate"
+        );
     }
 
     #[tokio::test]

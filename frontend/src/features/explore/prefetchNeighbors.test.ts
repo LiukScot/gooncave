@@ -46,6 +46,23 @@ describe('prefetchNeighbors', () => {
     expect(mocks.exploreDetailTags).toHaveBeenCalledWith('e621', '2');
   });
 
+  it('asks a Rule34 post for its page tags even when the vocabulary categorised some', () => {
+    mocks.exploreDetailTags.mockResolvedValue({ tags: [], fileUrl: null });
+    prefetchNeighbors(new QueryClient(), [
+      neighbor({
+        siteId: 'rule34',
+        remoteId: '4',
+        engine: 'gelbooru',
+        description: 'known',
+        tags: [
+          { tag: 'fox', category: 'species' },
+          { tag: 'unknown_artist', category: 'general' }
+        ]
+      })
+    ]);
+    expect(mocks.exploreDetailTags).toHaveBeenCalledWith('rule34', '4');
+  });
+
   it('asks nothing the search answer already holds', () => {
     prefetchNeighbors(new QueryClient(), [neighbor({ remoteId: '3', description: 'known' })]);
     expect(mocks.explorePostText).not.toHaveBeenCalled();

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Trash2 } from 'lucide-react';
 
 import { API_BASE, api } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
@@ -28,6 +29,7 @@ export function TrashToggle() {
 
   return (
     <div className="list-group-item flex items-center gap-3">
+        <Trash2 className="size-5 text-muted-foreground shrink-0" aria-hidden="true" />
         <span className="flex-1 min-w-0">
           <label className="block font-medium" htmlFor="extra-trash">Trash</label>
           <span className="block text-muted-foreground text-xs">

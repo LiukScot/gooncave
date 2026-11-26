@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { Tags } from 'lucide-react';
 
 import { api } from '@/api';
 import { useErrorToast } from '@/lib/useErrorToast';
@@ -21,6 +22,7 @@ export function AutomaticTagging() {
   return (
     <section className="list-group-item" aria-labelledby="automatic-tagging-heading">
       <div className="flex flex-wrap items-center gap-3">
+        <Tags className="size-5 text-muted-foreground shrink-0" aria-hidden="true" />
         <span className="flex-1 min-w-0">
           <h3 className="font-medium" id="automatic-tagging-heading">Automatic tagging (WD14)</h3>
           <span className="block text-muted-foreground text-xs">

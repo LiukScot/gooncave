@@ -14,6 +14,7 @@ import {
   loadExplorePostDetails,
   preloadAdjacentFurAffinityImages
 } from './explorePostDetails';
+import { ExploreVideo } from './ExploreVideo';
 import { PostMoreMenu } from './PostMoreMenu';
 import { needsDetailTags, prefetchNeighbors } from './prefetchNeighbors';
 import { ratingLabel } from './rating';
@@ -52,7 +53,6 @@ import {
   restartVideoLoop,
   togglePlayback
 } from '@/features/file-detail/videoLoop';
-import { VideoPlayer } from '@/features/file-detail/VideoPlayer';
 import {
   readVideoSound,
   writeVideoSound
@@ -637,8 +637,10 @@ export function ExploreDetailPanel({
             ) : isVideo ? (
               // Keyed by post so React remounts rather than swapping src on a
               // playing element, which would keep the previous frame up.
-              <VideoPlayer
+              <ExploreVideo
                 key={postKey}
+                siteName={post.siteName}
+                sourceUrl={post.sourceUrl}
                 src={mediaUrl}
                 skipSeconds={videoSkipSeconds}
                 className="file-detail-media"

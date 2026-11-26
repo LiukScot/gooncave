@@ -11,11 +11,14 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ConfirmProvider } from './components/confirm-dialog';
 import { Toaster } from './components/ui/sonner';
+import { installAppLock } from './features/app-lock/appLock';
+import { AppLockScreen } from './features/app-lock/AppLockScreen';
 import { applyAppearance } from './lib/appearanceTheme';
 import { installExternalLinks } from './lib/externalLinks';
 import { listenForHaptics } from './lib/haptics';
 import { applyScreenCorner, isIos } from './lib/platform';
 import { createQueryClient } from './lib/query-client';
+import { installResumeLog } from './lib/resumeLog';
 import { installWindowErrorLog } from './lib/windowErrorLog';
 import { useAppearanceStore } from './stores/appearanceStore';
 
@@ -26,6 +29,7 @@ if (isIos()) {
 }
 
 installWindowErrorLog(window);
+installResumeLog();
 // A picture or link dragged out of the app hands over its local address, not the file.
 document.addEventListener('dragstart', (event) => {
   if (event.target instanceof Element && event.target.closest('img, video, a')) event.preventDefault();
@@ -57,6 +61,7 @@ const queryClient = createQueryClient();
 
 // Only the iPhone shell is Tauri; desktop is Electron and the web is a browser.
 if (isTauri()) listenForHaptics();
+installAppLock();
 
 const root = createRoot(container);
 root.render(
@@ -73,6 +78,7 @@ root.render(
           They still go on a swipe, and none of them outlives its own
           timeout. */}
       <Toaster />
+      <AppLockScreen />
       {import.meta.env.DEV ? (
         <ReactQueryDevtools buttonPosition="bottom-left" />
       ) : null}

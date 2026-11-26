@@ -1,8 +1,6 @@
-import { explorePostKey } from './navSequence';
-
 import type { ExplorePost } from '@/api';
 import { WavyProgress } from '@/components/WavyProgress';
-import { queueReads } from '@/features/read-marks/readQueue';
+import { queueLoadedReads } from '@/features/read-marks/readQueue';
 
 export function ExploreReadFooter({
   posts,
@@ -14,7 +12,7 @@ export function ExploreReadFooter({
   onLoadMore,
   onMarkLoadedRead
 }: {
-  posts: Pick<ExplorePost, 'siteId' | 'remoteId'>[];
+  posts: Pick<ExplorePost, 'siteId' | 'siteName' | 'remoteId'>[];
   hasMore: boolean;
   readHidden: boolean;
   readTrackingEnabled: boolean;
@@ -34,7 +32,7 @@ export function ExploreReadFooter({
             className="btn btn-outline-light btn-sm"
             onClick={() => {
               if (readTrackingEnabled) {
-                queueReads('post', posts.map(explorePostKey));
+                queueLoadedReads('Load more', posts);
               }
               void onLoadMore();
             }}

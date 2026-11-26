@@ -17,7 +17,7 @@ import {
   Trash2,
   WifiOff
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { notifyActionError } from './actionToast';
@@ -116,6 +116,9 @@ function useColumnCount(maxGridColumns: number) {
   const measureRef = useCallback((element: HTMLDivElement | null) => {
     if (!element) return;
     const measure = (width: number) => {
+      // Hidden under an open post the grid is 0 wide; its columns must stay as they are, or every
+      // card moves to another column, and mounts again, on the way back.
+      if (width === 0) return;
       const available = Math.max(MIN_COLUMNS, Math.floor(width / THUMB_SIZE));
       setColumnCount(maxGridColumns > 0 ? Math.min(available, maxGridColumns) : available);
     };
@@ -381,6 +384,37 @@ export function ExploreView({
       : [])
   ];
 
+  // Cards redraw only when what they show changes (`sameCard`), so their actions must not change
+  // on every render; they read the current controller when they run.
+  const cardActions = useRef({ openPost: ctl.openPost, votePost: ctl.votePost, toggleFavorite: ctl.toggleFavorite, isFavorited: ctl.isFavorited });
+  cardActions.current = { openPost: ctl.openPost, votePost: ctl.votePost, toggleFavorite: ctl.toggleFavorite, isFavorited: ctl.isFavorited };
+  const openCard = useCallback((active: ExplorePost) =>
+    transitionView(
+      'detail-open',
+      () => cardActions.current.openPost(active),
+      `[data-detail-anchor=${JSON.stringify(explorePostKey(active))}] img`
+    ), []);
+  const voteCard = useCallback((active: ExplorePost, score: 1 | -1) => {
+    void cardActions.current.votePost(active, score);
+  }, []);
+  const favoriteCard = useCallback((active: ExplorePost) => {
+    const { toggleFavorite, isFavorited } = cardActions.current;
+    void toggleFavorite(active, isFavorited(active));
+  }, []);
+
+  // Stable, so a render does not detach and attach the grid again: attaching measures it, which
+  // laid out every loaded card at once on the way back from a post.
+  const gridRef = useCallback((element: HTMLDivElement | null) => {
+    readGridRef.current = element;
+    const detach = masonryRef(element);
+    // React 19 calls the cleanup instead of re-invoking with null, so the node has to be dropped
+    // here or the ref keeps a detached grid alive.
+    return () => {
+      readGridRef.current = null;
+      detach?.();
+    };
+  }, [masonryRef, readGridRef]);
+
   const renderCard = (post: ExplorePost) => {
     const key = explorePostKey(post);
     return (
@@ -409,20 +443,9 @@ export function ExploreView({
           });
         }}
         subscriptionReasons={(active) => ctl.sort === 'subscribed' ? subscriptionReasons(active, ctl.subscribedTags, ctl.subscribedPools, ctl.subscriptionAliases) : null}
-        onOpen={(active) =>
-          transitionView(
-            'detail-open',
-            () => ctl.openPost(active),
-            `[data-detail-anchor=${JSON.stringify(explorePostKey(active))}] img`
-          )
-        }
-        onVote={(active, score) => void ctl.votePost(active, score)}
-        onFavorite={(active) =>
-          void ctl.toggleFavorite(
-            active,
-            ctl.isFavorited(active)
-          )
-        }
+        onOpen={openCard}
+        onVote={voteCard}
+        onFavorite={favoriteCard}
       />
     );
   };
@@ -462,7 +485,7 @@ export function ExploreView({
   return (
     <>
       {detail}
-      <div hidden={detail !== null}>
+      <div className={detail !== null ? 'kept-under-detail' : undefined}>
         <div className="page-chrome">
           <PageTitle
             icon={<TitleIcon className="page-title-icon" aria-hidden="true" />}
@@ -801,17 +824,7 @@ export function ExploreView({
                   ) : (
                     <div
                       {...selection.gridProps}
-                      ref={(element) => {
-                        readGridRef.current = element;
-                        const detach = masonryRef(element);
-                        // React 19 calls the cleanup instead of re-invoking with
-                        // null, so the node has to be dropped here or the ref keeps
-                        // a detached grid alive.
-                        return () => {
-                          readGridRef.current = null;
-                          detach?.();
-                        };
-                      }}
+                      ref={gridRef}
                     >
                       {feedDays.map((day) => (
                         // Its first post never changes as pages are appended, so the key holds.
@@ -872,23 +885,7 @@ export function ExploreView({
   );
 }
 
-export function ExploreCard({
-  selectKey,
-  selected = false,
-  posts,
-  hasRelations,
-  supportsVote,
-  canFavorite,
-  favorited,
-  voted,
-  voteBusy,
-  favoriteBusy,
-  sourceIcon,
-  subscriptionReasons,
-  onOpen,
-  onVote,
-  onFavorite
-}: {
+type ExploreCardProps = {
   /** Marks the tile for selection mode (`useGridSelection`). */
   selectKey?: string;
   selected?: boolean;
@@ -906,7 +903,51 @@ export function ExploreCard({
   onOpen: (post: ExplorePost) => void;
   onVote: (post: ExplorePost, score: 1 | -1) => void;
   onFavorite: (post: ExplorePost) => void;
-}) {
+};
+
+/**
+ * Whether a card would draw the same: its posts and what each shows. The feed keeps every loaded
+ * card mounted, so redrawing them all on an unrelated change (closing a post) froze the back
+ * gesture for most of a second after a long scroll.
+ */
+const sameCard = (a: ExploreCardProps, b: ExploreCardProps): boolean =>
+  a.selectKey === b.selectKey &&
+  a.selected === b.selected &&
+  a.onOpen === b.onOpen &&
+  a.onVote === b.onVote &&
+  a.onFavorite === b.onFavorite &&
+  a.posts.length === b.posts.length &&
+  a.posts.every((post, index) => {
+    const [left, right] = [a.sourceIcon(post), b.sourceIcon(post)];
+    return post === b.posts[index] &&
+      a.hasRelations(post) === b.hasRelations(post) &&
+      a.supportsVote(post) === b.supportsVote(post) &&
+      a.canFavorite(post) === b.canFavorite(post) &&
+      a.favorited(post) === b.favorited(post) &&
+      a.voted(post) === b.voted(post) &&
+      a.voteBusy(post) === b.voteBusy(post) &&
+      a.favoriteBusy(post) === b.favoriteBusy(post) &&
+      left.key === right.key && left.label === right.label && left.iconUrl === right.iconUrl &&
+      a.subscriptionReasons(post)?.join('\n') === b.subscriptionReasons(post)?.join('\n');
+  });
+
+export const ExploreCard = memo(function ExploreCard({
+  selectKey,
+  selected = false,
+  posts,
+  hasRelations,
+  supportsVote,
+  canFavorite,
+  favorited,
+  voted,
+  voteBusy,
+  favoriteBusy,
+  sourceIcon,
+  subscriptionReasons,
+  onOpen,
+  onVote,
+  onFavorite
+}: ExploreCardProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [playingVideoKey, setPlayingVideoKey] = useState<string | null>(null);
   const [animatedGifVisible, setAnimatedGifVisible] = useState(true);
@@ -1240,4 +1281,4 @@ export function ExploreCard({
       </div>
     </div>
   );
-}
+}, sameCard);

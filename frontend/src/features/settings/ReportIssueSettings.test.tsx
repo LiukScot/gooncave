@@ -15,7 +15,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const device = { version: '1.3.0', commit: 'abc1234', platform: 'ios aarch64', schema: '0042_tags', jobs: ['Device sync: idle'] };
+const device = { version: '1.3.0', commit: 'abc1234', platform: 'ios aarch64', schema: '0042_tags', jobs: ['Device sync: idle'], logging: true };
 const bodyOf = (href: string) => new URL(href).searchParams.get('body');
 
 const render = async () => {
@@ -66,7 +66,7 @@ it('opens an empty issue when the text above the log does not fit', () => {
 it('shows device, work and log read-only, and only the description is typed', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ...device, log: 'Cannot read a note' })));
   const container = await render();
-  const fields = container.querySelectorAll('textarea, input');
+  const fields = container.querySelectorAll('textarea, input:not([type="checkbox"])');
   expect(fields).toHaveLength(1);
   const description = container.querySelector('textarea');
   expect(description?.value).toBe('');
@@ -110,4 +110,25 @@ it('says what failed and offers a retry and an empty issue when the log cannot b
     await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
   }
   expect(container.querySelector('pre')?.textContent).toBe('recovered');
+});
+
+it('turns the log off, and keeps the box as the core answered', async () => {
+  const sent: unknown[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.endsWith('/report/logging')) {
+      const { enabled } = JSON.parse(String(init?.body)) as { enabled: boolean };
+      sent.push(enabled);
+      return Response.json({ logging: enabled });
+    }
+    return Response.json({ ...device, log: '' });
+  }));
+  const container = await render();
+  const box = container.querySelector<HTMLInputElement>('#report-logging');
+  expect(box?.checked).toBe(true);
+  await act(async () => box?.click());
+  for (let attempt = 0; attempt < 20 && box?.checked; attempt += 1) {
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  }
+  expect(sent).toEqual([false]);
+  expect(box?.checked).toBe(false);
 });

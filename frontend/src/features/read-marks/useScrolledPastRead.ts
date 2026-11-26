@@ -12,6 +12,9 @@ export const ROWS_BEHIND = 2;
 /** Used before the grid has laid out; matches the grid's minimum column width. */
 const FALLBACK_ROW_HEIGHT = 220;
 
+/** How many cards the row height is averaged on. */
+const ROW_SAMPLE = 48;
+
 /**
  * The average height of one masonry row: in a masonry each card is one row of
  * its column, so the mean card height is the row height, whatever mix of tall
@@ -91,8 +94,9 @@ export function useScrolledPastRead(
     const cards = [...grid.querySelectorAll<HTMLElement>('[data-read-key]')];
     if (!cards.length) return;
 
+    // A sample: measuring every card of a long feed laid it all out in one frame.
     const rowHeight = averageRowHeight(
-      cards.map((card) => card.getBoundingClientRect().height)
+      cards.slice(0, ROW_SAMPLE).map((card) => card.getBoundingClientRect().height)
     );
     const readDistance = Math.round(ROWS_BEHIND * rowHeight);
     const mark = (key: string, target?: Element) => {

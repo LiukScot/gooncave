@@ -82,6 +82,7 @@ mod native {
     type Delete = unsafe extern "C" fn(*const c_char, Done, *mut c_void);
     type Share = unsafe extern "C" fn(*const c_char, Done, *mut c_void);
     type Haptic = unsafe extern "C" fn();
+    type Lock = unsafe extern "C" fn(*const c_char, Done, *mut c_void);
 
     const LIBRARY: &str = "Frameworks/libGoonCavePhotos.dylib";
     const STOPPED: &str = "The photo library did not answer.";
@@ -94,6 +95,8 @@ mod native {
         share: Share,
         // Missing in an older library: the taps are off, the rest works.
         haptic: Option<Haptic>,
+        // Missing in an older library: the app lock is unavailable.
+        lock: Option<Lock>,
     }
 
     static SWIFT: OnceLock<Swift> = OnceLock::new();
@@ -112,12 +115,17 @@ mod native {
                     .get::<Haptic>(b"gooncave_haptic\0")
                     .ok()
                     .map(|symbol| *symbol);
+                let lock = library
+                    .get::<Lock>(b"gooncave_lock\0")
+                    .ok()
+                    .map(|symbol| *symbol);
                 Ok(Swift {
                     _library: library,
                     pick,
                     delete,
                     share,
                     haptic,
+                    lock,
                 })
             })
         };
@@ -190,6 +198,18 @@ mod native {
         Ok(())
     }
 
+    /// Sends one request to the app lock (`AppLock.swift`) and returns its JSON answer.
+    pub async fn lock(request: &str) -> Result<String, String> {
+        let lock = SWIFT
+            .get()
+            .and_then(|swift| swift.lock)
+            .ok_or("The lock needs the iPhone app.")?;
+        let request = CString::new(request).map_err(|error| error.to_string())?;
+        // SAFETY: `lock` is the Swift function loaded above; Swift reads `request` before returning.
+        let answer = ask(|done, context| unsafe { lock(request.as_ptr(), done, context) });
+        answer.await
+    }
+
     impl ShareSheet for Native {
         fn share(&self, item: ShareItem) -> Pending<bool> {
             let swift = SWIFT.get().expect("registered after loading");
@@ -223,7 +243,7 @@ mod native {
 }
 
 #[cfg(target_os = "ios")]
-pub use native::{haptic, start};
+pub use native::{haptic, lock, start};
 
 #[cfg(test)]
 mod tests {
