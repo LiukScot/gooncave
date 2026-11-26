@@ -80,13 +80,13 @@ export const issueAddress = (head: string, log: string) => {
     : { href: href(removedLines), removedLines, bodyFits: true };
 };
 
-/** Whether the log keeps `[developer]` notes on what the app was doing. Errors are kept either way. */
-function DeveloperLogToggle({ enabled }: { enabled: boolean }) {
+/** Whether the app writes a log at all. */
+function LoggingToggle({ enabled }: { enabled: boolean }) {
   const client = useQueryClient();
   const update = useMutation({
-    mutationFn: api.setDeveloperLog,
-    onSuccess: (developerLog) =>
-      client.setQueryData<Report>(queryKeys.report, (report) => report && { ...report, developerLog })
+    mutationFn: api.setLogging,
+    onSuccess: (logging) =>
+      client.setQueryData<Report>(queryKeys.report, (report) => report && { ...report, logging })
   });
   useErrorToast(update.error);
   return (
@@ -94,13 +94,14 @@ function DeveloperLogToggle({ enabled }: { enabled: boolean }) {
       <div className="list-group-item flex items-center gap-3">
         <ScrollText className="size-5 text-muted-foreground shrink-0" aria-hidden="true" />
         <span className="flex-1 min-w-0">
-          <label className="block font-medium" htmlFor="report-developer-log">Detailed log</label>
+          <label className="block font-medium" htmlFor="report-logging">Keep a log</label>
           <span className="block text-muted-foreground text-xs">
-            Also notes what the app was doing, such as how many posts a button marked read, so a report
-            shows the cause. Errors are logged either way. Applies to this device.
+            Notes errors and what the app was doing, such as how many posts a button marked read, so a
+            report shows the cause. Off: nothing is written, and lines already in the log stay below.
+            Applies to this device.
           </span>
         </span>
-        <input className="form-check-input shrink-0" type="checkbox" id="report-developer-log" name="developer-log"
+        <input className="form-check-input shrink-0" type="checkbox" id="report-logging" name="logging"
           checked={enabled} disabled={update.isPending}
           onChange={() => update.mutate(!enabled)} />
       </div>
@@ -210,7 +211,7 @@ export function ReportIssueSettings() {
         ))}
       </ul>
 
-      <DeveloperLogToggle enabled={report.data.developerLog} />
+      <LoggingToggle enabled={report.data.logging} />
 
       <h2 className="font-medium mb-2" id="report-log-heading">
         Latest log

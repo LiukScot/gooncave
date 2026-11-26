@@ -1010,16 +1010,16 @@ export const api = {
   getReport: async () => {
     const res = await apiFetch(`${API_BASE}/report`);
     const data = await handle<unknown>(res);
-    return z.object({ version: z.string(), commit: z.string(), platform: z.string(), schema: z.string(), jobs: z.array(z.string()).max(20), log: z.string(), developerLog: z.boolean() }).parse(data);
+    return z.object({ version: z.string(), commit: z.string(), platform: z.string(), schema: z.string(), jobs: z.array(z.string()).max(20), log: z.string(), logging: z.boolean() }).parse(data);
   },
-  setDeveloperLog: async (enabled: boolean) => {
-    const res = await apiFetch(`${API_BASE}/report/developer-log`, {
+  setLogging: async (enabled: boolean) => {
+    const res = await apiFetch(`${API_BASE}/report/logging`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled })
     });
     const data = await handle<unknown>(res);
-    return z.object({ developerLog: z.boolean() }).parse(data).developerLog;
+    return z.object({ logging: z.boolean() }).parse(data).logging;
   },
   getAppUpdate: async () => {
     const res = await apiFetch(`${API_BASE}/update`);
