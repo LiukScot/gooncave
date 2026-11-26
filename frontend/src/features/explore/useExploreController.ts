@@ -447,7 +447,8 @@ export function useExploreController({
   const remotePageLimit = pageLimitForMerge(
     mergeSort,
     PAGE_SIZE,
-    activeSiteIds.length
+    activeSiteIds.length,
+    effectiveUnreadOnly
   );
 
   /**
@@ -504,6 +505,7 @@ export function useExploreController({
       maxRounds: MAX_FILL_ROUNDS,
       minPosts: MIN_POSTS_PER_LOAD,
       keep: keepPost,
+      ownPageSize: (siteId) => siteById.get(siteId)?.engine === 'furaffinity',
       signal,
       onSlowSite: (siteId, skip) =>
         setSlowSites((current) => [

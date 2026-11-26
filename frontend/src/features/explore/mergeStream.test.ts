@@ -61,6 +61,12 @@ describe('pageLimitForMerge', () => {
     expect(pageLimitForMerge('popular', 40, 4)).toBe(40);
     expect(pageLimitForMerge('hot', 40, 4)).toBe(40);
   });
+
+  it('asks for the largest page when read posts are hidden, since most of a page may be dropped', () => {
+    expect(pageLimitForMerge('new', 40, 4, true)).toBe(100);
+    expect(pageLimitForMerge('popular', 40, 4, true)).toBe(100);
+    expect(pageLimitForMerge('hot', 40, 4, true)).toBe(40);
+  });
 });
 
 describe('releaseReady', () => {
@@ -275,16 +281,8 @@ describe('openStreams', () => {
 
     // A's page 2 stops at 100, so everything down to 100 is safe: B's 300
     // lands between A's 499 and 250 instead of after A's whole first page.
-    expect(ids(result.posts)).toEqual([
-      'a1',
-      'a2',
-      'a3',
-      'a4',
-      'b1',
-      'a5',
-      'b2',
-      'a6'
-    ]);
+    // B's 120 and A's 100 are past the six asked for and wait for the next load.
+    expect(ids(result.posts)).toEqual(['a1', 'a2', 'a3', 'a4', 'b1', 'a5']);
     // Only A is asked for more: B's page 2 could not have been shown yet.
     expect(calls).toEqual(['a:1', 'b:1', 'a:2']);
     expect(result.hasMore).toBe(true);
@@ -428,16 +426,73 @@ describe('new sort', () => {
     });
     const opened = await openStreams(
       ['a', 'b'],
-      options(fetchPage, { sort: 'new', target: 1 })
+      options(fetchPage, { sort: 'new' })
     );
 
     const more = await fillPages(
       opened.streams,
-      options(fetchPage, { sort: 'new', target: 1, maxRounds: 1 })
+      options(fetchPage, { sort: 'new', maxRounds: 1 })
     );
 
     expect(calls).toEqual(['a:1', 'b:1', 'a:2', 'b:2']);
     expect(ids(more.posts)).toEqual(['a4', 'b4', 'a5', 'b5', 'a6', 'b6']);
+  });
+});
+
+describe('a load larger than what is shown', () => {
+  it('shows the posts asked for and keeps the rest for the next load without asking again', async () => {
+    const { calls, fetchPage } = fakeSites({
+      a: [Array.from({ length: 5 }, (_, n) => post('a', `a${n + 1}`, 0))]
+    });
+    const settings = options(fetchPage, { sort: 'new', limit: 10, target: 2 });
+
+    const opened = await openStreams(['a'], settings);
+    const second = await fillPages(opened.streams, settings);
+    const third = await fillPages(second.streams, settings);
+
+    expect(ids(opened.posts)).toEqual(['a1', 'a2']);
+    expect(opened.hasMore).toBe(true);
+    expect(ids(second.posts)).toEqual(['a3', 'a4']);
+    expect(ids(third.posts)).toEqual(['a5']);
+    expect(third.hasMore).toBe(false);
+    expect(calls).toEqual(['a:1']);
+  });
+
+  it('fills the first page of unread posts from four sites whose newest 600 posts are read', async () => {
+    const siteIds = ['a', 'b', 'c', 'd'];
+    const limit = pageLimitForMerge('new', 40, siteIds.length, true);
+    let requests = 0;
+    const opened = await openStreams(siteIds, {
+      sort: 'new',
+      limit,
+      target: 40,
+      maxRounds: 5,
+      minPosts: 12,
+      keep: (entry) => !entry.read,
+      fetchPage: async (siteId, page) => {
+        requests += 1;
+        return Array.from({ length: limit }, (_, index) => {
+          const position = (page - 1) * limit + index;
+          return { ...post(siteId, `${siteId}${position}`, 0), read: position < 600 };
+        });
+      }
+    });
+
+    expect(opened.posts).toHaveLength(40);
+    expect(requests).toBeLessThanOrEqual(siteIds.length * 7);
+  });
+
+  it('does not end a site that answers with its own page size by a page shorter than asked', async () => {
+    const { calls, fetchPage } = fakeSites({
+      fa: [[post('fa', 'fa1', 0), post('fa', 'fa2', 0)], [post('fa', 'fa3', 0)], []]
+    });
+    const settings = options(fetchPage, { sort: 'new', limit: 100, target: 10, ownPageSize: () => true });
+
+    const opened = await openStreams(['fa'], settings);
+
+    expect(ids(opened.posts)).toEqual(['fa1', 'fa2', 'fa3']);
+    expect(calls).toEqual(['fa:1', 'fa:2', 'fa:3']);
+    expect(opened.hasMore).toBe(false);
   });
 });
 

@@ -277,6 +277,18 @@ pub(crate) async fn decorate(
     }
     Ok(posts)
 }
+/// One post of each site in turn, each site in its own order. Every post is kept: FurAffinity
+/// answers with its own page size, which can be larger than the one asked for.
+fn alternate(ids: &[String], by_site: &HashMap<String, Vec<Value>>) -> Vec<Value> {
+    let longest = by_site.values().map(Vec::len).max().unwrap_or(0);
+    (0..longest)
+        .flat_map(|index| {
+            ids.iter()
+                .filter_map(move |id| by_site.get(id).and_then(|posts| posts.get(index)))
+        })
+        .cloned()
+        .collect()
+}
 async fn search(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result<Json<Value>> {
     let s = options(&q)?;
     let wanted = query_text(&q, "sites", 2000)?.map(|v| {
@@ -321,13 +333,7 @@ async fn search(State(db): State<Database>, Query(q): Query<QueryMap>) -> Result
     }
     let mut posts = Vec::new();
     if s.sort == "new" {
-        for index in 0..s.limit {
-            for id in &ids {
-                if let Some(post) = by_site.get(id).and_then(|p| p.get(index)) {
-                    posts.push(post.clone());
-                }
-            }
-        }
+        posts = alternate(&ids, &by_site);
     } else {
         for id in &ids {
             if let Some(found) = by_site.remove(id) {
@@ -1314,6 +1320,22 @@ mod tests {
             json!([{"tag":"test_artist","category":"artist"},{"tag":"digital","category":"meta"}])
         );
     }
+    #[test]
+    fn a_site_that_answers_with_more_posts_than_asked_loses_none() {
+        let ids = ["fa".to_owned(), "e621".to_owned()];
+        let by_site = HashMap::from([
+            (
+                "fa".to_owned(),
+                vec![json!("fa1"), json!("fa2"), json!("fa3")],
+            ),
+            ("e621".to_owned(), vec![json!("e1")]),
+        ]);
+        assert_eq!(
+            alternate(&ids, &by_site),
+            [json!("fa1"), json!("e1"), json!("fa2"), json!("fa3")]
+        );
+    }
+
     #[tokio::test]
     async fn remote_motion_preview_encodes_a_gif_and_rejects_other_media() {
         let temp = tempfile::tempdir().unwrap();
