@@ -219,7 +219,11 @@ export function useArtistSubscriptionMutation(subscribed: boolean) {
       subscribed ? api.subscribeArtist(artist) : api.unsubscribeArtist(artist),
     onSuccess: (data) => {
       writeExploreSnapshot(null);
-      queryClient.setQueryData(queryKeys.settings.subscriptions(), data);
+      // The answer comes before the FurAffinity sync, so it knows no failure: the ones on screen stay.
+      queryClient.setQueryData<SubscriptionSettings>(queryKeys.settings.subscriptions(), (current) => ({
+        ...data,
+        artistErrors: current?.artistErrors ?? []
+      }));
       queryClient.setQueryData<SubscriptionTargets>(queryKeys.settings.subscriptionTags(), (current) => ({
         ...current,
         tags: data.tags,

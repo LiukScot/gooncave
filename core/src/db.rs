@@ -28,6 +28,8 @@ pub struct Database {
     paths: Arc<LibraryPaths>,
     pub(crate) favorites: Arc<crate::favorites::Job>,
     pub(crate) subscriptions: Arc<tokio::sync::Mutex<()>>,
+    /// A FurAffinity watchlist sync is waiting to start after a follow or an unfollow.
+    pub(crate) watchlist_sync_queued: Arc<std::sync::atomic::AtomicBool>,
     /// Held by the saved Subscriptions feed sync.
     pub(crate) subscription_feed: Arc<tokio::sync::Mutex<()>>,
     /// Searches read and to read by the running feed sync, if any.
@@ -237,6 +239,7 @@ impl Database {
             }),
             favorites: Arc::new(crate::favorites::Job::default()),
             subscriptions: Arc::new(tokio::sync::Mutex::new(())),
+            watchlist_sync_queued: Arc::default(),
             subscription_feed: Arc::new(tokio::sync::Mutex::new(())),
             subscription_progress: Arc::default(),
             sources: Arc::new(crate::source_jobs::Job::default()),
