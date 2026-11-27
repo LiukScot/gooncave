@@ -418,7 +418,10 @@ the cache keeps them; FurAffinity's files go through them too, because its
 Cloudflare refuses a burst of requests. Other sites' files stream from their CDN. Explore also signs `colorSourceUrl`
 (a page can read the pixels only of same-origin pictures) and `matchPreviewUrl`
 (read by gallery matching and by the comparison of copies). Media requests through the core carry the
-provider's referrer without account credentials. Provider failures
+provider's referrer without account credentials. A site that answers 429 is
+asked nothing for 5 seconds, doubled for each 429 in a row up to 5 minutes and
+never shorter than its `Retry-After`: requests to it fail at once with
+`BOORU_RATE_LIMITED` until then, and its next success ends the pause. Provider failures
 include recovery guidance without echoing remote response bodies or secrets.
 
 Engine tests use local HTTP fixtures with fake credentials; their loopback

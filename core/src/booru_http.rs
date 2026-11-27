@@ -28,6 +28,72 @@ static CLIENTS: OnceLock<std::sync::Mutex<HashMap<String, (Instant, Client)>>> =
 const CLIENT_LIFETIME: Duration = Duration::from_secs(5 * 60);
 const MAX_CLIENTS: usize = 64;
 static PAGE_REQUEST: OnceLock<tokio::sync::Mutex<tokio::time::Instant>> = OnceLock::new();
+/// A site that answered 429 is asked nothing for this long, doubled for each 429 in a row.
+const FIRST_PAUSE: Duration = Duration::from_secs(5);
+const LONGEST_PAUSE: Duration = Duration::from_secs(5 * 60);
+/// Sites pausing after a 429, by host and port: until when, and their 429s in a row.
+static LIMITED: std::sync::Mutex<Option<HashMap<String, (Instant, u32)>>> =
+    std::sync::Mutex::new(None);
+
+fn site_key(target: &Url) -> String {
+    format!(
+        "{}:{}",
+        target.host_str().unwrap_or_default(),
+        target.port_or_known_default().unwrap_or_default()
+    )
+}
+
+fn rate_limited() -> Error {
+    Error::Refused {
+        code: "BOORU_RATE_LIMITED",
+        message: "The site is limiting requests. Wait a moment and try again.".into(),
+    }
+}
+
+/// How long a site is left alone after its `strikes`-th 429 in a row; `asked` is its Retry-After.
+fn pause_after(strikes: u32, asked: Option<Duration>) -> Duration {
+    FIRST_PAUSE
+        .saturating_mul(1 << strikes.saturating_sub(1).min(16))
+        .max(asked.unwrap_or_default())
+        .min(LONGEST_PAUSE)
+}
+
+/// The error for a site still pausing after a 429. Every part of the app asks the sites on its
+/// own, so without this each one keeps sending requests the site only answers with another 429.
+fn pausing(target: &Url) -> Option<Error> {
+    let sites = LIMITED.lock().unwrap_or_else(|p| p.into_inner());
+    let (until, _) = sites.as_ref()?.get(&site_key(target))?;
+    (Instant::now() < *until).then(rate_limited)
+}
+
+/// Records a site's answer: a 429 starts or lengthens its pause, a success ends it.
+fn note(target: &Url, status: u16, asked: Option<Duration>) {
+    let mut sites = LIMITED.lock().unwrap_or_else(|p| p.into_inner());
+    let sites = sites.get_or_insert_with(HashMap::new);
+    let key = site_key(target);
+    if status == 429 {
+        let strikes = sites.get(&key).map_or(0, |(_, strikes)| *strikes) + 1;
+        let pause = pause_after(strikes, asked);
+        eprintln!(
+            "[developer] {} is limiting requests (429, {strikes} in a row); GoonCave asks it nothing for {} seconds.",
+            target.host_str().unwrap_or_default(),
+            pause.as_secs()
+        );
+        sites.insert(key, (Instant::now() + pause, strikes));
+    } else if (200..300).contains(&status) {
+        sites.remove(&key);
+    }
+}
+
+fn note_response(target: &Url, response: &reqwest::Response) {
+    let asked = response
+        .headers()
+        .get("retry-after")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| h.parse::<u64>().ok())
+        .map(Duration::from_secs);
+    note(target, response.status().as_u16(), asked);
+}
 
 async fn pace(target: &Url) {
     // Only pages behind a browser check are paced; their thumbnail and file hosts are a CDN.
@@ -62,10 +128,7 @@ fn paused(response: &reqwest::Response) -> Option<Error> {
     {
         return Some(captcha());
     }
-    (response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS).then(|| Error::Refused {
-        code: "BOORU_RATE_LIMITED",
-        message: "The site is limiting requests. Wait a moment and try again.".into(),
-    })
+    (response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS).then(rate_limited)
 }
 fn public_v4(ip: Ipv4Addr) -> bool {
     let [a, b, _, _] = ip.octets();
@@ -239,6 +302,7 @@ async fn browse(target: &Url, headers: &HeaderMap) -> Result<Option<reqwest::Res
         .fetch(target.to_string(), cookie)
         .await
         .map_err(remote)?;
+    note(target, page.status, None);
     let response = axum::http::Response::builder()
         .status(page.status)
         .body(page.body)
@@ -304,6 +368,9 @@ impl Transport {
         method: reqwest::Method,
         body: Option<String>,
     ) -> Result<reqwest::Response> {
+        if let Some(error) = pausing(&target) {
+            return Err(error);
+        }
         if method == reqwest::Method::GET && body.is_none() {
             if let Some(response) = browse(&target, &headers).await? {
                 return Ok(response);
@@ -327,6 +394,7 @@ impl Transport {
             }
             // A lost response may follow a successful write; never repeat a mutation automatically.
             let response = request.send().await.map_err(|_| remote("The site's answer was interrupted. Check the post on the original site before retrying."))?;
+            note_response(&target, &response);
             // A CAPTCHA or a 429 means the site did not run the write, so sending it again is safe.
             match paused(&response) {
                 Some(error) => match RETRY_DELAYS.get(attempt) {
@@ -404,6 +472,9 @@ impl Transport {
         headers: HeaderMap,
         limited: bool,
     ) -> Result<(reqwest::Response, Option<SemaphorePermit<'static>>)> {
+        if let Some(error) = pausing(&target) {
+            return Err(error);
+        }
         if let Some(response) = browse(&target, &headers).await? {
             return Ok((checked(response).await?, None));
         }
@@ -451,6 +522,7 @@ impl Transport {
                             "The site could not be reached. Check your connection and try again.",
                         )
                     })?;
+                note_response(&target, &response);
                 // Cloudflare in front of FurAffinity's image hosts refuses a burst of
                 // thumbnails with 403 for a short while.
                 let refused_burst = response.status().as_u16() == 403
@@ -546,6 +618,69 @@ mod tests {
         pace(&page).await;
         pace(&page).await;
         assert!(started.elapsed() >= Duration::from_millis(900));
+    }
+    #[test]
+    fn a_pause_after_a_429_doubles_and_follows_what_the_site_asks_up_to_a_limit() {
+        assert_eq!(pause_after(1, None), Duration::from_secs(5));
+        assert_eq!(pause_after(3, None), Duration::from_secs(20));
+        assert_eq!(
+            pause_after(1, Some(Duration::from_secs(30))),
+            Duration::from_secs(30)
+        );
+        assert_eq!(pause_after(40, None), LONGEST_PAUSE);
+        assert_eq!(
+            pause_after(1, Some(Duration::from_secs(3600))),
+            LONGEST_PAUSE
+        );
+    }
+    #[tokio::test]
+    async fn a_site_that_answered_429_is_asked_nothing_until_its_pause_ends() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static ASKED: AtomicUsize = AtomicUsize::new(0);
+        let app = axum::Router::new().route(
+            "/posts",
+            axum::routing::get(|| async {
+                ASKED.fetch_add(1, Ordering::SeqCst);
+                axum::http::StatusCode::TOO_MANY_REQUESTS
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target =
+            Url::parse(&format!("http://{}/posts", listener.local_addr().unwrap())).unwrap();
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let t = Transport {
+            allow_loopback: true,
+        };
+        let limited = |r: Result<reqwest::Response>| {
+            matches!(
+                r,
+                Err(Error::Refused {
+                    code: "BOORU_RATE_LIMITED",
+                    ..
+                })
+            )
+        };
+
+        assert!(limited(t.get(target.clone(), HeaderMap::new()).await));
+        let asked = ASKED.load(Ordering::SeqCst);
+        assert!(asked > 0);
+        // Another part of the app asks the same site while it pauses.
+        assert!(limited(t.get(target.clone(), HeaderMap::new()).await));
+        let write = t.write(target.clone(), HeaderMap::new(), reqwest::Method::GET, None);
+        assert!(limited(write.await));
+        assert_eq!(
+            ASKED.load(Ordering::SeqCst),
+            asked,
+            "the site was asked again"
+        );
+
+        note(&target, 200, None);
+        assert!(limited(t.get(target.clone(), HeaderMap::new()).await));
+        assert!(
+            ASKED.load(Ordering::SeqCst) > asked,
+            "the pause did not end"
+        );
+        task.abort();
     }
     #[test]
     fn a_file_from_the_browser_engine_says_what_it_is() {
@@ -753,6 +888,8 @@ mod tests {
                 expected
             );
         }
+        // The 429s above left the site pausing; a later success is what ends that.
+        note(&at("/"), 200, None);
         // Cloudflare challenges only some requests: a later attempt goes through.
         assert!(t.get(at("/flaky"), HeaderMap::new()).await.is_ok());
         assert!(t
