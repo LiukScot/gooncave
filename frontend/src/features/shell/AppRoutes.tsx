@@ -1,4 +1,5 @@
-import { Outlet, useRouter, useSearch } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
+import { Link, Outlet, useRouter, useSearch } from '@tanstack/react-router';
 import { Images } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
@@ -30,6 +31,7 @@ import { SyncSettings } from '@/features/settings/SyncSettings';
 import { TrashSettings } from '@/features/settings/TrashSettings';
 import { useExtraSettings } from '@/hooks/settings';
 import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
+import { queryKeys } from '@/lib/query-keys';
 import { useSettingsSlide } from '@/lib/settingsSlide';
 
 export function GalleryRouteView() {
@@ -168,10 +170,27 @@ export function SettingsFileSourcesRouteView() {
 
 export function SettingsDuplicatesRouteView() {
   const { authUser, duplicatesCtl } = useAppShellContext();
+  const originals = useQuery({ queryKey: queryKeys.originals, queryFn: api.getOriginals });
   if (authUser.capabilities?.duplicates === false) return <FeatureUnavailable feature="Duplicate matching" />;
+  // The check reads each file from disk, so a device that frees files cannot compare them.
+  const freesFiles = originals.data?.keepAll === false;
   return (
     <SettingsSubpage title="Matching images">
-      <DuplicatesView {...duplicatesCtl.viewProps} />
+      {freesFiles ? (
+        <div className="duplicate-blocked-notice" data-test-id="duplicates-need-every-file">
+          <p>
+            This device does not keep every file, so it cannot compare the pictures that are only
+            online and does not look for matching images. A device that keeps every file finds
+            them, and this device shows the result after it syncs.
+          </p>
+          <Link to="/app/settings/sync" className="btn btn-outline-light btn-sm">
+            Open Sync to turn on Keep every file
+          </Link>
+        </div>
+      ) : null}
+      <fieldset className="duplicate-blocked" disabled={freesFiles}>
+        <DuplicatesView {...duplicatesCtl.viewProps} />
+      </fieldset>
     </SettingsSubpage>
   );
 }
