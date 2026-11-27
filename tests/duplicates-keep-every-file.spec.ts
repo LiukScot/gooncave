@@ -11,7 +11,7 @@ test('Matching images is grayed out with the reason on a device that does not ke
   await page.goto('/app/settings/duplicates');
 
   await expect(page.locator('[data-test-id="duplicates-need-every-file"]')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open Sync to turn on Keep every file' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Keep every file' })).toBeVisible();
   await expect(page.getByRole('radio', { name: /Keep every favorite/ })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Preview changes' })).toBeDisabled();
 });
