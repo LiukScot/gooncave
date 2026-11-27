@@ -22,14 +22,17 @@ export async function applyEach<T>(items: readonly T[], apply: (item: T) => Prom
 /**
  * Runs a bulk action and reports it in one toast: how many worked and, when some failed, why
  * the first one did, with a button that retries only the failed ones. `verb` completes
- * "<verb> 3 of 4", e.g. "Favorited".
+ * "<verb> 3 of 4", e.g. "Favorited". `settled` runs after each pass, the retries included, so
+ * what the action changed is read again.
  */
 export async function runBulk<T>(
   verb: string,
   items: readonly T[],
-  apply: (item: T) => Promise<unknown>
+  apply: (item: T) => Promise<unknown>,
+  settled?: () => void
 ): Promise<BulkResult<T>> {
   const result = await applyEach(items, apply);
+  settled?.();
   if (result.failed.length === 0) {
     toast.success(`${verb} ${result.done.length} ${result.done.length === 1 ? 'item' : 'items'}`);
     return result;
@@ -41,7 +44,7 @@ export async function runBulk<T>(
     duration: 10_000,
     action: {
       label: 'Retry failed',
-      onClick: () => void runBulk(verb, result.failed.map(({ item }) => item), apply)
+      onClick: () => void runBulk(verb, result.failed.map(({ item }) => item), apply, settled)
     }
   });
   return result;

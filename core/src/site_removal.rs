@@ -129,9 +129,9 @@ pub(crate) fn remove_site(
             )?;
         }
     }
-    // Tags and relations saved under a custom site's random id would name a site that no longer
-    // exists, and every start would search them for a site to adopt them.
-    for table in ["file_tags", "file_post_relations"] {
+    // Tags, relations and tag-refresh marks saved under a custom site's random id would name a
+    // site that no longer exists, and every start would search them for a site to adopt them.
+    for table in ["file_tags", "file_post_relations", "site_tag_reads"] {
         c.execute(&format!("DELETE FROM {table} WHERE source = ?1"), [&id])?;
     }
     c.execute(
@@ -216,6 +216,7 @@ mod tests {
                ('{OWNER_ID}', 'other', '4', '{root}/elsewhere', {NOW}, {NOW});
              INSERT INTO file_tags (file_id, tag, category, source, created_at, updated_at) VALUES
                ('held', 'a', 'general', 'mine', {NOW}, {NOW}), ('held', 'b', 'general', 'other', {NOW}, {NOW});
+             INSERT INTO site_tag_reads (file_id, source) VALUES ('held', 'mine'), ('held', 'other');
              INSERT INTO sync_records (kind, record_key, data, changed_at, applied) VALUES
                ('file', '[\"sha-online\"]', '{{}}', {NOW}, 1);"
         ))?;
@@ -279,6 +280,9 @@ mod tests {
                     c.query_row("SELECT group_concat(source) FROM file_tags", [], |r| {
                         r.get::<_, String>(0)
                     })?,
+                    c.query_row("SELECT group_concat(source) FROM site_tag_reads", [], |r| {
+                        r.get::<_, String>(0)
+                    })?,
                     c.query_row(
                         "SELECT applied FROM sync_records WHERE kind = 'file'",
                         [],
@@ -296,8 +300,9 @@ mod tests {
         assert_eq!(after.0, "elsewhere,held,shared");
         assert_eq!(after.1, "other3,other4");
         assert_eq!(after.2, "other");
-        assert_eq!(after.3, 3);
-        assert_eq!(after.4, 0);
+        assert_eq!(after.3, "other");
+        assert_eq!(after.4, 3);
+        assert_eq!(after.5, 0);
         assert!(std::path::Path::new(&root).join("held.png").exists());
     }
 

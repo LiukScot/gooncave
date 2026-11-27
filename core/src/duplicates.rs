@@ -231,7 +231,7 @@ pub(crate) fn largest_block_difference(a: &[u8], b: &[u8]) -> f64 {
 fn largest(a: &Signature, b: &Signature) -> f64 {
     match (a, b) {
         (Signature::Image(a), Signature::Image(b)) => largest_difference(a, b),
-        (Signature::Video(a), Signature::Video(b)) if !a.is_empty() && !b.is_empty() => a
+        (Signature::Video(a), Signature::Video(b)) if !a.is_empty() && a.len() == b.len() => a
             .iter()
             .zip(b)
             .map(|(x, y)| largest_difference(x, y))
@@ -350,12 +350,10 @@ fn near_duration_pairs(durations: &[Option<i64>], max_pairs: usize) -> Vec<(usiz
 fn compare(a: &Signature, b: &Signature) -> f64 {
     match (a, b) {
         (Signature::Image(a), Signature::Image(b)) => difference(a, b),
-        (Signature::Video(a), Signature::Video(b)) => {
-            let frames = a.len().min(b.len());
-            if frames == 0 {
-                return 1.0;
-            }
-            a.iter().zip(b).map(|(x, y)| difference(x, y)).sum::<f64>() / frames as f64
+        // A frame that could not be taken shifts the others: frame 1 of one clip would be
+        // compared with frame 2 of the other, and a single frame would stand for a whole clip.
+        (Signature::Video(a), Signature::Video(b)) if !a.is_empty() && a.len() == b.len() => {
+            a.iter().zip(b).map(|(x, y)| difference(x, y)).sum::<f64>() / a.len() as f64
         }
         _ => 1.0,
     }
@@ -1094,6 +1092,16 @@ mod tests {
         let edited = Signature::Image(edited);
         assert!(compare(&original, &edited) <= threshold);
         assert!(!same_picture(&original, &edited, threshold));
+    }
+
+    #[test]
+    fn videos_with_different_frame_counts_never_match() {
+        let frame = vec![128u8; 16];
+        let one = Signature::Video(vec![frame.clone()]);
+        let three = Signature::Video(vec![frame.clone(), vec![0; 16], vec![255; 16]]);
+        assert_eq!(compare(&one, &three), 1.0);
+        assert!(!same_picture(&one, &three, 0.5));
+        assert!(same_picture(&three, &three, 0.0));
     }
 
     #[test]

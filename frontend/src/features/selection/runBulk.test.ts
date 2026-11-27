@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { toast } from 'sonner';
+import { describe, expect, it, vi } from 'vitest';
 
-import { applyEach } from './runBulk';
+import { applyEach, runBulk } from './runBulk';
+
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 describe('applyEach', () => {
   it('keeps going after a failure and says which items failed', async () => {
@@ -24,5 +27,23 @@ describe('applyEach', () => {
       running -= 1;
     });
     expect(most).toBe(1);
+  });
+});
+
+describe('runBulk', () => {
+  it('reads the changes again after the retry of the failed items too', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let refuse = true;
+    const settled = vi.fn();
+    await runBulk('Tagged', [1, 2], async (item) => {
+      if (item === 2 && refuse) throw new Error('site refused');
+    }, settled);
+    expect(settled).toHaveBeenCalledTimes(1);
+    const options = vi.mocked(toast.error).mock.calls[0][1] as unknown as { action: { onClick: () => void } };
+    refuse = false;
+    options.action.onClick();
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledTimes(2));
+    expect(toast.success).toHaveBeenCalledWith('Tagged 1 item');
+    quiet.mockRestore();
   });
 });
