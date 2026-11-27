@@ -4422,17 +4422,6 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 }
 
 /* Duplicate handling presents two exclusive policies as equal visual paths. */
-.duplicate-blocked {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.duplicate-blocked:disabled {
-  opacity: 0.5;
-}
-
 .duplicate-blocked-notice {
   display: flex;
   flex-direction: column;

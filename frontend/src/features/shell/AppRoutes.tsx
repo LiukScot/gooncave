@@ -172,21 +172,19 @@ export function SettingsDuplicatesRouteView() {
   const { authUser, duplicatesCtl } = useAppShellContext();
   const originals = useQuery({ queryKey: queryKeys.originals, queryFn: api.getOriginals });
   if (authUser.capabilities?.duplicates === false) return <FeatureUnavailable feature="Duplicate matching" />;
-  // The check reads each file from disk, so a device that frees files cannot compare them.
+  // The scan reads each file from disk, so files only in the cloud are compared elsewhere.
   const freesFiles = originals.data?.keepAll === false;
   return (
     <SettingsSubpage title="Matching images">
       {freesFiles ? (
         <div className="duplicate-blocked-notice" data-test-id="duplicates-need-every-file">
-          <p>Finding matching images needs the “Keep every file on this device” setting on.</p>
+          <p>Only files kept on this device are compared here.</p>
           <Link to="/app/settings/sync" className="btn btn-outline-light btn-sm">
             Keep every file
           </Link>
         </div>
       ) : null}
-      <fieldset className="duplicate-blocked" disabled={freesFiles}>
-        <DuplicatesView {...duplicatesCtl.viewProps} />
-      </fieldset>
+      <DuplicatesView {...duplicatesCtl.viewProps} />
     </SettingsSubpage>
   );
 }

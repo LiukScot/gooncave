@@ -107,8 +107,9 @@ never compared.
 
 The scan reads each file from disk, so it leaves out files whose original is
 not on the device. On a device that does not keep every file (the iPhone by
-default) Settings → Matching images is grayed out and says so; a device that
-keeps every file finds the copies, and its result reaches the others by sync.
+default) Settings → Matching images says so; the chosen option still applies
+to the whole library, a device that keeps every file finds the copies, and its
+result reaches the others by sync.
 
 A confirmed policy keeps the largest file of each group, points the kept
 favorites at it, removes favorites on other sites with `preferred_only`, and
