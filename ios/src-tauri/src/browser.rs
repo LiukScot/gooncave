@@ -24,8 +24,8 @@ use objc2::{
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_foundation::{
     NSArray, NSDictionary, NSError, NSHTTPCookie, NSHTTPCookieDomain, NSHTTPCookieName,
-    NSHTTPCookiePath, NSHTTPCookieSecure, NSHTTPCookieValue, NSString, NSURLErrorCancelled,
-    NSURLRequest, NSURL,
+    NSHTTPCookiePath, NSHTTPCookieSecure, NSHTTPCookieValue, NSHTTPURLResponse, NSString,
+    NSURLErrorCancelled, NSURLRequest, NSURL,
 };
 use objc2_ui_kit::{
     NSDirectionalEdgeInsets, UIAction, UIBarButtonItem, UIBarButtonSystemItem, UIColor, UILabel,
@@ -33,8 +33,8 @@ use objc2_ui_kit::{
     UIViewController,
 };
 use objc2_web_kit::{
-    WKContentWorld, WKFrameInfo, WKNavigation, WKNavigationDelegate, WKWebViewConfiguration,
-    WKWebsiteDataStore,
+    WKContentWorld, WKFrameInfo, WKNavigation, WKNavigationDelegate, WKNavigationResponse,
+    WKNavigationResponsePolicy, WKWebViewConfiguration, WKWebsiteDataStore,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -92,12 +92,30 @@ define_class!(
     #[unsafe(super(NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "GoonCaveBrowserWatcher"]
-    #[ivars = RefCell<Option<mpsc::UnboundedSender<Event>>>]
+    #[ivars = Watching]
     struct Watcher;
 
     unsafe impl NSObjectProtocol for Watcher {}
 
     unsafe impl WKNavigationDelegate for Watcher {
+        #[unsafe(method(webView:decidePolicyForNavigationResponse:decisionHandler:))]
+        fn decide_response(
+            &self,
+            _view: &WKWebView,
+            response: &WKNavigationResponse,
+            decide: &block2::DynBlock<dyn Fn(WKNavigationResponsePolicy)>,
+        ) {
+            // SAFETY: WebKit passes a live navigation response.
+            if unsafe { response.isForMainFrame() } {
+                let status = unsafe { response.response() }
+                    .downcast::<NSHTTPURLResponse>()
+                    .ok()
+                    .and_then(|response| u16::try_from(response.statusCode()).ok());
+                self.ivars().status.set(status);
+            }
+            decide.call((WKNavigationResponsePolicy::Allow,));
+        }
+
         #[unsafe(method(webView:didFinishNavigation:))]
         fn finished(&self, _view: &WKWebView, _navigation: Option<&WKNavigation>) {
             self.send(Event::Loaded);
@@ -120,15 +138,22 @@ define_class!(
     }
 );
 
+/// Where a web view's events go, and the HTTP status of the last page it opened.
+#[derive(Default)]
+struct Watching {
+    events: RefCell<Option<mpsc::UnboundedSender<Event>>>,
+    status: Cell<Option<u16>>,
+}
+
 impl Watcher {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(RefCell::new(None));
+        let this = Self::alloc(mtm).set_ivars(Watching::default());
         // SAFETY: NSObject's `init` is the designated initializer.
         unsafe { msg_send![super(this), init] }
     }
 
     fn send(&self, event: Event) {
-        if let Some(sender) = self.ivars().borrow().as_ref() {
+        if let Some(sender) = self.ivars().events.borrow().as_ref() {
             let _ = sender.send(event);
         }
     }
@@ -143,7 +168,7 @@ impl Watcher {
     /// Sends the events from now on to the returned receiver only.
     fn watch(&self) -> mpsc::UnboundedReceiver<Event> {
         let (sender, events) = mpsc::unbounded_channel();
-        *self.ivars().borrow_mut() = Some(sender);
+        *self.ivars().events.borrow_mut() = Some(sender);
         events
     }
 }
@@ -599,6 +624,16 @@ async fn ready(site: &'static Site, origin: &str, force: bool) -> Result<(), Str
         Some(Event::Loaded) => {}
         _ => return Err(UNREACHABLE.to_owned()),
     }
+    pass_check(site, origin, events).await
+}
+
+/// Shows Cloudflare's check to the person when the page the worker just loaded is one, and
+/// waits until it lets them through.
+async fn pass_check(
+    site: &'static Site,
+    origin: &str,
+    mut events: mpsc::UnboundedReceiver<Event>,
+) -> Result<(), String> {
     if !challenged().await.unwrap_or(false) {
         return Ok(());
     }
@@ -654,6 +689,11 @@ async fn fetch(url: &str, cookie: Option<&str>) -> Result<Page, String> {
             force = true;
             continue;
         }
+        if challenged {
+            // The site lets the page itself through but still checks the page's own requests.
+            eprintln!("[developer] {origin} still checked a request of GoonCave's browser after a new check, so it opens the page instead");
+            return open_as_page(site, origin, url).await;
+        }
         let status = value["status"]
             .as_u64()
             .and_then(|status| u16::try_from(status).ok())
@@ -669,6 +709,39 @@ async fn fetch(url: &str, cookie: Option<&str>) -> Result<Page, String> {
             body: value["body"].as_str().unwrap_or_default().to_owned(),
         });
     }
+}
+
+/// What a page opened in the worker holds: its HTML, or the text a browser shows for JSON and
+/// other text.
+const PAGE: &str = "return document.contentType === 'text/html' ? document.documentElement.outerHTML : (document.body?.textContent ?? '');";
+
+/// Opens `url` in the worker as a person would, showing Cloudflare's check when it asks for one,
+/// and returns what the page shows.
+async fn open_as_page(site: &'static Site, origin: &str, url: &str) -> Result<Page, String> {
+    let target = url.to_owned();
+    let mut events = main_thread(move |engine, _| {
+        let events = engine.worker_watcher.watch();
+        engine.worker_watcher.ivars().status.set(None);
+        load(&engine.worker, &target).map(|()| events)
+    })
+    .await??;
+    match events.recv().await {
+        Some(Event::Loaded) => {}
+        _ => return Err(UNREACHABLE.to_owned()),
+    }
+    pass_check(site, origin, events).await?;
+    let status = main_thread(|engine, _| engine.worker_watcher.ivars().status.get())
+        .await?
+        .ok_or_else(|| UNREACHABLE.to_owned())?;
+    let body: String =
+        serde_json::from_str(&script(On::Worker, PAGE, None).await?).map_err(|error| {
+            eprintln!("Browser script returned no page: {error}");
+            UNREACHABLE.to_owned()
+        })?;
+    if status >= 400 {
+        eprintln!("[developer] {origin} answered {status} to a page GoonCave's browser opened");
+    }
+    Ok(Page { status, body })
 }
 
 /// GETs a picture or video from a media host. Its check clears a request only from a page of
