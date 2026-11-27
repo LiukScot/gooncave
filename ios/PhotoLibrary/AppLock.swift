@@ -12,6 +12,8 @@ private let failuresKey = "GoonCaveLockFailures"
 /// Not secret: lets the cover know the lock is on when the Keychain cannot be read, as while the
 /// phone locks.
 private let enabledKey = "GoonCaveLockEnabled"
+/// Whether Face ID unlocks; absent until the first `state` of a version with separate locks.
+private let faceKey = "GoonCaveLockFaceID"
 private let waitUntilKey = "GoonCaveLockWaitUntil"
 /// Wrong codes allowed in a row before each further try waits.
 private let freeTries = 5
@@ -22,11 +24,16 @@ private let uncoverDelay: TimeInterval = 0.35
 private let unlockValidity: TimeInterval = 120
 private let hashRounds: UInt32 = 100_000
 
-/// When Face ID or the code last unlocked; read and written on the main queue only.
+/// When Face ID or the code last unlocked, and when Face ID last worked; main queue only.
 private var unlockedAt: Date?
+private var faceWorkedAt: Date?
 
 private func recentlyUnlocked() -> Bool {
     unlockedAt.map { Date().timeIntervalSince($0) < unlockValidity } ?? false
+}
+
+private func faceRecentlyWorked() -> Bool {
+    faceWorkedAt.map { Date().timeIntervalSince($0) < unlockValidity } ?? false
 }
 
 private struct Stored: Codable {
@@ -85,9 +92,25 @@ private func resetFailures() {
     UserDefaults.standard.removeObject(forKey: waitUntilKey)
 }
 
+private func faceLock() -> Bool {
+    UserDefaults.standard.bool(forKey: faceKey)
+}
+
+private func anyLock() -> Bool {
+    faceLock() || readStored() != nil
+}
+
 private func remainingWait() -> Int {
     let until = UserDefaults.standard.double(forKey: waitUntilKey)
     return max(0, Int((until - Date().timeIntervalSince1970).rounded(.up)))
+}
+
+/// The name the person knows, also while Face ID cannot be used.
+private func biometryLabel() -> String {
+    let context = LAContext()
+    var error: NSError?
+    _ = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+    return context.biometryType == .touchID ? "Touch ID" : "Face ID"
 }
 
 private func biometry() -> String {
@@ -140,11 +163,13 @@ private final class Cover {
 
 /// One entry point for the lock, so an older app finds it missing as a whole. `request` is
 /// `{"action", "code"?}`:
-/// - `state`: `{"enabled", "biometry": "faceID" | "touchID" | "none", "wait"}`
-/// - `set` with a code: `{"enabled": true}`
+/// - `state`: `{"code", "face", "biometry": "faceID" | "touchID" | "none", "wait"}`
+/// - `set` with a code: `{"code": true}`
 /// - `check` with a code: `{"ok", "wait"}`; `wait` counts the seconds before the next try
-/// - `clear`: `{"enabled": false}`
+/// - `clear`: `{"code": false}`
+/// - `faceOn`, `faceOff`: `{"face"}`
 /// - `biometric`: `{"ok"}`, with `"fallback": true` when the person chose the code
+/// Changing a lock while one is on needs Face ID or the code in the last two minutes.
 /// Any of them may answer `{"error"}`.
 @_cdecl("gooncave_lock")
 public func appLock(_ request: UnsafePointer<CChar>, _ done: Done, _ context: UnsafeMutableRawPointer?) {
@@ -154,12 +179,16 @@ public func appLock(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Un
         _ = Cover.shared
         switch fields["action"] as? String {
         case "state":
-            let enabled = readStored() != nil
+            let code = readStored() != nil
+            // Before Face ID and the code were separate, Face ID always unlocked a code lock.
+            if UserDefaults.standard.object(forKey: faceKey) == nil {
+                UserDefaults.standard.set(code && biometry() != "none", forKey: faceKey)
+            }
             // Keeps the cover's flag right after an update from a version without it.
-            UserDefaults.standard.set(enabled, forKey: enabledKey)
-            reply(done, context, ["enabled": enabled, "biometry": biometry(), "wait": remainingWait()])
+            UserDefaults.standard.set(code || faceLock(), forKey: enabledKey)
+            reply(done, context, ["code": code, "face": faceLock(), "biometry": biometry(), "wait": remainingWait()])
         case "set":
-            guard readStored() == nil || recentlyUnlocked() else {
+            guard !anyLock() || recentlyUnlocked() else {
                 return reply(done, context, ["error": "Unlock with Face ID or the code before changing it."])
             }
             var salt = Data(count: 16)
@@ -177,7 +206,7 @@ public func appLock(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Un
             }
             resetFailures()
             UserDefaults.standard.set(true, forKey: enabledKey)
-            reply(done, context, ["enabled": true])
+            reply(done, context, ["code": true])
         case "check":
             let wait = remainingWait()
             guard wait == 0 else { return reply(done, context, ["ok": false, "wait": wait]) }
@@ -197,28 +226,51 @@ public func appLock(_ request: UnsafePointer<CChar>, _ done: Done, _ context: Un
             }
             reply(done, context, ["ok": false, "wait": remainingWait()])
         case "clear":
-            guard readStored() == nil || recentlyUnlocked() else {
+            guard !anyLock() || recentlyUnlocked() else {
                 return reply(done, context, ["error": "Unlock with Face ID or the code before turning the lock off."])
             }
             SecItemDelete(keychainQuery() as CFDictionary)
-            UserDefaults.standard.removeObject(forKey: enabledKey)
+            UserDefaults.standard.set(faceLock(), forKey: enabledKey)
             unlockedAt = nil
             resetFailures()
-            reply(done, context, ["enabled": false])
+            reply(done, context, ["code": false])
+        case "faceOn", "faceOff":
+            let on = fields["action"] as? String == "faceOn"
+            // Turning it on needs a Face ID that just worked, so the lock cannot shut the person out.
+            guard (!on || faceRecentlyWorked()) && (!anyLock() || recentlyUnlocked()) else {
+                return reply(done, context, ["error": "Unlock with Face ID or the code before changing the lock."])
+            }
+            UserDefaults.standard.set(on, forKey: faceKey)
+            if !on { unlockedAt = nil }
+            UserDefaults.standard.set(on || readStored() != nil, forKey: enabledKey)
+            reply(done, context, ["face": on])
         case "biometric":
             let authentication = LAContext()
-            authentication.localizedFallbackTitle = "Use code"
+            // Without a code lock there is nothing to fall back to: Face ID alone unlocks.
+            authentication.localizedFallbackTitle = readStored() == nil ? "" : "Use code"
+            // With only the code on, Face ID unlocks nothing until the code has just been entered.
+            let counts = faceLock() || readStored() == nil || recentlyUnlocked()
             authentication.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "Unlock GoonCave") { ok, error in
                 if ok {
                     // On the main queue before the answer, so a `clear` that follows finds it.
                     return DispatchQueue.main.async {
+                        faceWorkedAt = Date()
+                        guard counts else { return reply(done, context, ["ok": false]) }
                         resetFailures()
                         unlockedAt = Date()
                         reply(done, context, ["ok": true])
                     }
                 }
-                let fallback = (error as? LAError)?.code == .userFallback
-                reply(done, context, ["ok": false, "fallback": fallback])
+                switch (error as? LAError)?.code {
+                case .userFallback:
+                    reply(done, context, ["ok": false, "fallback": true])
+                case .biometryLockout:
+                    reply(done, context, ["error": "\(biometryLabel()) is paused after too many tries. Lock the iPhone, unlock it with its code, then try again."])
+                case .biometryNotAvailable, .biometryNotEnrolled:
+                    reply(done, context, ["error": "\(biometryLabel()) is off for GoonCave. Turn it on in iOS Settings → GoonCave."])
+                default:
+                    reply(done, context, ["ok": false, "fallback": false])
+                }
             }
         default:
             reply(done, context, ["error": "The lock does not know this request."])
