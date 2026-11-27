@@ -3,6 +3,7 @@
 //! The requests run on the core's tasks; every UIKit and WebKit call hops to the main thread.
 use std::{
     cell::{Cell, OnceCell, RefCell},
+    collections::BTreeSet,
     future::Future,
     ptr::NonNull,
     sync::Arc,
@@ -113,7 +114,13 @@ define_class!(
                     .and_then(|response| u16::try_from(response.statusCode()).ok());
                 self.ivars().status.set(status);
             }
-            decide.call((WKNavigationResponsePolicy::Allow,));
+            // WebKit's own choice when this method is missing: open only what it can show.
+            let policy = if unsafe { response.canShowMIMEType() } {
+                WKNavigationResponsePolicy::Allow
+            } else {
+                WKNavigationResponsePolicy::Cancel
+            };
+            decide.call((policy,));
         }
 
         #[unsafe(method(webView:didFinishNavigation:))]
@@ -684,15 +691,34 @@ async fn fetch(url: &str, cookie: Option<&str>) -> Result<Page, String> {
             UNREACHABLE.to_owned()
         })?;
         let challenged = value["challenged"].as_bool() == Some(true);
-        if challenged && !force {
+        let pages_only = PAGES_ONLY
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(origin);
+        if challenged && !force && !pages_only {
             // The clearance expired since the worker's page loaded; get a new one.
             force = true;
             continue;
         }
         if challenged {
             // The site lets the page itself through but still checks the page's own requests.
-            eprintln!("[developer] {origin} still checked a request of GoonCave's browser after a new check, so it opens the page instead");
+            // A new check did not help before, so later requests skip it; the page shows the
+            // check itself when the clearance expired.
+            if !pages_only {
+                eprintln!("[developer] {origin} still checked a request of GoonCave's browser after a new check, so it opens pages instead");
+                PAGES_ONLY
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .insert(origin.to_owned());
+            }
             return open_as_page(site, origin, url).await;
+        }
+        if pages_only {
+            eprintln!("[developer] {origin} lets requests of GoonCave's browser through again");
+            PAGES_ONLY
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .remove(origin);
         }
         let status = value["status"]
             .as_u64()
@@ -710,6 +736,9 @@ async fn fetch(url: &str, cookie: Option<&str>) -> Result<Page, String> {
         });
     }
 }
+
+/// Sites whose requests stay checked after a new check, so the worker opens their pages instead.
+static PAGES_ONLY: std::sync::Mutex<BTreeSet<String>> = std::sync::Mutex::new(BTreeSet::new());
 
 /// What a page opened in the worker holds: its HTML, or the text a browser shows for JSON and
 /// other text.
@@ -735,7 +764,7 @@ async fn open_as_page(site: &'static Site, origin: &str, url: &str) -> Result<Pa
         .ok_or_else(|| UNREACHABLE.to_owned())?;
     let body: String =
         serde_json::from_str(&script(On::Worker, PAGE, None).await?).map_err(|error| {
-            eprintln!("Browser script returned no page: {error}");
+            eprintln!("[developer] The page GoonCave's browser opened returned nothing: {error}");
             UNREACHABLE.to_owned()
         })?;
     if status >= 400 {

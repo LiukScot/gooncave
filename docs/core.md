@@ -238,7 +238,8 @@ Invalid setting bodies and queries return HTTP 400. Storage failures return HTTP
 with disk-space and permissions guidance. Features not yet implemented
 return HTTP 501 instead of reporting success. Setting updates are atomic.
 Saved settings are validated on read; corrupt values are reported rather
-than replaced silently. Request bodies are limited to 64 KiB, except uploads.
+than replaced silently. Request bodies are limited to 64 KiB, except uploads and
+`POST /explore/copies` (8 MiB: its 5,100 posts take about 2 MB).
 
 ## Tag vocabulary and search
 
@@ -403,8 +404,8 @@ are never retried automatically after an interrupted response.
 
 A Cloudflare browser check (`cf-mitigated: challenge`) or HTTP 429 means the
 site did not run the request, and Cloudflare checks only some requests. Every
-booru read and write is sent again after 2, 5 and 12 seconds (a 429's
-`Retry-After`, up to 10 seconds, when it has one). A refusal that outlasts these
+booru read and write that meets a check is sent again after 2, 5 and 12 seconds;
+a 429 is not, because the site then pauses (below). A refusal that outlasts these
 answers HTTP 502 with `code` `BOORU_CAPTCHA` or `BOORU_RATE_LIMITED` next to
 `error`. Explore then sends a favorite again for about eight minutes after a
 `BOORU_RATE_LIMITED`, and shows a `BOORU_CAPTCHA` at once: only a browser passes it.
@@ -421,11 +422,14 @@ Cloudflare refuses a burst of requests. Other sites' files stream from their CDN
 provider's referrer without account credentials. A site that answers 429 is
 asked nothing for 5 seconds, doubled for each 429 in a row up to 5 minutes and
 never shorter than its `Retry-After`: requests to it fail at once with
-`BOORU_RATE_LIMITED` until then, and its next success ends the pause. Provider failures
+`BOORU_RATE_LIMITED` until then, and its next success ends the pause. A success
+to a request sent before the 429 does not. Provider failures
 include recovery guidance without echoing remote response bodies or secrets.
 
 Engine tests use local HTTP fixtures with fake credentials; their loopback
-exception is compiled only in unit tests. Run the focused checks with:
+exception is compiled only in unit tests. The browser tests reach a fake booru on
+127.0.0.1 because `playwright.config.ts` starts the core with
+`GOONCAVE_TEST_LOCAL_SITES=1`; without it, a site on this computer is refused. Run the focused checks with:
 
 ```sh
 cargo test --locked -p gooncave-core --test boorus

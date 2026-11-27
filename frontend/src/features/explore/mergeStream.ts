@@ -127,11 +127,12 @@ export const ingestPage = (
   }
 ): Map<string, SiteStream> => {
   const previous = streams.get(input.siteId) ?? emptyStream();
-  const ordered = rankPage(
-    input.posts,
-    input.sort,
-    (input.page - 1) * input.limit
-  ).sort(byRankDesc);
+  // Under New a page goes on from the last post the site sent: a site with its own page size
+  // sends more or fewer posts than `limit`.
+  const offset = Number.isFinite(previous.lastRank)
+    ? 1 - previous.lastRank
+    : (input.page - 1) * input.limit;
+  const ordered = rankPage(input.posts, input.sort, offset).sort(byRankDesc);
   const tail = ordered[ordered.length - 1];
   const next = new Map(streams);
   next.set(input.siteId, {
@@ -348,7 +349,9 @@ const fetchHotRound = async (
     current.set(siteId, {
       ...previous,
       page: previous.page + 1,
-      exhausted: result.value.length < options.limit
+      exhausted: options.ownPageSize?.(siteId)
+        ? result.value.length === 0
+        : result.value.length < options.limit
     });
     candidates.set(siteId, result.value.filter(options.keep));
   });

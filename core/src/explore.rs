@@ -8,7 +8,7 @@ use crate::{
 };
 use axum::{
     body::Body,
-    extract::{Query, State},
+    extract::{DefaultBodyLimit, Query, State},
     http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -56,7 +56,11 @@ pub(crate) fn routes() -> Router<Database> {
             "/explore/gallery-matches",
             post(crate::gallery_matches::route),
         )
-        .route("/explore/copies", post(crate::explore_copies::route))
+        .route(
+            "/explore/copies",
+            post(crate::explore_copies::route)
+                .layer(DefaultBodyLimit::max(crate::explore_copies::MAX_BODY_BYTES)),
+        )
 }
 fn query_text<'a>(q: &'a QueryMap, key: &str, max: usize) -> Result<Option<&'a str>> {
     let value = q.get(key).map(String::as_str);

@@ -18,6 +18,9 @@ use std::{collections::HashMap, time::Duration};
 
 const MAX_POSTS: usize = 100;
 const MAX_EARLIER_POSTS: usize = 5000;
+/// A loaded post takes about 400 bytes of the request, so the most posts take about 2 MB: far
+/// above the app's usual limit for a request.
+pub(crate) const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
 const CONCURRENCY: usize = 8;
 /// The page is held back while its pictures are compared, so that no tile moves afterwards.
 const BUDGET: Duration = Duration::from_millis(2500);

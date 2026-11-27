@@ -37,7 +37,8 @@ test('moving to the next file never shows the previous file’s tags or an updat
   await page.keyboard.press('ArrowRight');
   const seenSoFar = () => page.evaluate(() => (window as unknown as { __seen: string[] }).__seen);
   await expect.poll(async () => (await seenSoFar()).at(-1) ?? first).not.toContain(first);
-  await waitForAnimations(page);
+  // Watches on after the new tags show: a refetch behind them could still bring a spinner.
+  await page.waitForTimeout(1_000);
 
   const seen = await seenSoFar();
   expect(seen.filter((entry) => entry.includes('spinner') || entry.endsWith('none'))).toEqual([]);

@@ -76,7 +76,10 @@ export async function startFakeBooru(page: Page, name: string, posts: FakePost[]
   });
   origin = `http://127.0.0.1:${await listen(server)}`;
   const created = await page.request.post('/booru-sites', { data: { name, engine: 'e621', baseUrl: origin } });
-  if (!created.ok()) throw new Error(`The core refused the fake booru: ${await created.text()}`);
+  if (!created.ok()) {
+    server.close();
+    throw new Error(`The core refused the fake booru: ${await created.text()}`);
+  }
   const { site: { id: siteId } } = (await created.json()) as { site: { id: string } };
   return {
     siteId,

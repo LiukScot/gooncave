@@ -155,6 +155,21 @@ describe('ingestPage', () => {
     expect(stream.exhausted).toBe(false);
   });
 
+  it('goes on from the last post a site sent when it answers with its own page size', () => {
+    const page = (number: number, remoteIds: string[]) => (streams: Map<string, SiteStream>) =>
+      ingestPage(streams, {
+        siteId: 'fa',
+        page: number,
+        posts: remoteIds.map((remoteId) => post('fa', remoteId, 0)),
+        limit: 2,
+        sort: 'new',
+        keep: () => true,
+        ownPageSize: true
+      });
+    const streams = page(2, ['f4', 'f5', 'f6'])(page(1, ['f1', 'f2', 'f3'])(new Map()));
+    expect(streams.get('fa')!.buffer.map((entry) => entry.rank)).toEqual([-0, -1, -2, -3, -4, -5]);
+  });
+
   it('marks a short page as the end of the site', () => {
     const streams = ingest(new Map(), 'a', 1, [post('a', 'a1', 900)]);
     expect(streams.get('a')!.exhausted).toBe(true);
@@ -550,6 +565,19 @@ describe('hot sort', () => {
     expect(ids(more.posts)).toEqual(['a4', 'b4', 'a5', 'b5', 'a6', 'b6']);
     expect(calls).toEqual(['a:1', 'b:1', 'a:2', 'b:2']);
     expect(new Set(ids([...opened.posts, ...more.posts])).size).toBe(12);
+  });
+
+  it('asks a Hot site with its own page size again after a short page', async () => {
+    const { calls, fetchPage } = fakeSites({
+      fa: [[post('fa', 'f1', 10)], [post('fa', 'f2', 5)], []]
+    });
+    const hotOptions = options(fetchPage, { sort: 'hot', target: 2, ownPageSize: () => true });
+    const opened = await openStreams(['fa'], hotOptions);
+    expect(opened.hasMore).toBe(true);
+    const more = await fillPages(opened.streams, hotOptions);
+    expect(ids([...opened.posts, ...more.posts])).toEqual(['f1', 'f2']);
+    expect(calls).toEqual(['fa:1', 'fa:2', 'fa:3']);
+    expect(more.errors).toEqual([]);
   });
 
   it('keeps healthy sites when one Hot source fails', async () => {
