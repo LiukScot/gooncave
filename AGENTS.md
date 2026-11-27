@@ -1,4 +1,4 @@
-version: 34
+version: 35
 - always update version (+1) when editing this file
 
 # Agent instructions
@@ -293,6 +293,10 @@ issues and PRs from being smaller than that cost.
   implementation details in mocks.
 - Investigate flaky tests. Do not use retries solely to hide a known
   deterministic defect.
+- Wait for a condition that can pass or fail (an element appears, a request
+  answers, a value changes), not for a fixed time. A fixed wait is allowed
+  only where the time is the contract: gesture timing, or a window that
+  watches for something that must not happen. Name which one in a comment.
 - Tests needing network or a live DB go in an integration suite,
   not a unit suite.
 
