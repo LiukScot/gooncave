@@ -85,6 +85,7 @@ import {
 import { basenameFromPath } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { transitionView } from '@/lib/viewTransitions';
+import { logDeveloper } from '@/lib/windowErrorLog';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 import { useGalleryUiStore } from '@/stores/galleryUiStore';
 
@@ -558,7 +559,10 @@ export function useFileDetailController(
           queryFn: () => api.getProviders(fileId)
         });
         setProviderInfo(resp.providers);
-      } catch {
+      } catch (error) {
+        logDeveloper(
+          `The source search status of a file did not load: ${error instanceof Error ? error.message : String(error)}`
+        );
         setProviderInfo([]);
       }
     },
