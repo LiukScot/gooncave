@@ -33,8 +33,7 @@ export function TrashToggle() {
         <span className="flex-1 min-w-0">
           <label className="block font-medium" htmlFor="extra-trash">Trash</label>
           <span className="block text-muted-foreground text-xs">
-            Deleted files wait {days} days on every device before they go for good. Deleting also removes them
-            from your booru favorites at once where reverse sync is on. Off: deleting removes the files at once.
+            Deleted files can be restored for {days} days. Off: deleting is final.
           </span>
           {settings.isError ? (
             <span className="block text-destructive text-xs" role="alert">
