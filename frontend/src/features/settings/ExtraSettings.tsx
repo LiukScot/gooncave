@@ -28,6 +28,7 @@ import {
   type ExtraSettings as ExtraSettingsValue
 } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
+import { lockAvailable } from '@/features/app-lock/appLock';
 import { AppLockSetting } from '@/features/app-lock/AppLockSetting';
 import { flushReadQueue } from '@/features/read-marks/readQueue';
 import { useExtraSettings, useUpdateExtraSettings } from '@/hooks/settings';
@@ -124,10 +125,9 @@ const TOGGLES: {
   {
     key: 'readTrackingEnabled',
     icon: History,
-    group: 'privacy',
+    group: 'browsing',
     label: 'History',
-    description:
-      'Remember the posts you scroll past or open in Explore and the files you open in the Gallery: list them under History and offer "Unread only". Turning it off deletes them.'
+    description: 'Lists what you have seen, for History and Unread only. Off deletes it.'
   }
 ];
 
@@ -332,10 +332,11 @@ export function ExtraSettings({
           </select>
         </div>
       </ExtraGroup>
-      <ExtraGroup group="privacy">
-        <AppLockSetting />
-        {toggles('privacy')}
-      </ExtraGroup>
+      {lockAvailable() ? (
+        <ExtraGroup group="privacy">
+          <AppLockSetting />
+        </ExtraGroup>
+      ) : null}
       <ExtraGroup group="data">
         <AutomaticTagging />
         <TrashToggle />

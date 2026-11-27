@@ -1,12 +1,12 @@
 import { KeyRound, ScanFace } from 'lucide-react';
 import { useState } from 'react';
 
-import { biometryName, CODE_PATTERN, lockApi, lockAvailable, useAppLockStore } from './appLock';
+import { biometryName, CODE_PATTERN, lockApi, useAppLockStore } from './appLock';
 import { UnlockForm } from './UnlockForm';
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** Settings → Extra → Privacy: turns the app lock on with a new code, or off after unlocking. */
+/** Settings → Extra → Privacy, on the iPhone: turns the app lock on with a new code, or off after unlocking. */
 export function AppLockSetting() {
   const enabled = useAppLockStore((state) => state.enabled);
   const biometry = useAppLockStore((state) => state.biometry);
@@ -15,7 +15,6 @@ export function AppLockSetting() {
   const [code, setCode] = useState('');
   const [repeat, setRepeat] = useState('');
   const [error, setError] = useState<string | null>(null);
-  if (!lockAvailable()) return null;
   const name = biometryName(biometry);
   const Icon = name ? ScanFace : KeyRound;
 
@@ -56,8 +55,7 @@ export function AppLockSetting() {
             {name ? `${name} lock` : 'Code lock'}
           </label>
           <span className="block text-muted-foreground text-xs">
-            Ask for {name ? `${name} or ` : ''}your own code when GoonCave opens or comes back, and hide it in
-            the app switcher. The code stays on this iPhone. After five wrong codes, each try waits a minute.
+            Asks for {name ? `${name} or ` : ''}your code when GoonCave opens or comes back.
           </span>
         </span>
         <input
