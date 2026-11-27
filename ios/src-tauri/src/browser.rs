@@ -608,12 +608,17 @@ async fn script(on: On, script: &'static str, url: Option<String>) -> Result<Str
 /// Whether the worker shows Cloudflare's check. An error means the page no longer runs
 /// scripts, for example because iOS ended its web process.
 async fn challenged() -> Result<bool, String> {
-    if main_thread(|engine, _| engine.worker_watcher.ivars().challenge.get()).await? {
-        return Ok(true);
-    }
-    script(On::Worker, CHALLENGED, None)
+    let (header, page) = check_signs().await?;
+    Ok(header || page?)
+}
+
+/// Whether the last page's `cf-mitigated` header and the page itself show Cloudflare's check.
+async fn check_signs() -> Result<(bool, Result<bool, String>), String> {
+    let header = main_thread(|engine, _| engine.worker_watcher.ivars().challenge.get()).await?;
+    let page = script(On::Worker, CHALLENGED, None)
         .await
-        .map(|json| json == "true")
+        .map(|json| json == "true");
+    Ok((header, page))
 }
 
 /// Closes the open sheet when dropped, also when the core drops the request waiting on it.
@@ -678,8 +683,14 @@ async fn pass_check(
     .await?;
     loop {
         match events.recv().await {
-            Some(Event::Loaded) if !challenged().await.unwrap_or(false) => return Ok(()),
-            Some(Event::Loaded | Event::Failed) => {}
+            Some(Event::Loaded) => match check_signs().await {
+                Ok((false, Ok(false) | Err(_))) | Err(_) => return Ok(()),
+                Ok((header, page)) => eprintln!(
+                    "[developer] {} loaded another page during its check and it still counts as one (cf-mitigated: {header}, page: {page:?})",
+                    site.name
+                ),
+            },
+            Some(Event::Failed) => {}
             Some(Event::Closed) | None => return Err(site.check_closed()),
         }
     }

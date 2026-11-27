@@ -119,9 +119,9 @@ const body = await new Promise((resolve, reject) => {
   reader.readAsDataURL(blob);
 });
 return {status: response.status, challenged: response.headers.get('cf-mitigated') === 'challenge', type: response.headers.get('content-type'), body};";
-/// Cloudflare translates the check's title, so a check shown in Italian was taken for a page;
-/// its settings object is there in every language. The iPhone also reads `cf-mitigated`.
-pub const CHALLENGED: &str = "return window._cf_chl_opt !== undefined || document.title.startsWith('Just a moment') || document.querySelector('#challenge-form, #challenge-error-text, #cf-challenge-running') !== null;";
+/// Cloudflare translates the check's title, so the iPhone also reads the documented
+/// `cf-mitigated` header of the page.
+pub const CHALLENGED: &str = "return document.title.startsWith('Just a moment') || document.querySelector('#challenge-form, #challenge-error-text, #cf-challenge-running') !== null;";
 pub const USERNAME: &str = "const avatar = document.querySelector('img.loggedin_user_avatar');
 const link = document.querySelector('#my-username') || avatar?.closest('a[href^=\\'/user/\\']');
 const name = link?.getAttribute('href')?.match(/^\\/user\\/([^/]+)/)?.[1] || avatar?.alt || link?.textContent || '';
