@@ -33,7 +33,7 @@ export function TrashToggle() {
         <span className="flex-1 min-w-0">
           <label className="block font-medium" htmlFor="extra-trash">Trash</label>
           <span className="block text-muted-foreground text-xs">
-            Deleted files can be restored for {days} days. Off: deleting is final.
+            Keeps deleted files {days} days. Deleting also removes site favorites that sync deletions.
           </span>
           {settings.isError ? (
             <span className="block text-destructive text-xs" role="alert">
