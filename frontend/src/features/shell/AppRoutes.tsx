@@ -178,7 +178,7 @@ export function SettingsDuplicatesRouteView() {
     <SettingsSubpage title="Matching images">
       {freesFiles ? (
         <div className="duplicate-blocked-notice" data-test-id="duplicates-need-every-file">
-          <p>Finding matching images needs every file on this device.</p>
+          <p>Finding matching images needs the “Keep every file on this device” setting on.</p>
           <Link to="/app/settings/sync" className="btn btn-outline-light btn-sm">
             Keep every file
           </Link>
