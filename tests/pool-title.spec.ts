@@ -1,4 +1,4 @@
-import { expect, test, type Page } from './helpers';
+import { expect, test, type Page, waitForAnimations } from './helpers';
 
 const LONG_NAME = 'Leafeon transformation accident by lodetail, part two of the long series';
 
@@ -54,12 +54,11 @@ test.describe('desktop window', () => {
     await openLongPool(page);
     // The browser has no window buttons: this is the class the desktop window sets.
     await page.evaluate(() => document.documentElement.classList.add('has-window-controls'));
-    await page.waitForTimeout(300);
+    await waitForAnimations(page);
     const before = await layout(page);
     expect(before.headingRight).toBeLessThanOrEqual(before.buttonsLeft);
     expect(before.lines).toBe(1);
-    await page.waitForTimeout(3_000);
-    expect((await layout(page)).textLeft).toBeLessThan(before.textLeft);
+    await expect.poll(async () => (await layout(page)).textLeft).toBeLessThan(before.textLeft);
   });
 });
 

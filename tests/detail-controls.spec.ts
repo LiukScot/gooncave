@@ -1,9 +1,11 @@
-import { expect, test } from './helpers';
+import { expect, test, waitForAnimations, waitForPaint } from './helpers';
 
 test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 } });
 
 test('moving to the next file never shows the previous file’s tags or an update spinner', async ({ page }) => {
+  let tagRequests = 0;
   await page.route('**/files/*/tags', async (route) => {
+    tagRequests += 1;
     const id = route.request().url().split('/files/')[1].split('/')[0];
     await route.fulfill({
       json: {
@@ -19,7 +21,8 @@ test('moving to the next file never shows the previous file’s tags or an updat
   await expect(current.locator('.file-detail-tags')).toContainText('tag_');
   const first = (await current.locator('.file-detail-tags').innerText()).match(/tag_\S+/)![0];
   // let the neighbours' tags land in the cache
-  await page.waitForTimeout(800);
+  await expect.poll(() => tagRequests).toBeGreaterThanOrEqual(2);
+  await waitForPaint(page);
 
   await page.evaluate(() => {
     const seen: string[] = [];
@@ -32,11 +35,11 @@ test('moving to the next file never shows the previous file’s tags or an updat
     }).observe(document.body, { subtree: true, childList: true, characterData: true });
   });
   await page.keyboard.press('ArrowRight');
-  await page.waitForTimeout(1200);
+  const seenSoFar = () => page.evaluate(() => (window as unknown as { __seen: string[] }).__seen);
+  await expect.poll(async () => (await seenSoFar()).at(-1) ?? first).not.toContain(first);
+  await waitForAnimations(page);
 
-  const seen = await page.evaluate(() => (window as unknown as { __seen: string[] }).__seen);
-  const last = seen.at(-1)!;
-  expect(last).not.toContain(first);
+  const seen = await seenSoFar();
   expect(seen.filter((entry) => entry.includes('spinner') || entry.endsWith('none'))).toEqual([]);
 });
 
@@ -115,7 +118,7 @@ test('a quick tap on a round button squares it off before it springs back', asyn
   // Press and release at once, as a tap does: :active alone ends before the shape shows.
   await button.dispatchEvent('pointerdown', { button: 0 });
   await button.dispatchEvent('pointerup', { button: 0 });
-  await page.waitForTimeout(700);
+  await waitForAnimations(page);
   const smallest = await page.evaluate(() => (window as unknown as { smallest: number }).smallest);
   expect(smallest).toBeLessThan(rest * 0.7);
 });

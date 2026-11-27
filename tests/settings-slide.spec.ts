@@ -1,4 +1,4 @@
-import { expect, test, type Page } from './helpers';
+import { expect, test, type Page, waitForAnimations } from './helpers';
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -18,7 +18,7 @@ async function midSlide(page: Page, go: () => Promise<void>) {
 test('the Settings page being left slides away as elements, not as a picture', async ({ page }) => {
   await page.goto('/app/settings');
   await expect(page.getByRole('link', { name: /appearance/i }).first()).toBeVisible();
-  await page.waitForTimeout(300);
+  await waitForAnimations(page);
 
   const push = await midSlide(page, () => page.getByRole('link', { name: /appearance/i }).first().click());
   expect(push).toMatchObject({ viewTransition: false, slide: 'push' });
@@ -35,7 +35,7 @@ test('the Settings page being left slides away as elements, not as a picture', a
 test('the copy of the page left goes away when its animation never advances', async ({ page }) => {
   await page.goto('/app/settings');
   await expect(page.getByRole('link', { name: /appearance/i }).first()).toBeVisible();
-  await page.waitForTimeout(300);
+  await waitForAnimations(page);
   await page.getByRole('link', { name: /appearance/i }).first().click();
   // a window the compositor does not draw holds its animations at the start
   await expect(page.locator('.settings-stage[data-slide]')).toHaveCount(1);
@@ -56,7 +56,7 @@ test('the desktop window bar stays under the pinned title while a Settings page 
     style.textContent = 'html.has-window-controls body::before { height: 64px !important; }';
     document.head.append(style);
   });
-  await page.waitForTimeout(300);
+  await waitForAnimations(page);
   await page.getByRole('link', { name: /appearance/i }).first().click();
   await expect(page.locator('.settings-stage[data-slide]')).toHaveCount(1);
   // Held near the end of the slide, with the new page's title where it stays.

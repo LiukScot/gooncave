@@ -1,6 +1,6 @@
 import type { ExplorePost } from '../frontend/src/api';
 
-import { expect, test, thumbnailablePng, type Page } from './helpers';
+import { expect, test, thumbnailablePng, type Page, waitForAnimations } from './helpers';
 
 test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 } });
 
@@ -23,10 +23,10 @@ async function backFrame(page: Page, count: number): Promise<{ frame: number; re
   await page.goto('/app/explore');
   await expect(page.locator('[data-test-id="explore-card"]').first()).toBeVisible();
   await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight * 0.9, behavior: 'instant' }));
-  await page.waitForTimeout(1_000);
+  await waitForAnimations(page);
   await page.locator('[data-test-id="explore-card"]').filter({ visible: true }).nth(1).click();
   await expect(page.locator('.file-detail-panel-current')).toBeVisible();
-  await page.waitForTimeout(1_000);
+  await waitForAnimations(page);
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
   try {
