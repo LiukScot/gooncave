@@ -108,11 +108,20 @@ define_class!(
         ) {
             // SAFETY: WebKit passes a live navigation response.
             if unsafe { response.isForMainFrame() } {
-                let status = unsafe { response.response() }
+                let http = unsafe { response.response() }
                     .downcast::<NSHTTPURLResponse>()
-                    .ok()
+                    .ok();
+                let status = http
+                    .as_ref()
                     .and_then(|response| u16::try_from(response.statusCode()).ok());
                 self.ivars().status.set(status);
+                // Cloudflare's documented mark of its check; the page's title is translated.
+                let challenge = http.is_some_and(|response| {
+                    response
+                        .valueForHTTPHeaderField(&NSString::from_str("cf-mitigated"))
+                        .is_some_and(|value| value.to_string() == "challenge")
+                });
+                self.ivars().challenge.set(challenge);
             }
             // WebKit's own choice when this method is missing: open only what it can show.
             let policy = if unsafe { response.canShowMIMEType() } {
@@ -145,11 +154,13 @@ define_class!(
     }
 );
 
-/// Where a web view's events go, and the HTTP status of the last page it opened.
+/// Where a web view's events go, and the HTTP status of the last page it opened and whether
+/// Cloudflare answered it with its check.
 #[derive(Default)]
 struct Watching {
     events: RefCell<Option<mpsc::UnboundedSender<Event>>>,
     status: Cell<Option<u16>>,
+    challenge: Cell<bool>,
 }
 
 impl Watcher {
@@ -597,6 +608,9 @@ async fn script(on: On, script: &'static str, url: Option<String>) -> Result<Str
 /// Whether the worker shows Cloudflare's check. An error means the page no longer runs
 /// scripts, for example because iOS ended its web process.
 async fn challenged() -> Result<bool, String> {
+    if main_thread(|engine, _| engine.worker_watcher.ivars().challenge.get()).await? {
+        return Ok(true);
+    }
     script(On::Worker, CHALLENGED, None)
         .await
         .map(|json| json == "true")
@@ -779,31 +793,76 @@ async fn fetch_file(site: &'static Site, origin: &str, url: &str) -> Result<File
     let mut force = false;
     loop {
         ready(site, origin, force).await?;
-        let json = script(On::Worker, FETCH_FILE, Some(url.to_owned())).await?;
-        let value: serde_json::Value = serde_json::from_str(&json).map_err(|error| {
-            eprintln!("Browser script returned no file: {error}");
-            UNREACHABLE.to_owned()
-        })?;
-        let challenged = value["challenged"].as_bool() == Some(true);
-        if challenged && !force {
+        let file = request_file(url).await?;
+        if file.challenged && !force {
             // The clearance expired since the worker's page loaded; get a new one.
             force = true;
             continue;
         }
-        let status = value["status"]
-            .as_u64()
-            .and_then(|status| u16::try_from(status).ok())
-            .ok_or_else(|| UNREACHABLE.to_owned())?;
-        if status >= 400 {
-            eprintln!("[developer] {origin} answered {status} to GoonCave's browser (cf-mitigated: {challenged})");
+        if file.page.status < 400 {
+            return Ok(file.page);
         }
-        let body = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            value["body"].as_str().unwrap_or_default(),
-        )
-        .map_err(|_| UNREACHABLE.to_owned())?;
-        return Ok(FilePage { status, body });
+        eprintln!(
+            "[developer] {}'s file host answered {} ({}) to a file request of GoonCave's browser (cf-mitigated: {}), so it opens the picture instead",
+            site.name, file.page.status, file.kind, file.challenged
+        );
+        return open_file_as_page(site, url).await;
     }
+}
+
+/// What [`FETCH_FILE`] read: the file, whether Cloudflare checked the request, and its type.
+struct FileRequest {
+    page: FilePage,
+    challenged: bool,
+    kind: String,
+}
+
+async fn request_file(url: &str) -> Result<FileRequest, String> {
+    let json = script(On::Worker, FETCH_FILE, Some(url.to_owned())).await?;
+    let value: serde_json::Value = serde_json::from_str(&json).map_err(|error| {
+        eprintln!("[developer] GoonCave's browser read no file: {error}");
+        UNREACHABLE.to_owned()
+    })?;
+    let status = value["status"]
+        .as_u64()
+        .and_then(|status| u16::try_from(status).ok())
+        .ok_or_else(|| UNREACHABLE.to_owned())?;
+    let body = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        value["body"].as_str().unwrap_or_default(),
+    )
+    .map_err(|_| UNREACHABLE.to_owned())?;
+    Ok(FileRequest {
+        page: FilePage { status, body },
+        challenged: value["challenged"].as_bool() == Some(true),
+        kind: value["type"].as_str().unwrap_or("no type").to_owned(),
+    })
+}
+
+/// Opens the picture itself in the worker, as a person opening its link would, then reads it
+/// from there: a host that refuses the request from another page may still serve its own.
+async fn open_file_as_page(site: &'static Site, url: &str) -> Result<FilePage, String> {
+    let target = url.to_owned();
+    let mut events = main_thread(move |engine, _| {
+        let events = engine.worker_watcher.watch();
+        engine.worker_watcher.ivars().status.set(None);
+        load(&engine.worker, &target).map(|()| events)
+    })
+    .await??;
+    match events.recv().await {
+        Some(Event::Loaded) => {}
+        _ => return Err(UNREACHABLE.to_owned()),
+    }
+    let opened = main_thread(|engine, _| engine.worker_watcher.ivars().status.get()).await?;
+    let file = request_file(url).await?;
+    eprintln!(
+        "[developer] {}'s file host answered {} to the picture opened as a page, then {} ({}) to the request from it",
+        site.name,
+        opened.map_or_else(|| "nothing".to_owned(), |status| status.to_string()),
+        file.page.status,
+        file.kind
+    );
+    Ok(file.page)
 }
 
 async fn session_cookie(site: &'static Site, base: &str) -> Result<Option<String>, String> {

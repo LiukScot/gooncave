@@ -514,17 +514,25 @@ impl Transport {
         }
         // The engine fetches one file at a time from a hidden page, so a grid of thumbnails
         // queues for seconds; it is needed only while the host shows Cloudflare's check.
-        if crate::browser::get().is_some() && crate::browser::media_site(&target).is_some() {
+        if let Some(site) = crate::browser::get().and_then(|_| crate::browser::media_site(&target))
+        {
             let client = self.client(&target).await?;
-            if let Ok(response) = client
-                .get(target.clone())
-                .headers(headers.clone())
-                .send()
-                .await
-            {
-                if response.status().is_success() && paused(&response).is_none() {
+            match client.get(target.clone()).headers(headers.clone()).send().await {
+                Ok(response) if response.status().is_success() && paused(&response).is_none() => {
                     return Ok((response, None));
                 }
+                Ok(response) => eprintln!(
+                    "[developer] {}'s file host answered {} to GoonCave (cf-mitigated: {}), so its browser fetches the file",
+                    site.name,
+                    response.status().as_u16(),
+                    response.headers().get("cf-mitigated").is_some()
+                ),
+                Err(error) => eprintln!(
+                    "[developer] {}'s file host did not answer GoonCave (timeout: {}, connection: {}), so its browser fetches the file",
+                    site.name,
+                    error.is_timeout(),
+                    error.is_connect()
+                ),
             }
         }
         if let Some(response) = browse_file(&target).await? {

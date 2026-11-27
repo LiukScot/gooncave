@@ -468,7 +468,7 @@ browser engine with the core (Electron's on the desktop, WebKit on iPhone): requ
 run as `fetch()` calls inside a hidden page of that site, with the saved
 session cookies (`a` and `b`, or `user_id` and `pass_hash`) added to its cookie
 store, and a window shows the check when Cloudflare asks the person to complete
-one. FurAffinity's picture hosts (`t.`, `d.`, `a.furaffinity.net`) show the same check, so on the desktop their files are fetched the same way, from a hidden page of the file's own host, and come back to the core as base64; the iPhone app still downloads them directly. These pages are spaced at least one second apart. The hidden page loads no
+one, in whatever language Cloudflare shows it. FurAffinity's picture hosts (`t.`, `d.`, `a.furaffinity.net`) show the same check: the core downloads their files directly first and, when the host refuses, fetches them the same way, from a hidden page of the file's own host, as base64. When the iPhone's hidden page is refused too, it opens the picture itself as a page and reads it from there. These pages are spaced at least one second apart. The hidden page loads no
 pictures, fonts or other sites' scripts, except Cloudflare's check. The desktop
 engine keeps its cookies in Electron's `persist:browser` session, and closes the
 hidden page, with its page process, after a minute without requests or when it
