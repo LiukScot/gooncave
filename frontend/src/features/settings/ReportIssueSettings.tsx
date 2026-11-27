@@ -90,15 +90,13 @@ function LoggingToggle({ enabled }: { enabled: boolean }) {
   });
   useErrorToast(update.error);
   return (
-    <div className="list-group mb-6">
+    <div className="list-group mb-2">
       <div className="list-group-item flex items-center gap-3">
         <ScrollText className="size-5 text-muted-foreground shrink-0" aria-hidden="true" />
         <span className="flex-1 min-w-0">
-          <label className="block font-medium" htmlFor="report-logging">Keep a log</label>
+          <label className="block font-medium" htmlFor="report-logging" id="report-log-heading">Logs</label>
           <span className="block text-muted-foreground text-xs">
-            Notes errors and what the app was doing, such as how many posts a button marked read, so a
-            report shows the cause. Off: nothing is written, and lines already in the log stay below.
-            Applies to this device.
+            Notes errors on this device, so a report shows the cause.
           </span>
         </span>
         <input className="form-check-input shrink-0" type="checkbox" id="report-logging" name="logging"
@@ -118,7 +116,8 @@ export function ReportIssueSettings() {
   });
   const [description, setDescription] = useState('');
   const head = report.data ? reportHead(report.data, description) : '';
-  const log = report.data?.log ?? '';
+  // With logs off the page hides the log, so the issue does not send it either.
+  const log = report.data?.logging ? report.data.log : '';
   const issue = useMemo(() => issueAddress(head, log), [head, log]);
 
   if (report.isPending) {
@@ -212,24 +211,24 @@ export function ReportIssueSettings() {
       </ul>
 
       <LoggingToggle enabled={report.data.logging} />
-
-      <h2 className="font-medium mb-2" id="report-log-heading">
-        Latest log
-      </h2>
-      <button type="button" className="btn btn-outline-light btn-sm mb-2" onClick={() => void copy()}>
-        Copy report
-      </button>
-      {log ? (
-        <pre
-          className="report-block report-log font-mono text-xs"
-          role="region"
-          tabIndex={0}
-          aria-labelledby="report-log-heading"
-        >
-          {log}
-        </pre>
-      ) : (
-        <p className="report-block text-muted-foreground text-sm">Nothing has gone wrong lately. Suspicious.</p>
+      {!report.data.logging ? null : (
+        <>
+          <button type="button" className="btn btn-outline-light btn-sm mb-2" onClick={() => void copy()}>
+            Copy report
+          </button>
+          {log ? (
+            <pre
+              className="report-block report-log font-mono text-xs"
+              role="region"
+              tabIndex={0}
+              aria-labelledby="report-log-heading"
+            >
+              {log}
+            </pre>
+          ) : (
+            <p className="report-block text-muted-foreground text-sm">Nothing has gone wrong lately. Suspicious.</p>
+          )}
+        </>
       )}
     </div>
   );

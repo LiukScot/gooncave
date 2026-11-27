@@ -132,3 +132,12 @@ it('turns the log off, and keeps the box as the core answered', async () => {
   expect(sent).toEqual([false]);
   expect(box?.checked).toBe(false);
 });
+
+it('hides the log and Copy report with logs off, and leaves the log out of the issue', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ...device, logging: false, log: 'old line' })));
+  const container = await render();
+  expect(container.querySelector('pre')).toBeNull();
+  expect([...container.querySelectorAll('button')].some((button) => button.textContent === 'Copy report')).toBe(false);
+  const issue = container.querySelector<HTMLAnchorElement>('a[href^="https://github.com"]');
+  expect(decodeURIComponent(issue?.href ?? '')).not.toContain('old line');
+});
