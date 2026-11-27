@@ -48,7 +48,7 @@ which skips that work: a new Explore test uses a fake booru.
 | --- | --- | --- |
 | Frames the GPU or the window draws after Chromium | The frame recording reads Chromium's output for the page; the browser suites render in software | Under XWayland at a fractional display scale, the GPU drew the page being left as a white picture during page animations |
 | The Flatpak package | No suite starts the app from the Flatpak; CI only builds it | The launcher started Electron under XWayland, where the flash above happens, instead of Wayland |
-| WebKit on an iPhone | The phone viewport runs in Chromium | Swipe and safe-area behaviour of WebKit |
+| WebKit on an iPhone | The phone viewport runs in Chromium | Swipe and safe-area behaviour of WebKit; `loading="lazy"` pictures that WebKit fetches only near the screen, so a fast scroll showed them filling in |
 | Real booru sites | Answers are faked, so a site's changes and speed are not this code's | A site changing its HTML or its rate limit |
 | A real library | Fixtures hold a few files; speed uses 250 | Slowness that starts at tens of thousands of files |
 

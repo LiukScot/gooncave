@@ -1175,7 +1175,9 @@ export const ExploreCard = memo(function ExploreCard({
             height={post.height ?? THUMB_SIZE}
             className="gallery-thumb-img rounded"
             {...(animatedGif && gridUrl === post.fileUrl ? { [ANIMATED_PICTURE]: '' } : {})}
-            loading="lazy"
+            // A card coming back within a screen loads at once; lazy loading waited for the
+            // viewport on WebKit and a fast scroll showed the pictures filling in.
+            loading={heldHeight ? 'eager' : 'lazy'}
             decoding="async"
             fetchPriority="low"
             // Cloudflare in front of danbooru's CDN answers 403 to a request
