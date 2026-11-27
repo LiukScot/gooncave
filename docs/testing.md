@@ -32,6 +32,16 @@ more than on the screens before and after, and attaches those three frames.
 on opening a file and going back, in dark and light mode, at a 1.25 display
 scale.
 
+## Fake booru sites
+
+`tests/fakeBooru.ts` serves a site on this computer that answers like e621,
+and adds it to the core as a booru. The core then does its own work on the
+answers: paging, read marks, comparing pictures for copies. A normal run
+refuses sites on local addresses; `playwright.config.ts` starts the core with
+`GOONCAVE_TEST_LOCAL_SITES=1`, which lets it reach them, and the app log says
+so at start. Older specs fake the core's answers with `page.route` instead,
+which skips that work: a new Explore test uses a fake booru.
+
 ## What no suite sees
 
 | Gap | Why | Example that got through |

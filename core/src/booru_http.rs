@@ -155,6 +155,16 @@ fn public_v6(ip: Ipv6Addr) -> bool {
         && s[0] != 0x2002
         && !(s[0] == 0x2001 && (s[1] < 0x200 || s[1] == 0xdb8))
 }
+/// The variable that lets this run reach booru sites on this computer. Only the end-to-end tests
+/// set it, to talk to a fake booru; otherwise a sync record could point a site at the device.
+pub const LOCAL_SITES: &str = "GOONCAVE_TEST_LOCAL_SITES";
+
+/// Whether [`LOCAL_SITES`] is `1` for this run.
+pub fn local_sites_allowed() -> bool {
+    static ALLOWED: OnceLock<bool> = OnceLock::new();
+    *ALLOWED.get_or_init(|| std::env::var_os(LOCAL_SITES).is_some_and(|value| value == "1"))
+}
+
 pub(crate) fn public_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => public_v4(ip),
@@ -186,7 +196,9 @@ pub(crate) fn url(raw: &str) -> Result<Url> {
     if host == "localhost"
         || host.ends_with(".localhost")
         || host.ends_with(".local")
-        || host.parse::<IpAddr>().is_ok_and(|ip| !public_ip(ip))
+        || host
+            .parse::<IpAddr>()
+            .is_ok_and(|ip| !(public_ip(ip) || ip.is_loopback() && local_sites_allowed()))
     {
         return Err(Error::Invalid(
             "Choose a public booru address. Local and private addresses cannot be used.".into(),
@@ -346,9 +358,15 @@ pub(crate) struct Transport {
     pub allow_loopback: bool,
 }
 impl Transport {
-    pub fn media_url(&self, raw: &str) -> Result<Url> {
+    fn loopback_allowed(&self) -> bool {
         #[cfg(test)]
         if self.allow_loopback {
+            return true;
+        }
+        local_sites_allowed()
+    }
+    pub fn media_url(&self, raw: &str) -> Result<Url> {
+        if self.loopback_allowed() {
             if let Ok(url) = Url::parse(raw) {
                 if url.scheme() == "http"
                     && url.host_str() == Some("127.0.0.1")
@@ -431,13 +449,7 @@ impl Transport {
         })?
         .map_err(|_| remote("The site could not be reached. Check your connection and try again."))?
         .collect();
-        let allowed = |ip: IpAddr| {
-            #[cfg(test)]
-            if self.allow_loopback && ip.is_loopback() {
-                return true;
-            }
-            public_ip(ip)
-        };
+        let allowed = |ip: IpAddr| public_ip(ip) || (ip.is_loopback() && self.loopback_allowed());
         if addrs.is_empty() || addrs.iter().any(|a| !allowed(a.ip())) {
             return Err(remote(
                 "The site points to a local or private address. Choose a public booru.",

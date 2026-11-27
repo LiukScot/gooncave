@@ -28,6 +28,8 @@ export default defineConfig({
   webServer: externalBaseURL ? undefined : {
     command: `${seedLibrary} && npm --prefix frontend run build && cargo run --locked -p gooncave-core -- ${quote(path.join(smokeDirectory, 'data'))} ${quote(smokeLibrary)} ${quote(frontendDist)} ${smokePort}`,
     port: smokePort,
+    // Lets the core reach the fake boorus of tests/fakeBooru.ts, which a normal run refuses.
+    env: { GOONCAVE_TEST_LOCAL_SITES: '1' },
     reuseExistingServer: false,
     timeout: 180_000
   }
