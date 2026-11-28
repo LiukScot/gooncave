@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { biometryName, lockApi, useAppLockStore } from './appLock';
 import { CodePad } from './CodeSheet';
 
+import { logDeveloper } from '@/lib/windowErrorLog';
+
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
@@ -41,8 +43,21 @@ export function UnlockForm({
   const askBiometry = async () => {
     setError(null);
     try {
+      const asked = performance.now();
       const answer = await lockApi.biometric();
-      if (answer.ok) onUnlocked();
+      const answered = performance.now();
+      if (answer.ok) {
+        onUnlocked();
+        // Two frames: the first after unlocking is drawn, the second shows it reached the screen.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() =>
+            logDeveloper(
+              `${name ?? 'Face ID'} unlocked: it answered ${Math.round(answered - asked)} ms after asking, ` +
+                `and the app was drawn ${Math.round(performance.now() - answered)} ms later.`
+            )
+          )
+        );
+      }
       else if (!answer.fallback) setError(`${name ?? 'Face ID'} did not unlock. Try again${codeLock ? ' or enter your code' : ''}.`);
     } catch (err) {
       setError(message(err));
