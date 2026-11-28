@@ -1117,14 +1117,15 @@ export const ExploreCard = memo(function ExploreCard({
       </button>
     </span>
   );
-  const noPreview = (
+  const emptyTile = (text: string) => (
     <div
       className="rounded flex items-center justify-center bg-background h-full"
       style={{ minHeight: THUMB_SIZE }}
     >
-      <span className="text-muted-foreground text-sm">no preview</span>
+      <span className="text-muted-foreground text-sm">{text}</span>
     </div>
   );
+  const noPreview = emptyTile('no preview');
   const subscriptionLabel = reasons?.length
     ? `, subscribed for ${reasons.join(', ')}`
     : '';
@@ -1186,6 +1187,7 @@ export const ExploreCard = memo(function ExploreCard({
             // where the search terms would sit.
             referrerPolicy="origin"
             fallback={noPreview}
+            removed={isLibraryFile ? undefined : { post, fallback: emptyTile(`Removed from ${post.siteName}`) }}
             onLoad={(event) => {
               event.currentTarget.classList.add('is-loaded');
               setHeldHeight(null);

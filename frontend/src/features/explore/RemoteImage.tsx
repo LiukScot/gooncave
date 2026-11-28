@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
 import { mediaSrc } from './exploreMedia';
+import { postRemoved } from './explorePostDetails';
 
 import { useOnline } from '@/lib/online';
 
@@ -15,6 +16,8 @@ type RemoteImageProps = Omit<
   src: string;
   /** Shown once every retry has failed. */
   fallback: React.ReactNode;
+  /** A site's post: on the first failure the site is asked whether it removed it. */
+  removed?: { post: { siteId: string; remoteId: string }; fallback: React.ReactNode };
 };
 
 /**
@@ -28,11 +31,12 @@ type RemoteImageProps = Omit<
 export function RemoteImage({
   src,
   fallback,
+  removed,
   className,
   ...imgProps
 }: RemoteImageProps): React.ReactElement {
-  const [state, setState] = useState({ src, attempt: 0, failed: false, reconnects: 0 });
-  const current = state.src === src ? state : { src, attempt: 0, failed: false, reconnects: 0 };
+  const [state, setState] = useState({ src, attempt: 0, failed: false, reconnects: 0, gone: false });
+  const current = state.src === src ? state : { src, attempt: 0, failed: false, reconnects: 0, gone: false };
   if (current !== state) setState(current);
 
   // Whatever failed offline is worth trying at once, with its retries back.
@@ -46,9 +50,23 @@ export function RemoteImage({
     );
   }, [online]);
 
+  const siteId = removed?.post.siteId;
+  const remoteId = removed?.post.remoteId;
+  const firstFailure = current.failed && current.attempt === 0;
+  useEffect(() => {
+    if (!firstFailure || siteId === undefined || remoteId === undefined) return;
+    let live = true;
+    void postRemoved({ siteId, remoteId }).then((gone) => {
+      if (live && gone) setState((previous) => (previous.src === src ? { ...previous, gone } : previous));
+    });
+    return () => {
+      live = false;
+    };
+  }, [firstFailure, siteId, remoteId, src]);
+
   const retriesLeft = current.attempt < RETRY_DELAYS_MS.length;
   useEffect(() => {
-    if (!current.failed || !retriesLeft) return;
+    if (!current.failed || !retriesLeft || current.gone) return;
     const timer = setTimeout(() => {
       setState((previous) =>
         previous.src === src
@@ -57,8 +75,9 @@ export function RemoteImage({
       );
     }, RETRY_DELAYS_MS[current.attempt]);
     return () => clearTimeout(timer);
-  }, [current.failed, current.attempt, retriesLeft, src]);
+  }, [current.failed, current.attempt, current.gone, retriesLeft, src]);
 
+  if (current.gone && removed) return <>{removed.fallback}</>;
   if (current.failed && !retriesLeft) return <>{fallback}</>;
   return (
     <img

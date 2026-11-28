@@ -20,7 +20,7 @@ import { needsDetailTags, prefetchNeighbors } from './prefetchNeighbors';
 import { ratingLabel } from './rating';
 import { RemoteImage } from './RemoteImage';
 
-import type { ExplorePost } from '@/api';
+import { LIBRARY_SITE_ID, type ExplorePost } from '@/api';
 import {
   OverlayButton,
   RelatedPostsSection,
@@ -680,6 +680,10 @@ export function ExploreDetailPanel({
                       : 'This picture is not saved on this device. It loads when you reconnect.'}
                   </div>
                 }
+                removed={post.siteId === LIBRARY_SITE_ID ? undefined : {
+                  post,
+                  fallback: <div className="text-muted-foreground text-sm p-4">{post.siteName} removed this post.</div>
+                }}
               />
             )}
             {mediaFullscreen ? null : backButton}
