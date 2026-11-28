@@ -15,6 +15,10 @@ export type FakePost = {
   md5?: string;
   /** The PNG served as this post's picture; a shared fixture picture when absent. */
   picture?: Buffer;
+  /** Deleted on the site after it was listed: its picture is gone and the site says so. */
+  removed?: boolean;
+  /** The size the site lists; the picture's own, 64x120, when absent. */
+  size?: { width: number; height: number };
 };
 
 /** A 64x120 PNG of a random pattern: two seeds give two pictures that do not look alike. */
@@ -42,8 +46,20 @@ export async function startFakeBooru(page: Page, name: string, posts: FakePost[]
     const picture = /^\/picture\/(\d+)\.png$/.exec(url.pathname);
     if (picture) {
       const post = newestFirst.find((entry) => entry.id === Number(picture[1]));
-      response.writeHead(post ? 200 : 404, { 'content-type': 'image/png' });
-      response.end(post ? post.picture ?? fallback : undefined);
+      const shown = post && !post.removed;
+      response.writeHead(shown ? 200 : 404, { 'content-type': 'image/png' });
+      response.end(shown ? post.picture ?? fallback : undefined);
+      return;
+    }
+    const single = /^\/posts\/(\d+)\.json$/.exec(url.pathname);
+    if (single) {
+      const post = newestFirst.find((entry) => entry.id === Number(single[1]));
+      if (!post?.removed) {
+        response.writeHead(404).end();
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ post: { id: post.id, flags: { deleted: true } } }));
       return;
     }
     if (url.pathname !== '/posts.json') {
@@ -63,7 +79,7 @@ export async function startFakeBooru(page: Page, name: string, posts: FakePost[]
         const file = `${origin}/picture/${post.id}.png`;
         return {
           id: post.id,
-          file: { url: file, width: 64, height: 120, ext: 'png', size: 1000, md5: post.md5 ?? `${name}-${post.id}` },
+          file: { url: file, width: post.size?.width ?? 64, height: post.size?.height ?? 120, ext: 'png', size: 1000, md5: post.md5 ?? `${name}-${post.id}` },
           preview: { url: file },
           sample: { url: file },
           score: { total: 0 },

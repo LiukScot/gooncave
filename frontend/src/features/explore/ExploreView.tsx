@@ -1120,7 +1120,8 @@ export const ExploreCard = memo(function ExploreCard({
   const emptyTile = (text: string) => (
     <div
       className="rounded flex items-center justify-center bg-background h-full"
-      style={{ minHeight: THUMB_SIZE }}
+      // A tile with a known ratio already has its height; more would push the text past it.
+      style={thumbRatio ? undefined : { minHeight: THUMB_SIZE }}
     >
       <span className="text-muted-foreground text-sm">{text}</span>
     </div>
