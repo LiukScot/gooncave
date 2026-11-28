@@ -1,21 +1,21 @@
+import { ScanFace } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { biometryName, CODE_PATTERN, lockApi, useAppLockStore } from './appLock';
+import { biometryName, lockApi, useAppLockStore } from './appLock';
+import { CodePad } from './CodeSheet';
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
- * Face ID and the code field, each shown when its lock is on, to unlock the app or to change a
- * lock. Face ID is asked at once when `askAtOnce` is set; after five wrong codes each try waits a
+ * Face ID and the code keypad, each shown when its lock is on, to unlock the app or to change a
+ * lock. It fills a `CodeSheet`. Face ID is asked at once when `askAtOnce` is set; after five wrong codes each try waits a
  * minute.
  */
 export function UnlockForm({
-  id,
   submitLabel,
   askAtOnce = false,
   onUnlocked
 }: {
-  id: string;
   submitLabel: string;
   askAtOnce?: boolean;
   onUnlocked: () => void;
@@ -80,46 +80,34 @@ export function UnlockForm({
     }
   };
 
-  return (
-    <form
-      className="app-lock-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
+  const faceButton = name ? (
+    <button
+      type="button"
+      className={codeLock ? 'app-lock-key is-quiet' : 'btn btn-primary app-lock-submit'}
+      aria-label={`Unlock with ${name}`}
+      onClick={() => void askBiometry()}
     >
-      {name ? (
-        <button className="btn btn-primary" type="button" onClick={() => void askBiometry()}>
-          Unlock with {name}
-        </button>
-      ) : null}
+      {codeLock ? <ScanFace aria-hidden="true" /> : `Unlock with ${name}`}
+    </button>
+  ) : null;
+
+  return (
+    <>
+      <p className="app-lock-message" role={error ? 'alert' : undefined}>
+        {error ?? (wait > 0 ? `Try again in ${wait} s.` : codeLock ? 'Enter your code.' : null)}
+      </p>
       {codeLock ? (
-        <>
-          <label className="font-medium" htmlFor={id}>
-            Your code
-          </label>
-          <input
-            id={id}
-            name="code"
-            className="form-control app-lock-code"
-            type="password"
-            inputMode="numeric"
-            autoComplete="off"
-            pattern={CODE_PATTERN}
-            required
-            value={code}
-            onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
-          />
-          <button className="btn btn-outline-light" type="submit" disabled={busy || wait > 0}>
-            {wait > 0 ? `Try again in ${wait} s` : submitLabel}
-          </button>
-        </>
-      ) : null}
-      {error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {error}
-        </p>
-      ) : null}
-    </form>
+        <CodePad
+          value={code}
+          onChange={setCode}
+          onSubmit={() => void submit()}
+          submitLabel={submitLabel}
+          busy={busy || wait > 0}
+          corner={faceButton}
+        />
+      ) : (
+        faceButton
+      )}
+    </>
   );
 }

@@ -3,7 +3,8 @@ import type { LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 
-import { biometryName, CODE_PATTERN, lockApi, useAppLockStore } from './appLock';
+import { biometryName, CODE_MAX, CODE_MIN, lockApi, useAppLockStore } from './appLock';
+import { CodePad, CodeSheet } from './CodeSheet';
 import { UnlockForm } from './UnlockForm';
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -16,14 +17,13 @@ function Failure({ error }: { error: string | null }) {
   ) : null;
 }
 
-/** One lock's row: a switch that opens what turning it on or off needs underneath. */
+/** One lock's row: a switch that opens what turning it on or off needs. */
 function LockRow({
   id,
   icon: Icon,
   label,
   description,
   on,
-  editing,
   onToggle,
   error,
   children
@@ -33,13 +33,12 @@ function LockRow({
   label: string;
   description: string;
   on: boolean;
-  editing: boolean;
   onToggle: () => void;
   error: string | null;
   children: ReactNode;
 }) {
   return (
-    <div className="list-group-item flex flex-col gap-3">
+    <div className="list-group-item flex flex-col gap-2">
       <div className="flex items-center gap-3">
         <Icon className="size-5 text-muted-foreground shrink-0" aria-hidden="true" />
         <span className="flex-1 min-w-0">
@@ -53,12 +52,11 @@ function LockRow({
           type="checkbox"
           id={id}
           name={id}
-          checked={on !== editing}
-          aria-expanded={editing}
+          checked={on}
           onChange={onToggle}
         />
       </div>
-      {editing ? children : null}
+      {children}
       <Failure error={error} />
     </div>
   );
@@ -74,6 +72,7 @@ function FaceLock({ name }: { name: string }) {
     setError(null);
   };
   const change = async () => {
+    setEditing(false);
     try {
       if (!face) {
         const answer = await lockApi.biometric();
@@ -81,13 +80,13 @@ function FaceLock({ name }: { name: string }) {
       }
       await lockApi.setFace(!face);
       setLocks({ face: !face });
-      close();
+      setError(null);
     } catch (err) {
       setError(message(err));
     }
   };
   // With no lock on there is nothing to unlock first.
-  const toggle = () => (editing ? close() : code || face ? setEditing(true) : void change());
+  const toggle = () => (code || face ? setEditing(true) : void change());
   return (
     <LockRow
       id="extra-faceLock"
@@ -95,48 +94,86 @@ function FaceLock({ name }: { name: string }) {
       label={name}
       description={`Asks for ${name} when GoonCave opens or comes back.`}
       on={face}
-      editing={editing}
       onToggle={toggle}
       error={error}
     >
-      <UnlockForm id="face-lock-unlock" submitLabel="Continue" onUnlocked={() => void change()} />
+      {editing ? (
+        <CodeSheet title={face ? `Turn off ${name}` : `Turn on ${name}`} onCancel={close}>
+          <UnlockForm submitLabel="Continue" onUnlocked={() => void change()} />
+        </CodeSheet>
+      ) : null}
     </LockRow>
+  );
+}
+
+/** Choosing a code: once, then again, on the same keypad as the lock. */
+function NewCode({ onDone, onCancel }: { onDone: (code: string) => Promise<void>; onCancel: () => void }) {
+  const [first, setFirst] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const next = async () => {
+    if (first === null) {
+      setFirst(code);
+      setCode('');
+      return setError(null);
+    }
+    if (code !== first) {
+      setFirst(null);
+      setCode('');
+      return setError('The codes did not match. Choose a new one.');
+    }
+    setBusy(true);
+    try {
+      await onDone(code);
+    } catch (err) {
+      setError(message(err));
+      setBusy(false);
+    }
+  };
+  return (
+    <CodeSheet title={first === null ? 'Choose a code' : 'Enter it again'} onCancel={onCancel}>
+      <p className="app-lock-message" role={error ? 'alert' : undefined}>
+        {error ?? (first === null ? `${CODE_MIN} to ${CODE_MAX} digits.` : 'The same code, to be sure.')}
+      </p>
+      <CodePad
+        // A new pad per step, so the second starts empty for screen readers too.
+        key={first === null ? 'first' : 'again'}
+        value={code}
+        onChange={setCode}
+        onSubmit={() => void next()}
+        submitLabel={first === null ? 'Next' : 'Turn on the code'}
+        busy={busy}
+      />
+    </CodeSheet>
   );
 }
 
 function CodeLock() {
   const { code: enabled, face, biometry, setLocks } = useAppLockStore();
   const [editing, setEditing] = useState(false);
-  const [code, setCode] = useState('');
-  const [repeat, setRepeat] = useState('');
   const [error, setError] = useState<string | null>(null);
   const close = () => {
     setEditing(false);
-    setCode('');
-    setRepeat('');
     setError(null);
   };
 
-  const turnOn = async () => {
-    if (code !== repeat) return setError('The two codes are different.');
-    try {
-      // Changing the locks while Face ID is on needs Face ID first.
-      if (face && !(await lockApi.biometric()).ok) {
-        return setError(`${biometryName(biometry) ?? 'Face ID'} did not unlock.`);
-      }
-      await lockApi.set(code);
-      setLocks({ code: true });
-      close();
-    } catch (err) {
-      setError(message(err));
+  const turnOn = async (code: string) => {
+    // Changing the locks while Face ID is on needs Face ID first.
+    if (face && !(await lockApi.biometric()).ok) {
+      throw new Error(`${biometryName(biometry) ?? 'Face ID'} did not unlock.`);
     }
+    await lockApi.set(code);
+    setLocks({ code: true });
+    close();
   };
 
   const turnOff = async () => {
+    setEditing(false);
     try {
       await lockApi.clear();
       setLocks({ code: false });
-      close();
+      setError(null);
     } catch (err) {
       setError(message(err));
     }
@@ -149,54 +186,15 @@ function CodeLock() {
       label="Code"
       description="Asks for your code when GoonCave opens or comes back."
       on={enabled}
-      editing={editing}
-      onToggle={() => (editing ? close() : setEditing(true))}
+      onToggle={() => setEditing(true)}
       error={error}
     >
-      {enabled ? (
-        <UnlockForm id="app-lock-off" submitLabel="Turn off the code" onUnlocked={() => void turnOff()} />
+      {!editing ? null : enabled ? (
+        <CodeSheet title="Turn off the code" onCancel={close}>
+          <UnlockForm submitLabel="Turn off the code" onUnlocked={() => void turnOff()} />
+        </CodeSheet>
       ) : (
-        <form
-          className="app-lock-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void turnOn();
-          }}
-        >
-          <label className="font-medium" htmlFor="app-lock-new">
-            New code, 4 to 12 digits
-          </label>
-          <input
-            id="app-lock-new"
-            name="new-code"
-            className="form-control app-lock-code"
-            type="password"
-            inputMode="numeric"
-            autoComplete="off"
-            pattern={CODE_PATTERN}
-            required
-            value={code}
-            onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
-          />
-          <label className="font-medium" htmlFor="app-lock-repeat">
-            The same code again
-          </label>
-          <input
-            id="app-lock-repeat"
-            name="repeat-code"
-            className="form-control app-lock-code"
-            type="password"
-            inputMode="numeric"
-            autoComplete="off"
-            pattern={CODE_PATTERN}
-            required
-            value={repeat}
-            onChange={(event) => setRepeat(event.target.value.replace(/\D/g, ''))}
-          />
-          <button className="btn btn-primary" type="submit">
-            Turn on the code
-          </button>
-        </form>
+        <NewCode onDone={turnOn} onCancel={close} />
       )}
     </LockRow>
   );

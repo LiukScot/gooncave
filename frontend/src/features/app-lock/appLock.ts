@@ -18,7 +18,9 @@ const biometricSchema = z.object({ ok: z.boolean(), fallback: z.boolean().option
 
 /** Lets the first frame at launch be locked already, before the iPhone answers. */
 const HINT_KEY = 'gooncave.appLock';
-export const CODE_PATTERN = '[0-9]{4,12}';
+/** The code's length in digits, as `ios/src-tauri/src/lock.rs` accepts it. */
+export const CODE_MIN = 4;
+export const CODE_MAX = 12;
 
 /** Only the iPhone app keeps a code and has Face ID. */
 export const lockAvailable = (): boolean => isTauri() && isIos();
