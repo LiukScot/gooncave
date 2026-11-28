@@ -127,6 +127,12 @@ pub fn start(data_directory: &Path) {
             commit(),
             platform()
         ));
+        if crate::booru_http::local_sites_allowed() {
+            write_line(&format!(
+                "[developer] {} is on: booru sites on this computer are allowed, for tests only",
+                crate::booru_http::LOCAL_SITES
+            ));
+        }
     }
 }
 

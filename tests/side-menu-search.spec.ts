@@ -1,6 +1,6 @@
 import type { ExplorePost } from '../frontend/src/api';
 
-import { expect, test, type Page } from './helpers';
+import { expect, test, type Page, waitForAnimations, waitForPaint } from './helpers';
 
 const LENS = /^Search and filter/;
 
@@ -87,7 +87,7 @@ test.describe('on a phone', () => {
     await page.getByRole('button', { name: LENS }).click();
     const panel = page.locator('.search-panel');
     await expect(panel).toBeVisible();
-    await page.waitForTimeout(500);
+    await waitForAnimations(page);
     const { bottom } = await panel.evaluate((element) => element.getBoundingClientRect());
     const visibleTop = await page.evaluate(() => window.visualViewport!.offsetTop);
     expect(bottom).toBeCloseTo(visibleTop + 300, 0);
@@ -194,9 +194,16 @@ test.describe('on a phone', () => {
 
     await page.getByRole('button', { name: 'Open menu' }).click();
     await expect.poll(async () => (await card.boundingBox())?.x).toBeGreaterThan(375);
-    await page.waitForTimeout(300);
+    await waitForAnimations(page);
     await expect(card.locator('[data-test-id="explore-card-placeholder"]')).toHaveCount(0);
   });
+
+  /** A Gallery still laying out its tiles handles touches late, after the test has read the result. */
+  async function openGallery(page: Page) {
+    await page.goto('/app/gallery');
+    await expect(page.locator('.search-lens')).toBeVisible();
+    await waitForAnimations(page);
+  }
 
   // Holds the finger down at `to`, so a test can look mid-gesture; returns the release.
   async function dragTo(page: Page, from: [number, number], to: [number, number]) {
@@ -219,14 +226,13 @@ test.describe('on a phone', () => {
   }
 
   test('the menu follows the finger from anywhere on the page, both ways', async ({ page }) => {
-    await page.goto('/app/gallery');
-    await expect(page.locator('.search-lens')).toBeVisible();
+    await openGallery(page);
     const shell = page.locator('.page-shell');
     const drawer = page.locator('.app-menu-drawer');
 
     // part of the way, still held: the page sits under the finger
     let release = await dragTo(page, [100, 500], [180, 500]);
-    expect((await shell.boundingBox())!.x).toBeGreaterThan(50);
+    await expect.poll(async () => (await shell.boundingBox())!.x).toBeGreaterThan(50);
     expect((await shell.boundingBox())!.x).toBeLessThan(90);
     const held = (await drawer.boundingBox())!;
     expect(held.x).toBeCloseTo((await shell.boundingBox())!.x - held.width, 0);
@@ -252,8 +258,7 @@ test.describe('on a phone', () => {
   });
 
   test('a second finger neither stops the drag nor leaves the menu stuck', async ({ page }) => {
-    await page.goto('/app/gallery');
-    await expect(page.locator('.search-lens')).toBeVisible();
+    await openGallery(page);
     const shell = page.locator('.page-shell');
     const drawer = page.locator('.app-menu-drawer');
     const cdp = await page.context().newCDPSession(page);
@@ -280,8 +285,7 @@ test.describe('on a phone', () => {
   });
 
   test('a finger catches the menu while it glides shut', async ({ page }) => {
-    await page.goto('/app/gallery');
-    await expect(page.locator('.search-lens')).toBeVisible();
+    await openGallery(page);
     const drawer = page.locator('.app-menu-drawer');
     let release = await dragTo(page, [60, 500], [300, 500]);
     await release();
@@ -295,8 +299,7 @@ test.describe('on a phone', () => {
   });
 
   test('scrolling the page does not open the menu', async ({ page }) => {
-    await page.goto('/app/gallery');
-    await expect(page.locator('.search-lens')).toBeVisible();
+    await openGallery(page);
     const release = await dragTo(page, [150, 600], [190, 300]);
     await release();
     await expect(page.locator('.app-menu-drawer')).toHaveCount(0);
@@ -546,7 +549,7 @@ test.describe('on a phone', () => {
     await page.goto('/app/settings');
     await page.getByRole('link', { name: /appearance/i }).first().click();
     await expect(page).toHaveURL(/settings\/appearance/);
-    await page.waitForTimeout(500);
+    await waitForAnimations(page);
     await swipeFromEdge(page, 220);
     await expect(page).toHaveURL(/\/app\/settings\/?$/);
     await expect(page.getByRole('navigation', { name: 'Main menu' })).toBeHidden();
@@ -814,7 +817,7 @@ test.describe('with a mouse', () => {
     // scrolling up brings the title back, right over the top of this tile
     const tileTop = await tile.evaluate((element) => element.getBoundingClientRect().top + window.scrollY);
     await page.evaluate((top) => window.scrollTo(0, top + 300), tileTop);
-    await page.waitForTimeout(100);
+    await waitForPaint(page);
     await page.evaluate((top) => window.scrollTo(0, top - 10), tileTop);
     const title = page.locator('.page-header');
     await expect.poll(async () => (await title.boundingBox())!.y).toBe(0);
@@ -843,7 +846,7 @@ test.describe('with a mouse', () => {
         sample();
       }, selector);
       await act();
-      await page.waitForTimeout(450);
+      await waitForAnimations(page);
       return page.evaluate(() => {
         const state = (window as unknown as { radius: { smallest: number; running: boolean } }).radius;
         state.running = false;

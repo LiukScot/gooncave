@@ -28,6 +28,7 @@ import {
   type ExtraSettings as ExtraSettingsValue
 } from '@/api';
 import { useConfirm } from '@/components/confirm-dialog';
+import { lockAvailable } from '@/features/app-lock/appLock';
 import { AppLockSetting } from '@/features/app-lock/AppLockSetting';
 import { flushReadQueue } from '@/features/read-marks/readQueue';
 import { useExtraSettings, useUpdateExtraSettings } from '@/hooks/settings';
@@ -79,55 +80,49 @@ const TOGGLES: {
     icon: Star,
     group: 'browsing',
     label: 'Gallery stars',
-    description:
-      'Give a file a star once every 24 hours, and sort the gallery by stars.'
+    description: 'Star a file once a day, and sort the Gallery by stars.'
   },
   {
     key: 'autoVoteOnFavorite',
     icon: ThumbsUp,
     group: 'browsing',
     label: 'Upvote on favorite in explore',
-    description:
-      'Also vote a post up when you favorite it on Explore, on boorus that have voting.'
+    description: 'Also upvote what you favorite in Explore.'
   },
   {
     key: 'exploreStackDuplicates',
     icon: Layers,
     group: 'browsing',
     label: 'Stack duplicate posts in Explore',
-    description: 'Group copies of the same image from different providers on each loaded page.'
+    description: 'Group copies of the same image from different providers.'
   },
   {
     key: 'deleteAddedPhotos',
     icon: ImageMinus,
     group: 'data',
     label: 'Delete from Photos after adding',
-    description:
-      'Add files with "Add files" from the photo library, and iOS deletes the originals once they are in GoonCave. iOS asks you to confirm, and keeps them in Recently Deleted for 30 days.'
+    description: 'Removes pictures from Photos once added. iOS keeps them 30 days.'
   },
   {
     key: 'pullFullscreen',
     icon: MoveVertical,
     group: 'gestures',
     label: 'Drag for fullscreen',
-    description:
-      'At the top of a file, drag the picture down to view it fullscreen. In fullscreen, drag up or down to leave.'
+    description: 'Drag a picture down for fullscreen, and again to leave.'
   },
   {
     key: 'fullscreenActions',
     icon: Ellipsis,
     group: 'gestures',
     label: 'Actions in fullscreen',
-    description:
-      'Show the More actions button in fullscreen, beside the button that leaves it, to give a star, vote, share, favorite or delete without leaving.'
+    description: 'Show More actions in fullscreen too.'
   },
   {
     key: 'readTrackingEnabled',
     icon: History,
-    group: 'privacy',
+    group: 'browsing',
     label: 'History',
-    description:
-      'Remember the posts you scroll past or open in Explore and the files you open in the Gallery: list them under History and offer "Unread only". Turning it off deletes them.'
+    description: 'Lists what you have seen, for History and Unread only. Off deletes it.'
   }
 ];
 
@@ -173,9 +168,7 @@ function CacheLimit() {
         </output>
       </span>
       <span className="block text-muted-foreground text-xs">
-        Thumbnails, post details and search pages already loaded open faster, and still
-        show when a site does not answer. Past the limit, what you opened longest ago goes
-        first. {used}
+        Keeps what you opened, so it loads faster and offline. {used}
       </span>
       <input
         id="extra-cacheLimitGb"
@@ -265,7 +258,7 @@ export function ExtraSettings({
               Double tap in fullscreen
             </label>
             <span className="block text-muted-foreground text-xs">
-              Outside fullscreen a double tap opens it. Inside, it zooms in where you tap and a second one zooms back out, or it leaves fullscreen.
+              What a double tap does in fullscreen.
             </span>
           </span>
           <select
@@ -290,7 +283,7 @@ export function ExtraSettings({
               Video skip
             </label>
             <span className="block text-muted-foreground text-xs">
-              How far a double tap on the left or right of a video goes back or forward.
+              How far a double tap on a video skips.
             </span>
           </span>
           <select
@@ -315,7 +308,7 @@ export function ExtraSettings({
               Maximum grid columns
             </label>
             <span className="block text-muted-foreground text-xs">
-              Limit the number of columns in Explore and Gallery on wide screens.
+              Columns in Explore and Gallery on wide screens.
             </span>
           </span>
           <select
@@ -332,10 +325,11 @@ export function ExtraSettings({
           </select>
         </div>
       </ExtraGroup>
-      <ExtraGroup group="privacy">
-        <AppLockSetting />
-        {toggles('privacy')}
-      </ExtraGroup>
+      {lockAvailable() ? (
+        <ExtraGroup group="privacy">
+          <AppLockSetting />
+        </ExtraGroup>
+      ) : null}
       <ExtraGroup group="data">
         <AutomaticTagging />
         <TrashToggle />

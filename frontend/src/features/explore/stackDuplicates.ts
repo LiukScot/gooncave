@@ -1,3 +1,5 @@
+import { explorePostKey } from './navSequence';
+
 import type { ExplorePost } from '@/api';
 
 const canonicalUrl = (raw: string): string | null => {
@@ -20,28 +22,11 @@ const linksTo = (source: ExplorePost, target: ExplorePost): boolean => {
     (source.sourceUrls ?? []).some((url) => canonicalUrl(url) === targetUrl);
 };
 
-const visuallySame = (left: ExplorePost, right: ExplorePost): boolean => {
-  const sameSite = left.siteId === right.siteId;
-  if (sameSite && (!left.uploader || !right.uploader ||
-      left.uploader.toLowerCase() === right.uploader.toLowerCase()))
-    return false;
-  const a = left.visualSignature;
-  const b = right.visualSignature;
-  if (!a || !b || a.length !== 768 || b.length !== 768) return false;
-  if (!left.width || !left.height || !right.width || !right.height) return false;
-  const ratioA = left.width / left.height;
-  const ratioB = right.width / right.height;
-  if (Math.abs(ratioA / ratioB - 1) > 0.03) return false;
-  let total = 0;
-  let largeDifferences = 0;
-  for (let i = 0; i < a.length; i++) {
-    const difference = Math.abs(a[i] - b[i]);
-    total += difference;
-    if (difference > 50) largeDifferences++;
-  }
-  return total / a.length <= (sameSite ? 6 : 10) &&
-    largeDifferences / a.length <= (sameSite ? 0.02 : 0.05);
-};
+const visuallySame = (left: ExplorePost, right: ExplorePost): boolean =>
+  Boolean(
+    left.sameLookAs?.includes(explorePostKey(right)) ||
+    right.sameLookAs?.includes(explorePostKey(left))
+  );
 
 const sameImage = (a: ExplorePost, b: ExplorePost): boolean =>
   (a.siteId !== b.siteId || a.remoteId !== b.remoteId) &&

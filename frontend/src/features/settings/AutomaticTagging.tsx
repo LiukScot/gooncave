@@ -26,7 +26,7 @@ export function AutomaticTagging() {
         <span className="flex-1 min-w-0">
           <h3 className="font-medium" id="automatic-tagging-heading">Automatic tagging (WD14)</h3>
           <span className="block text-muted-foreground text-xs">
-            {value ? `Optional ${bytes(value.modelBytes)} model. Downloads when enabled; saved downloads are reused. Images stay on this device.` : 'Checking the optional model download…'}
+            {value ? `Tags pictures on this device. Needs a ${bytes(value.modelBytes)} download.` : 'Checking the optional model download…'}
           </span>
         </span>
         {value?.available ? (

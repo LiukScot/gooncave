@@ -1,4 +1,4 @@
-import { expect, test, type Page } from './helpers';
+import { expect, test, waitForAnimations, type Page, waitForPaint } from './helpers';
 
 test.use({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 812 } });
 
@@ -28,8 +28,7 @@ async function openFirstFile(page: Page) {
   await page.goto('/app/gallery');
   await page.locator('.gallery-thumb').first().click();
   await expect(page).toHaveURL(/fileId=/);
-  // the pushed entry is recorded once the URL has been written
-  await page.waitForTimeout(500);
+  await waitForAnimations(page);
 }
 
 test('a swipe from the left edge past a third of the width leaves the file', async ({ page }) => {
@@ -43,7 +42,7 @@ test('a file can still be swiped away after a short swipe let it stay', async ({
   await openFirstFile(page);
   const url = page.url();
   await swipeFromEdge(page, 60);
-  await page.waitForTimeout(1200);
+  await waitForAnimations(page);
   expect(page.url()).toBe(url);
   await expect(page.locator('.file-detail-frame')).toBeVisible();
   await swipeFromEdge(page, 220);
@@ -54,7 +53,7 @@ test('a swipe that starts away from the edge does not leave the file', async ({ 
   await openFirstFile(page);
   const url = page.url();
   await touchDrag(page, [200, 300], [360, 300]);
-  await page.waitForTimeout(600);
+  await waitForAnimations(page);
   expect(page.url()).toBe(url);
 });
 
@@ -77,30 +76,29 @@ async function openAppearance(page: Page) {
   await page.goto('/app/settings');
   await page.getByRole('link', { name: /appearance/i }).first().click();
   await expect(page).toHaveURL(/settings\/appearance/);
-  await page.waitForTimeout(500);
+  await waitForAnimations(page);
 }
 
 test('scrolling a Settings page with a thumb that starts at the edge and drifts sideways still scrolls', async ({ page }) => {
   await openAppearance(page);
   await touchDrag(page, [10, 380], [34, 120]);
-  await page.waitForTimeout(600);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(40);
+  await waitForAnimations(page);
   await expect(page).toHaveURL(/settings\/appearance/);
-  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(40);
 });
 
 test('a Settings page scrolls after a short swipe from the edge let it stay', async ({ page }) => {
   await openAppearance(page);
   await swipeFromEdge(page, 60);
-  await page.waitForTimeout(1200);
+  await waitForAnimations(page);
   await expect(page).toHaveURL(/settings\/appearance/);
   await touchDrag(page, [200, 380], [200, 120]);
-  await page.waitForTimeout(600);
-  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(40);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(40);
 });
 
 test('opening a Settings page slides it in', async ({ page }) => {
   await page.goto('/app/settings');
-  await page.waitForTimeout(500);
+  await waitForAnimations(page);
   // the animation lasts 400ms, so every frame is recorded instead of sampled
   await page.evaluate(() => {
     const seen = new Set<string>();
@@ -114,16 +112,16 @@ test('opening a Settings page slides it in', async ({ page }) => {
     record();
   });
   await page.getByRole('link', { name: /appearance/i }).first().click();
-  await page.waitForTimeout(800);
-  const seen = await page.evaluate(() => [...(window as unknown as { __animations: Set<string> }).__animations]);
-  expect(seen).toContain('ios-push-in');
+  await expect
+    .poll(() => page.evaluate(() => [...(window as unknown as { __animations: Set<string> }).__animations]))
+    .toContain('ios-push-in');
 });
 
 test('a swipe from the edge finishes when the touched element leaves the page', async ({ page }) => {
   await page.goto('/app/settings');
   await page.getByRole('link', { name: /appearance/i }).first().click();
   await expect(page).toHaveURL(/settings\/appearance/);
-  await page.waitForTimeout(500);
+  await waitForAnimations(page);
   // The page under the thumb is removed as soon as the swipe goes back, and
   // a touch keeps reporting to the element it started on.
   await page.evaluate(() => {
@@ -133,20 +131,14 @@ test('a swipe from the edge finishes when the touched element leaves the page', 
   });
   await swipeFromEdge(page, 220);
   await expect(page).toHaveURL(/\/app\/settings\/?$/);
-  await page.waitForTimeout(600);
-  expect(await page.evaluate(() => document.documentElement.matches(':active-view-transition'))).toBe(false);
+  await waitForAnimations(page);
   // a new swipe is not refused by a gesture that never ended
   await page.getByRole('link', { name: /appearance/i }).first().click();
   await expect(page).toHaveURL(/settings\/appearance/);
-  await page.waitForTimeout(500);
+  await waitForAnimations(page);
   await swipeFromEdge(page, 220);
   await expect(page).toHaveURL(/\/app\/settings\/?$/);
 });
-
-const noActiveTransition = (page: Page) =>
-  expect
-    .poll(() => page.evaluate(() => document.documentElement.matches(':active-view-transition')))
-    .toBe(false);
 
 test('a swipe back that takes the reader out of Settings finishes on release', async ({ page }) => {
   await page.goto('/app/gallery');
@@ -154,10 +146,10 @@ test('a swipe back that takes the reader out of Settings finishes on release', a
   // Reached from outside Settings, so going back unmounts the Settings layout under the finger.
   await page.evaluate(() => window.history.pushState({}, '', '/app/settings/appearance'));
   await expect(page.getByRole('heading', { name: /appearance/i }).first()).toBeVisible();
-  await page.waitForTimeout(500);
+  await waitForAnimations(page);
   await swipeFromEdge(page, 220);
   await expect(page).toHaveURL(/\/app\/gallery/);
-  await noActiveTransition(page);
+  await waitForAnimations(page);
   await page.locator('.gallery-thumb').first().click();
   await expect(page).toHaveURL(/fileId=/);
 });
@@ -169,16 +161,17 @@ test('a later swipe back still works when a transition never reports its end', a
   await page.goto('/app/settings');
   await page.getByRole('link', { name: /appearance/i }).first().click();
   await expect(page).toHaveURL(/settings\/appearance/);
-  await page.waitForTimeout(500);
+  await waitForAnimations(page);
   await swipeFromEdge(page, 220);
   await expect(page).toHaveURL(/\/app\/settings\/?$/);
-  await noActiveTransition(page);
-  await page.waitForTimeout(1600);
+  await waitForAnimations(page);
   await page.getByRole('link', { name: /appearance/i }).first().click();
   await expect(page).toHaveURL(/settings\/appearance/);
-  await page.waitForTimeout(500);
-  await swipeFromEdge(page, 220);
-  await expect(page).toHaveURL(/\/app\/settings\/?$/);
+  // The stalled swipe gives up after a timeout of its own; until then a new one is refused.
+  await expect(async () => {
+    await swipeFromEdge(page, 220);
+    await expect(page).toHaveURL(/\/app\/settings\/?$/, { timeout: 500 });
+  }).toPass();
 });
 
 test('a picture swipe settles when the touched element leaves the page', async ({ page }) => {
@@ -197,7 +190,7 @@ test('a picture swipe settles when the touched element leaves the page', async (
   for (let x = 190; x >= 160; x -= 10) await touch('touchMove', x);
   await expect(page.locator('.file-detail-track')).not.toHaveAttribute('style', /\+ 0px/);
   await page.evaluate(() => document.getElementById('touched')?.remove());
-  await page.waitForTimeout(300);
+  await waitForPaint(page);
   await touch('touchEnd', 160);
   await expect(page.locator('.file-detail-track')).toHaveAttribute('style', /\+ 0px/);
   expect(await page.evaluate(() => document.body.style.overflow)).not.toBe('hidden');
@@ -244,17 +237,17 @@ async function mockBooru(page: Page) {
 
 /** The page it returns to shows under the finger, a short swipe keeps the post, and a long one leaves it. */
 async function expectSwipeBackCloses(page: Page, postUrl: RegExp, leavesTo: RegExp) {
-  await page.waitForTimeout(500);
+  await waitForAnimations(page);
   const release = await dragFromEdge(page, 64);
   await expect(page).toHaveURL(leavesTo);
   await release();
-  await noActiveTransition(page);
+  await waitForAnimations(page);
   await expect(page).toHaveURL(postUrl);
   await expect(page.locator('.file-detail-panel-current')).toBeVisible();
-  await page.waitForTimeout(500);
+  await waitForAnimations(page);
   await swipeFromEdge(page, 220);
   await expect(page).toHaveURL(leavesTo);
-  await noActiveTransition(page);
+  await waitForAnimations(page);
   await expect(page.locator('.file-detail-panel-current')).toHaveCount(0);
 }
 
@@ -273,18 +266,18 @@ test('a swipe back on a pool leads to the grid it was opened from, under the fin
   await page.goto('/app/pool?site=fixture&pool=7');
   const grid = page.getByRole('button', { name: /Open page 1 of the pool/ });
   await expect(grid).toBeVisible();
-  await page.waitForTimeout(500);
+  await waitForAnimations(page);
   // Held mid-way: the page it returns to is already there.
   const release = await dragFromEdge(page, 64);
   await expect(page).toHaveURL(/\/app\/explore/);
   await release();
-  await noActiveTransition(page);
+  await waitForAnimations(page);
   // A short swipe keeps the pool.
   await expect(page).toHaveURL(/\/app\/pool/);
   await expect(grid).toBeVisible();
-  await page.waitForTimeout(500);
+  await waitForAnimations(page);
   await swipeFromEdge(page, 220);
-  await noActiveTransition(page);
+  await waitForAnimations(page);
   await expect(page).toHaveURL(/\/app\/explore/);
   await expect(grid).toHaveCount(0);
 });
@@ -294,9 +287,9 @@ test('a short swipe on a pool page adds no step to the way back', async ({ page 
   await page.goto('/app/pool?site=fixture&pool=7');
   await page.getByRole('button', { name: /Open page 1 of the pool/ }).click();
   await expect(page.locator('.file-detail-panel-current')).toBeVisible();
-  await page.waitForTimeout(500);
+  await waitForAnimations(page);
   await swipeFromEdge(page, 60);
-  await noActiveTransition(page);
+  await waitForAnimations(page);
   await expect(page).toHaveURL(/post=fixture/);
   await expect(page.locator('.file-detail-panel-current')).toBeVisible();
   await page.goBack();
@@ -311,9 +304,9 @@ test('a short swipe on a related post keeps the place in the pool', async ({ pag
   await expect(next).toBeEnabled();
   await page.locator(relatedPost).click();
   await expect(page).toHaveURL(/post=fixture(%3A|:)9/);
-  await page.waitForTimeout(500);
+  await waitForAnimations(page);
   await swipeFromEdge(page, 60);
-  await noActiveTransition(page);
+  await waitForAnimations(page);
   await expect(page).toHaveURL(/post=fixture(%3A|:)9/);
   await expect(next).toBeEnabled();
 });
@@ -371,9 +364,9 @@ test('a swipe from the edge stays in a fullscreen pool page', async ({ page }) =
   await page.getByRole('button', { name: /Open page 1 of the pool/ }).click();
   await page.locator('.file-detail-panel-current .file-detail-fullscreen-btn').click();
   await expect(page.locator('.file-detail-media-wrap.is-fullscreen')).toBeVisible();
-  await page.waitForTimeout(500);
+  await waitForAnimations(page);
   await swipeFromEdge(page, 220);
-  await page.waitForTimeout(600);
+  await waitForAnimations(page);
   await expect(page).toHaveURL(/post=fixture/);
   await expect(page.locator('.file-detail-media-wrap.is-fullscreen')).toBeVisible();
 });

@@ -1,6 +1,6 @@
 import type { ExplorePost } from '../frontend/src/api';
 
-import { expect, test, type Page, thumbnailablePng, uploadSampleImages } from './helpers';
+import { expect, test, type Page, thumbnailablePng, uploadSampleImages, waitForAnimations } from './helpers';
 
 test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
@@ -16,6 +16,14 @@ const setOffline = (page: Page, offline: boolean) =>
     Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => !value });
     window.dispatchEvent(new Event(value ? 'offline' : 'online'));
   }, offline);
+
+/** Goes back online and waits for the Gallery to load the whole list again. */
+const reconnect = async (page: Page) => {
+  const reloaded = page.waitForResponse((response) =>
+    /\/files\?/.test(response.url()) && !response.url().includes('location=LOCAL'));
+  await setOffline(page, false);
+  await reloaded;
+};
 
 const tile = (page: Page, name: string) =>
   page.locator('[data-test-id="file-card"]').and(page.locator(`[aria-label*="${name}"]`));
@@ -136,13 +144,12 @@ test('back from a file opened offline, the reader is on that file after reconnec
   await setOffline(page, true);
   await expect(tile(page, 'anchor-0.png')).toHaveCount(0, { timeout: 15_000 });
   await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 15_000 }).toBeGreaterThan(1000);
-  await page.waitForTimeout(800);
+  await waitForAnimations(page);
   const opened = await firstWholeTile(page);
   await tile(page, `${opened.name}.png`).click({ position: { x: 8, y: 8 } });
   await expect(page).toHaveURL(/fileId=/);
 
-  await setOffline(page, false);
-  await page.waitForTimeout(800);
+  await reconnect(page);
   await page.getByRole('button', { name: 'Back to gallery' }).click();
   await expect(page).not.toHaveURL(/fileId=/);
   await expect.poll(() => topOf(page, opened.name), { timeout: 15_000 }).toBeCloseTo(opened.top, -1);
@@ -171,8 +178,7 @@ test('back from a file opened in a short offline list, the reader is on that fil
   await tile(page, 'anchor-251.png').click({ position: { x: 8, y: 8 } });
   await expect(page).toHaveURL(/fileId=/);
 
-  await setOffline(page, false);
-  await page.waitForTimeout(800);
+  await reconnect(page);
   await page.getByRole('button', { name: 'Back to gallery' }).click();
   await expect(tile(page, 'anchor-251.png')).toBeAttached({ timeout: 15_000 });
   await expect.poll(() => topOf(page, 'anchor-251'), { timeout: 15_000 }).toBeCloseTo(top, -1);

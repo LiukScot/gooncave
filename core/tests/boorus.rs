@@ -377,3 +377,37 @@ async fn removing_a_site_reports_its_posts_first_and_rejects_an_unknown_choice()
     let (status, _) = request(&server, "GET", "/booru-sites/missing/removal", Value::Null).await;
     assert_eq!(status, 404);
 }
+#[tokio::test]
+async fn explore_takes_every_loaded_post_when_it_looks_for_copies() {
+    let directory = tempfile::tempdir().unwrap();
+    let db = Database::open(
+        &directory.path().join("data"),
+        &directory.path().join("library"),
+    )
+    .unwrap();
+    let server = Server::bind(db, 0, Frontend::Embedded(Arc::new(|_| None)))
+        .await
+        .unwrap();
+    // Shaped like an e621 post of a long Explore session; the link is not signed, so nothing is
+    // downloaded.
+    let post = |id: usize| {
+        json!({
+            "key": format!("6f1d2c3a-0b4e-4f5a-9c7d-1e2f3a4b5c6d:{id}"),
+            "matchPreviewUrl": format!("/explore/media/file.jpg?siteId=6f1d2c3a-0b4e-4f5a-9c7d-1e2f3a4b5c6d&u=https%3A%2F%2Fstatic1.e621.net%2Fdata%2Fpreview%2Fab%2Fcd%2F{id:032x}.jpg&s={}", "0".repeat(64)),
+            "width": 1280,
+            "height": 960,
+            "fileExt": "jpg",
+            "uploader": "fixture_uploader"
+        })
+    };
+    let earlier: Vec<Value> = (0..5000).map(post).collect();
+    let (status, body) = request(
+        &server,
+        "POST",
+        "/explore/copies",
+        json!({ "posts": [post(5000)], "earlier": earlier }),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body, json!({ "copies": [] }));
+}

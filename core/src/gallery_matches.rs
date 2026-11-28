@@ -25,14 +25,14 @@ const FINGERPRINT_PAGE_SIZE: usize = 500;
 /// Only narrows the candidates; `same_picture` decides. Measured on 40 library pictures against a
 /// copy at a third of the size re-saved as JPEG: the same picture is 0-4 bits apart, two different
 /// pictures 19 or more.
-const MAX_HASH_DISTANCE: u32 = 8;
+pub(crate) const MAX_HASH_DISTANCE: u32 = 8;
 pub(crate) const MAX_RATIO_DIFFERENCE: f64 = 0.03;
 const MAX_PIXEL_DIFFERENCE: f64 = 0.01;
 /// A remote preview is a different encoding and scale, so this is looser than for two local
 /// copies, yet far below what an edit of the picture changes. Measured on e621 previews against
 /// a library file: the same post stays near 9/255 here, a retouched post near 73/255.
 const MAX_SAMPLE_DIFFERENCE: f64 = 24.0 / 255.0;
-const SIGNATURE_SIZE: u32 = 96;
+pub(crate) const SIGNATURE_SIZE: u32 = 96;
 const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
 pub(crate) const SKIPPED_EXTENSIONS: [&str; 5] = ["gif", "mp4", "webm", "m4v", "mov"];
 
@@ -44,6 +44,8 @@ pub(crate) struct Post {
     pub(crate) width: Option<i64>,
     pub(crate) height: Option<i64>,
     pub(crate) file_ext: Option<String>,
+    #[serde(default)]
+    pub(crate) uploader: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -52,7 +54,7 @@ struct Request {
 }
 
 impl Post {
-    fn valid(&self) -> bool {
+    pub(crate) fn valid(&self) -> bool {
         (1..=200).contains(&self.key.chars().count())
             && (1..=5000).contains(&self.match_preview_url.chars().count())
             && self.width.is_none_or(|w| w > 0)
@@ -61,6 +63,10 @@ impl Post {
                 .file_ext
                 .as_ref()
                 .is_none_or(|e| e.chars().count() <= 20)
+            && self
+                .uploader
+                .as_ref()
+                .is_none_or(|u| u.chars().count() <= 200)
     }
 }
 
@@ -87,7 +93,7 @@ pub(crate) struct Remote {
     key: String,
     width: i64,
     height: i64,
-    hash: String,
+    pub(crate) hash: String,
     /// `None` when the picture cannot be sampled; such a post never matches.
     pub(crate) signature: Option<Vec<u8>>,
 }
@@ -112,7 +118,7 @@ pub(crate) fn parse_hash(s: &str) -> Option<u64> {
         .flatten()
 }
 
-fn hash_distance(left: &str, right: &str) -> u32 {
+pub(crate) fn hash_distance(left: &str, right: &str) -> u32 {
     match (parse_hash(left), parse_hash(right)) {
         (Some(a), Some(b)) => (a ^ b).count_ones(),
         _ => u32::MAX,
@@ -478,6 +484,7 @@ mod tests {
             width: Some(160),
             height: Some(120),
             file_ext: Some("png".into()),
+            uploader: None,
         }
     }
 

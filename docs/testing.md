@@ -32,13 +32,23 @@ more than on the screens before and after, and attaches those three frames.
 on opening a file and going back, in dark and light mode, at a 1.25 display
 scale.
 
+## Fake booru sites
+
+`tests/fakeBooru.ts` serves a site on this computer that answers like e621,
+and adds it to the core as a booru. The core then does its own work on the
+answers: paging, read marks, comparing pictures for copies. A normal run
+refuses sites on local addresses; `playwright.config.ts` starts the core with
+`GOONCAVE_TEST_LOCAL_SITES=1`, which lets it reach them, and the app log says
+so at start. Older specs fake the core's answers with `page.route` instead,
+which skips that work: a new Explore test uses a fake booru.
+
 ## What no suite sees
 
 | Gap | Why | Example that got through |
 | --- | --- | --- |
 | Frames the GPU or the window draws after Chromium | The frame recording reads Chromium's output for the page; the browser suites render in software | Under XWayland at a fractional display scale, the GPU drew the page being left as a white picture during page animations |
 | The Flatpak package | No suite starts the app from the Flatpak; CI only builds it | The launcher started Electron under XWayland, where the flash above happens, instead of Wayland |
-| WebKit on an iPhone | The phone viewport runs in Chromium | Swipe and safe-area behaviour of WebKit |
+| WebKit on an iPhone | The phone viewport runs in Chromium | Swipe and safe-area behaviour of WebKit; `loading="lazy"` pictures that WebKit fetches only near the screen, so a fast scroll showed them filling in |
 | Real booru sites | Answers are faked, so a site's changes and speed are not this code's | A site changing its HTML or its rate limit |
 | A real library | Fixtures hold a few files; speed uses 250 | Slowness that starts at tens of thousands of files |
 

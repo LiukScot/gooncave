@@ -1,4 +1,5 @@
-import { Outlet, useRouter, useSearch } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
+import { Link, Outlet, useRouter, useSearch } from '@tanstack/react-router';
 import { Images } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 
@@ -30,6 +31,7 @@ import { SyncSettings } from '@/features/settings/SyncSettings';
 import { TrashSettings } from '@/features/settings/TrashSettings';
 import { useExtraSettings } from '@/hooks/settings';
 import { useEdgeSwipeBack } from '@/lib/edgeSwipeBack';
+import { queryKeys } from '@/lib/query-keys';
 import { useSettingsSlide } from '@/lib/settingsSlide';
 
 export function GalleryRouteView() {
@@ -156,7 +158,7 @@ export function SettingsIndexRouteView() {
 
 export function SettingsFileSourcesRouteView() {
   const { authUser, sourceFavoritesCtl } = useAppShellContext();
-  if ((authUser.capabilities?.sourceMatching ?? authUser.capabilities?.processing) === false) return <FeatureUnavailable feature="Source matching" />;
+  if (authUser.capabilities?.sourceMatching === false) return <FeatureUnavailable feature="Source matching" />;
   return (
     <SettingsSubpage title="File sources">
       <div className="row g-0 settings-sections">
@@ -168,9 +170,20 @@ export function SettingsFileSourcesRouteView() {
 
 export function SettingsDuplicatesRouteView() {
   const { authUser, duplicatesCtl } = useAppShellContext();
-  if ((authUser.capabilities?.duplicates ?? authUser.capabilities?.processing) === false) return <FeatureUnavailable feature="Duplicate matching" />;
+  const originals = useQuery({ queryKey: queryKeys.originals, queryFn: api.getOriginals });
+  if (authUser.capabilities?.duplicates === false) return <FeatureUnavailable feature="Duplicate matching" />;
+  // The scan reads each file from disk, so files only in the cloud are compared elsewhere.
+  const freesFiles = originals.data?.keepAll === false;
   return (
     <SettingsSubpage title="Matching images">
+      {freesFiles ? (
+        <div className="duplicate-blocked-notice" data-test-id="duplicates-need-every-file">
+          <p>Only files kept on this device are compared here.</p>
+          <Link to="/app/settings/sync" className="btn btn-outline-light btn-sm">
+            Keep every file
+          </Link>
+        </div>
+      ) : null}
       <DuplicatesView {...duplicatesCtl.viewProps} />
     </SettingsSubpage>
   );

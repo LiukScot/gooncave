@@ -49,19 +49,12 @@ describe('stackDuplicates', () => {
     expect(stackDuplicates([fa, e621])).toEqual([[fa, e621]]);
   });
 
-  it('accepts only very close visual copies with compatible dimensions', () => {
-    const original = post('a', null, {
-      width: 1200, height: 800, visualSignature: Array(768).fill(100)
-    });
-    const copy = post('b', null, {
-      width: 600, height: 400, visualSignature: Array(768).fill(105)
-    });
-    const different = post('c', null, {
-      width: 600, height: 400, visualSignature: Array(768).fill(145)
-    });
-    expect(stackDuplicates([original, copy, different])).toEqual([
-      [original, copy], [different]
-    ]);
+  it('stacks a post the core found to show the picture of one loaded on an earlier page', () => {
+    const original = post('a', null);
+    const different = post('c', null);
+    const stacks = stackDuplicates([original, different]);
+    const copy = post('b', null, { sameLookAs: ['a:a'] });
+    expect(stackDuplicates([copy], stacks)).toEqual([[original, copy], [different]]);
   });
 
   it('stacks exact reuploads from different users on the same site', () => {
@@ -70,38 +63,8 @@ describe('stackDuplicates', () => {
     expect(stackDuplicates([original, reupload])).toEqual([[original, reupload]]);
   });
 
-  it('stacks a recompressed same-site copy but keeps a different image separate', () => {
-    const original = post('a', 'first-hash', {
-      siteId: 'same', uploader: 'first', width: 1200, height: 800,
-      visualSignature: Array(768).fill(100)
-    });
-    const recompressed = post('b', 'second-hash', {
-      siteId: 'same', uploader: 'second', width: 600, height: 400,
-      visualSignature: Array(768).fill(103)
-    });
-    const different = post('c', 'third-hash', {
-      siteId: 'same', uploader: 'third', width: 600, height: 400,
-      visualSignature: Array(768).fill(145)
-    });
-    expect(stackDuplicates([original, recompressed, different])).toEqual([
-      [original, recompressed], [different]
-    ]);
-  });
-
   it('does not make a stack from the same post returned twice', () => {
     const original = post('a', 'abc', { siteId: 'same' });
     expect(stackDuplicates([original, original])).toEqual([[original], [original]]);
-  });
-
-  it('does not use visual similarity alone for two uploads by the same user', () => {
-    const first = post('a', 'first-hash', {
-      siteId: 'same', uploader: 'artist', width: 100, height: 100,
-      visualSignature: Array(768).fill(100)
-    });
-    const second = post('b', 'second-hash', {
-      siteId: 'same', uploader: 'Artist', width: 100, height: 100,
-      visualSignature: Array(768).fill(100)
-    });
-    expect(stackDuplicates([first, second])).toEqual([[first], [second]]);
   });
 });

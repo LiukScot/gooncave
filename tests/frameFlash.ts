@@ -31,7 +31,7 @@ async function recordFrames(page: Page, action: () => Promise<void>): Promise<Re
   cdp.on('Page.screencastFrame', onFrame);
   await cdp.send('Page.startScreencast', { format: 'png', maxWidth: 400, maxHeight: 400, everyNthFrame: 1 });
   // Chromium sends the screen as it is when the recording starts: the screen before.
-  await page.waitForTimeout(300);
+  await expect.poll(() => frames.length).toBeGreaterThan(0);
   await action();
   await page.waitForTimeout(SETTLE_MS);
   await cdp.send('Page.stopScreencast');

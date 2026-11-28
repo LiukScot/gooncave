@@ -105,6 +105,12 @@ and recomputed when the file's SHA-256 changes. Two files match when their
 mean pixel difference is at most 0.5%. Copies with different dimensions are
 never compared.
 
+The scan reads each file from disk, so it leaves out files whose original is
+not on the device. On a device that does not keep every file (the iPhone by
+default) Settings → Matching images says so; the chosen option still applies
+to the whole library, a device that keeps every file finds the copies, and its
+result reaches the others by sync.
+
 A confirmed policy keeps the largest file of each group, points the kept
 favorites at it, removes favorites on other sites with `preferred_only`, and
 deletes the other copies for good on every device, without the trash. Only
@@ -170,7 +176,7 @@ allowlist is enabled.
 | `GET /health` | `{ "status": "ok" }` |
 | `GET /report` | `{ "version", "commit", "platform", "schema", "jobs", "log" }`: the app version, the commit it was built from, the operating system and architecture, the newest database migration, one line per background job with states and counts only, and the newest 200 lines of the app log. The core keeps two files of at most 128 KiB, `app.log` and `app.log.1`, in the data folder, and removes addresses, paths, file names, quoted text, secrets and hashes before writing. Each run starts with a line naming the version, and a panic adds a line with its source file and line |
 | `POST /report/window-error` | Adds `{ "message" }` to the app log, for errors of the web page |
-| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.processing`, `capabilities.duplicates`, `capabilities.autoFavorite`, `capabilities.tagRefresh`, `capabilities.sync`, `capabilities.browserSignIn`, true in the desktop and iPhone apps, where FurAffinity and Rule34 sign-in opens a window or a sheet |
+| `GET /device` | `{ "user": profile }`; the profile has the existing owner fields and `capabilities.library`, `capabilities.boorus`, `capabilities.favorites`, `capabilities.favoritesAutoSync`, `capabilities.subscriptions`, `capabilities.duplicates`, `capabilities.autoFavorite`, `capabilities.tagRefresh`, `capabilities.sync`, `capabilities.browserSignIn`, true in the desktop and iPhone apps, where FurAffinity and Rule34 sign-in opens a window or a sheet |
 | `GET/PUT /settings/extra` | Existing boolean settings and `maxGridColumns`, an integer from 0 through 12; PUT is a partial update |
 | `GET/PUT /settings/shortcuts` | `{ "bindings": { "action": "key" } }`; at most 64 entries, names and keys from 1 through 32 characters |
 | `GET/PUT /settings/blacklist` | `tags` (at most 500 strings, each from 1 through 100 characters), `applyToExplore`, `applyToGallery`, `applyToSubscriptions` (off by default, also for a setting saved without it); PUT is a partial update |
@@ -205,19 +211,20 @@ allowlist is enabled.
 | `POST /booru-sites/reorder`, `/booru-sites/{id}/test` | Save site order or test a read without changing remote data |
 | `POST /booru-sites/{id}/sign-in` | FurAffinity only, desktop app only: opens a sign-in window and returns `sessionCookie` and `username` when the person signs in, or both `null` when the window is closed; nothing is saved until the frontend sends them to `PUT /booru-sites/{id}` |
 | `POST /booru-sites/{id}/tags/refresh`, `GET /booru-sites/tags/refresh`, `POST /booru-sites/tags/refresh/cancel` | Start, read or stop a re-read of the site's posts whose stored tags have no categories; `started` or `busy` with `progress`, HTTP 404 for an unknown site |
-| `GET /explore/posts` | Search selected enabled sites with `tags`, `sort` (`new`, `hot`, `popular`), `window`, UTC calendar `date`, `page` (1–1000), `limit` (1–100); errors are reported per site. Posts from e621-type sites and Philomena carry `description`, so opening one asks the site nothing for it; `/explore/post-text` remains for the others; e621 posts also carry `commentCount`, and a post with 0 asks nothing for its comments |
+| `GET /explore/posts` | Search selected enabled sites with `tags`, `sort` (`new`, `hot`, `popular`), `window`, UTC calendar `date`, `page` (1–1000), `limit` (1–100); errors are reported per site. FurAffinity answers with its own page size whatever `limit` asks, and every post of it is returned. Posts from e621-type sites and Philomena carry `description`, so opening one asks the site nothing for it; `/explore/post-text` remains for the others; e621 posts also carry `commentCount`, and a post with 0 asks nothing for its comments |
 | `POST /explore/vote` | Set an up/down vote or remove the current account's vote; repeated identical requests preserve its score |
 | `GET /explore/post`, `/post-tags`, `/post-text`, `/post-comments`, `/post-relations`, `/post-pools`, `/pool` | Single posts, categorized tags, descriptions, comments, related posts and pool pages in reading order. `/post-comments` lists a post's comments oldest first (`id`, `author`, `body` as the same Markdown subset, `score`, `createdAt`) for e621, Danbooru, Moebooru, Philomena and Gelbooru-type sites; `supported` is false for the others (FurAffinity, Sankaku, Shimmie, Szurubooru). `/post-text` returns the description as one Markdown subset (bold, italic, underline, strike, links, `\|\|spoiler\|\|`, nested `>` quotes); e621 DText is converted, Philomena Markdown is passed through |
 | `GET /explore/media/{filename}` | Signed media links: pictures are answered whole and kept in the cache; video streams with byte ranges and is not kept. At most four FurAffinity transfers and sixteen for other sites at once, 25 MiB per image or 500 MiB per video. For a signed GIF, `motion=1` returns the platform video preview in one response, with two conversions at a time, and keeps it |
 | `GET /cache` | `{ bytes }`: the size of the cache of site answers on this device |
 | `GET/PUT /settings/explore` | `recentSearches`: up to 20 Explore searches, newest first, 1–2000 characters each; shared between devices |
 | `POST /explore/gallery-matches` | `posts` (at most 100: `key`, signed `matchPreviewUrl`, `width`, `height`, `fileExt`) → `keys` of posts whose picture is a library favorite. Empty unless the duplicate policy is `favorite_all`; unsigned links, GIFs, videos and failed downloads are left out |
+| `POST /explore/copies` | `posts` (at most 100) and `earlier` (at most 5000, the posts already in the grid), each `key`, signed `matchPreviewUrl`, `width`, `height`, `fileExt`, `uploader` → `copies`: pairs `[key, otherKey]` where a post of `posts` shows the picture of a post of `earlier` or of one before it in `posts`. Two posts of one uploader on one site are not compared. Each picture's samples are kept in the cache, so an earlier post is not downloaded again. The comparison stops after 2.5 seconds; pictures not read by then are in no pair, and the log says how many |
 | `POST /explore/favorite`, `/explore/unfavorite` | Change the remote favorite and save/remove its managed local copy; body contains `siteId` and `remoteId`. Media URLs are resolved from the original post. The request is recorded in `pending_favorites` before the site is asked and cleared once the file is in the library; the core finishes the leftover rows when it starts. Unsupported auto-voting returns `voteError` without undoing the favorite |
 | `GET /favorites/sync/status`, `POST /favorites/sync`, `/favorites/sync/cancel` | Background import, bounded pagination, progress, per-site errors and cancellation; optional `providers` selects site IDs or preset keys. `deleteMissing=true` removes only managed copies after a complete, error-free remote listing |
 | `GET /credentials`, `PUT /credentials` | Device-only SauceNAO API key; reads return only whether a key is saved |
 | `GET /settings/subscriptions`, `/settings/subscriptions/tags` | Saved searches; the full settings response also returns `artists` and first syncs each enabled FurAffinity watchlist with them (two ways), listing failed accounts in `artistErrors` (`siteId`, `siteName`, `error`) and, in `siteHits`, the ids of the enabled sites where each search and artist has results (from the newest 2000 saved posts of each site, no request; FurAffinity sites count an artist held at the last watchlist sync), and in `artistSearches` the saved searches that name one artist: a single plain tag that `tag_categories` or a library file calls an `artist`, or that neither knows. They stay searches, not followed on FurAffinity; a refresh running at that moment skips the sync |
 | `PUT/POST /settings/subscriptions/tags` | Replace searches (`tags`) with PUT, or add one entry with POST: a normalized tag (`tag`) or a search kept as typed (`search`); up to 500 searches of 100 characters. POST answers `tags` and `artists`. A single plain name (no spaces, `~`, `-` or `:`) that is an artist is followed as an artist, as `POST /settings/subscriptions/artists` does: it is an `artist` in `tag_categories`, an `artist` tag of a library file, or sent with `artist: true`. Every other entry is a saved search. Tags are never watched on FurAffinity |
-| `POST/DELETE /settings/subscriptions/artists` | Follow/unfollow an artist (`artist`) in GoonCave's list, then sync it to each enabled FurAffinity account (watch/unwatch, confirmed by rereading the artist page); returns the full settings response. Artists also run as searches on the other sites. The sync runs on `GET /settings/subscriptions`, on these calls and in every refresh: a change on FurAffinity since the last sync is copied into the list, a change in GoonCave is copied to FurAffinity, and the first sync only imports. A failed account keeps the change and retries on the next sync. An artist FurAffinity does not know (HTTP 400, "This user cannot be found.") moves from the artists to the saved searches, so the boorus keep searching it; it is no sync error |
+| `POST/DELETE /settings/subscriptions/artists` | Follow/unfollow an artist (`artist`) in GoonCave's list and return the full settings response at once, with an empty `artistErrors`; the sync to each enabled FurAffinity account (watch/unwatch, confirmed by rereading the artist page) starts after the answer, and several changes made while one sync waits share it. Artists also run as searches on the other sites. The sync runs on `GET /settings/subscriptions`, after these calls and in every refresh: a change on FurAffinity since the last sync is copied into the list, a change in GoonCave is copied to FurAffinity, and the first sync only imports. A failed account keeps the change and retries on the next sync. An artist FurAffinity does not know (HTTP 400, "This user cannot be found.") moves from the artists to the saved searches, so the boorus keep searching it; it is no sync error |
 | `GET/POST/DELETE /settings/subscriptions/pools` | Followed pools of existing sites: `siteId`, `siteName`, `poolId`, `name`, `postCount`, `coverUrl`. POST/DELETE take `siteId` and `poolId`; POST reads the name, page count and first-page preview from the site (e621 and Danbooru only); up to 500 pools. Synced between devices |
 | `GET /explore/subscriptions` | The saved feed, newest first: `sites`, opaque `cursor`, `limit` 1–100, `unread=1` to leave out read posts; returns `posts`, `hasMore`, `nextCursor`, `newestAt` (sort date of the first post, seconds) and `siteErrors`. Without a cursor it starts at the newest post, reads searches never read and starts a sync in the background |
 | `GET /explore/subscriptions/new` | `after` (a feed's `newestAt`), `sites`, `unread=1`; returns `count`, the saved posts newer than `after` |
@@ -237,7 +244,8 @@ Invalid setting bodies and queries return HTTP 400. Storage failures return HTTP
 with disk-space and permissions guidance. Features not yet implemented
 return HTTP 501 instead of reporting success. Setting updates are atomic.
 Saved settings are validated on read; corrupt values are reported rather
-than replaced silently. Request bodies are limited to 64 KiB, except uploads.
+than replaced silently. Request bodies are limited to 64 KiB, except uploads and
+`POST /explore/copies` (8 MiB: its 5,100 posts take about 2 MB).
 
 ## Tag vocabulary and search
 
@@ -402,8 +410,8 @@ are never retried automatically after an interrupted response.
 
 A Cloudflare browser check (`cf-mitigated: challenge`) or HTTP 429 means the
 site did not run the request, and Cloudflare checks only some requests. Every
-booru read and write is sent again after 2, 5 and 12 seconds (a 429's
-`Retry-After`, up to 10 seconds, when it has one). A refusal that outlasts these
+booru read and write that meets a check is sent again after 2, 5 and 12 seconds;
+a 429 is not, because the site then pauses (below). A refusal that outlasts these
 answers HTTP 502 with `code` `BOORU_CAPTCHA` or `BOORU_RATE_LIMITED` next to
 `error`. Explore then sends a favorite again for about eight minutes after a
 `BOORU_RATE_LIMITED`, and shows a `BOORU_CAPTCHA` at once: only a browser passes it.
@@ -416,12 +424,18 @@ samples of every site go through the core's signed `/explore/media` links, so
 the cache keeps them; FurAffinity's files go through them too, because its
 Cloudflare refuses a burst of requests. Other sites' files stream from their CDN. Explore also signs `colorSourceUrl`
 (a page can read the pixels only of same-origin pictures) and `matchPreviewUrl`
-(read by gallery matching). Media requests through the core carry the
-provider's referrer without account credentials. Provider failures
+(read by gallery matching and by the comparison of copies). Media requests through the core carry the
+provider's referrer without account credentials. A site that answers 429 is
+asked nothing for 5 seconds, doubled for each 429 in a row up to 5 minutes and
+never shorter than its `Retry-After`: requests to it fail at once with
+`BOORU_RATE_LIMITED` until then, and its next success ends the pause. A success
+to a request sent before the 429 does not. Provider failures
 include recovery guidance without echoing remote response bodies or secrets.
 
 Engine tests use local HTTP fixtures with fake credentials; their loopback
-exception is compiled only in unit tests. Run the focused checks with:
+exception is compiled only in unit tests. The browser tests reach a fake booru on
+127.0.0.1 because `playwright.config.ts` starts the core with
+`GOONCAVE_TEST_LOCAL_SITES=1`; without it, a site on this computer is refused. Run the focused checks with:
 
 ```sh
 cargo test --locked -p gooncave-core --test boorus
@@ -460,7 +474,7 @@ browser engine with the core (Electron's on the desktop, WebKit on iPhone): requ
 run as `fetch()` calls inside a hidden page of that site, with the saved
 session cookies (`a` and `b`, or `user_id` and `pass_hash`) added to its cookie
 store, and a window shows the check when Cloudflare asks the person to complete
-one. FurAffinity's picture hosts (`t.`, `d.`, `a.furaffinity.net`) show the same check, so on the desktop their files are fetched the same way, from a hidden page of the file's own host, and come back to the core as base64; the iPhone app still downloads them directly. These pages are spaced at least one second apart. The hidden page loads no
+one; on the iPhone the page's `cf-mitigated: challenge` header marks it in any language. FurAffinity's picture hosts (`t.`, `d.`, `a.furaffinity.net`) show the same check: the core downloads their files directly first and, when the host refuses, fetches them the same way, from a hidden page of the file's own host, as base64. When the iPhone's hidden page is refused too, it opens the picture itself as a page and reads it from there. These pages are spaced at least one second apart. The hidden page loads no
 pictures, fonts or other sites' scripts, except Cloudflare's check. The desktop
 engine keeps its cookies in Electron's `persist:browser` session, and closes the
 hidden page, with its page process, after a minute without requests or when it

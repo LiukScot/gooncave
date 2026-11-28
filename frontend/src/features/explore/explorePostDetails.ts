@@ -60,6 +60,31 @@ const queueGridPreview = (
     runGridPreviewQueue();
   });
 
+const removedChecks = new Map<string, Promise<boolean>>();
+
+/**
+ * Whether the site no longer has the post, asked once per post. A feed or the cache can still
+ * hold a post the site deleted later, and its pictures then fail to load.
+ */
+export const postRemoved = (post: ExplorePostRef): Promise<boolean> => {
+  const key = postKey(post);
+  let check = removedChecks.get(key);
+  if (!check) {
+    check = api.explorePost(post.siteId, post.remoteId).then(
+      () => false,
+      (error: unknown) => {
+        if ((error as { status?: number }).status === 404) return true;
+        // Not an answer about the post: a later failure asks again.
+        removedChecks.delete(key);
+        console.warn(`[explore] Cannot tell whether ${key} still exists: ${error instanceof Error ? error.message : String(error)}`);
+        return false;
+      }
+    );
+    removedChecks.set(key, check);
+  }
+  return check;
+};
+
 export const loadExplorePostDetails = (
   post: ExplorePostRef
 ): Promise<ExplorePostDetails> => {

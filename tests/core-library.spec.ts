@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 
 import type { ExplorePost } from '../frontend/src/api';
 
-import { expect, test, thumbnailablePng, uploadSampleImages } from './helpers';
+import { expect, test, thumbnailablePng, uploadSampleImages, waitForPaint } from './helpers';
 
 const card = (page: import('@playwright/test').Page, name: string) =>
   page.locator(`[data-test-id="file-card"][aria-label*="${name}"]`);
@@ -299,6 +299,7 @@ test('in fullscreen a mouse wheel and a pinch zoom, a touchpad slide does not, a
   // Two fingers sliding on a touchpad send small wheel steps: they do not zoom.
   const unzoomed = await zoomed();
   for (const step of [-14, -26, -18]) await page.mouse.wheel(0, step);
+  // Longer than the gap that still counts as the same slide (SLIDE_GAP_MS), so the notch below is a new gesture.
   await page.waitForTimeout(200);
   await expect(wrap).not.toHaveClass(/is-zoomed/);
   expect(await zoomed()).toBe(unzoomed);
@@ -314,6 +315,7 @@ test('in fullscreen a mouse wheel and a pinch zoom, a touchpad slide does not, a
   // A slide moves the zoomed picture and keeps its size.
   const pinched = await zoomed();
   const scaleOf = (transform: string) => transform.match(/scale\(([^)]+)\)/)?.[1];
+  // A new gesture, as above.
   await page.waitForTimeout(200);
   await page.mouse.wheel(0, 20);
   await expect.poll(zoomed).not.toBe(pinched);
@@ -540,13 +542,10 @@ test('Explore asks once for a remote GIF preview the core cannot make', async ({
   const tile = page.getByRole('button', { name: /Open post 2 from Fixture/ });
   await expect.poll(() => conversions).toBe(1);
   // Leaving and coming back must not make the core download and convert the GIF again.
-  const settle = () => page.evaluate(() => new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(resolve));
-  }));
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await settle();
+  await waitForPaint(page);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await settle();
+  await waitForPaint(page);
   await page.waitForTimeout(500);
   expect(conversions).toBe(1);
   await expect(tile.locator('video')).toHaveCount(0);

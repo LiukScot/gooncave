@@ -3,6 +3,7 @@
 //! The requests run on the core's tasks; every UIKit and WebKit call hops to the main thread.
 use std::{
     cell::{Cell, OnceCell, RefCell},
+    collections::BTreeSet,
     future::Future,
     ptr::NonNull,
     sync::Arc,
@@ -24,8 +25,8 @@ use objc2::{
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_foundation::{
     NSArray, NSDictionary, NSError, NSHTTPCookie, NSHTTPCookieDomain, NSHTTPCookieName,
-    NSHTTPCookiePath, NSHTTPCookieSecure, NSHTTPCookieValue, NSString, NSURLErrorCancelled,
-    NSURLRequest, NSURL,
+    NSHTTPCookiePath, NSHTTPCookieSecure, NSHTTPCookieValue, NSHTTPURLResponse, NSString,
+    NSURLErrorCancelled, NSURLRequest, NSURL,
 };
 use objc2_ui_kit::{
     NSDirectionalEdgeInsets, UIAction, UIBarButtonItem, UIBarButtonSystemItem, UIColor, UILabel,
@@ -33,8 +34,8 @@ use objc2_ui_kit::{
     UIViewController,
 };
 use objc2_web_kit::{
-    WKContentWorld, WKFrameInfo, WKNavigation, WKNavigationDelegate, WKWebViewConfiguration,
-    WKWebsiteDataStore,
+    WKContentWorld, WKFrameInfo, WKNavigation, WKNavigationDelegate, WKNavigationResponse,
+    WKNavigationResponsePolicy, WKWebViewConfiguration, WKWebsiteDataStore,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -92,12 +93,45 @@ define_class!(
     #[unsafe(super(NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "GoonCaveBrowserWatcher"]
-    #[ivars = RefCell<Option<mpsc::UnboundedSender<Event>>>]
+    #[ivars = Watching]
     struct Watcher;
 
     unsafe impl NSObjectProtocol for Watcher {}
 
     unsafe impl WKNavigationDelegate for Watcher {
+        #[unsafe(method(webView:decidePolicyForNavigationResponse:decisionHandler:))]
+        fn decide_response(
+            &self,
+            _view: &WKWebView,
+            response: &WKNavigationResponse,
+            decide: &block2::DynBlock<dyn Fn(WKNavigationResponsePolicy)>,
+        ) {
+            // SAFETY: WebKit passes a live navigation response.
+            if unsafe { response.isForMainFrame() } {
+                let http = unsafe { response.response() }
+                    .downcast::<NSHTTPURLResponse>()
+                    .ok();
+                let status = http
+                    .as_ref()
+                    .and_then(|response| u16::try_from(response.statusCode()).ok());
+                self.ivars().status.set(status);
+                // Cloudflare's documented mark of its check; the page's title is translated.
+                let challenge = http.is_some_and(|response| {
+                    response
+                        .valueForHTTPHeaderField(&NSString::from_str("cf-mitigated"))
+                        .is_some_and(|value| value.to_string() == "challenge")
+                });
+                self.ivars().challenge.set(challenge);
+            }
+            // WebKit's own choice when this method is missing: open only what it can show.
+            let policy = if unsafe { response.canShowMIMEType() } {
+                WKNavigationResponsePolicy::Allow
+            } else {
+                WKNavigationResponsePolicy::Cancel
+            };
+            decide.call((policy,));
+        }
+
         #[unsafe(method(webView:didFinishNavigation:))]
         fn finished(&self, _view: &WKWebView, _navigation: Option<&WKNavigation>) {
             self.send(Event::Loaded);
@@ -120,15 +154,24 @@ define_class!(
     }
 );
 
+/// Where a web view's events go, and the HTTP status of the last page it opened and whether
+/// Cloudflare answered it with its check.
+#[derive(Default)]
+struct Watching {
+    events: RefCell<Option<mpsc::UnboundedSender<Event>>>,
+    status: Cell<Option<u16>>,
+    challenge: Cell<bool>,
+}
+
 impl Watcher {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(RefCell::new(None));
+        let this = Self::alloc(mtm).set_ivars(Watching::default());
         // SAFETY: NSObject's `init` is the designated initializer.
         unsafe { msg_send![super(this), init] }
     }
 
     fn send(&self, event: Event) {
-        if let Some(sender) = self.ivars().borrow().as_ref() {
+        if let Some(sender) = self.ivars().events.borrow().as_ref() {
             let _ = sender.send(event);
         }
     }
@@ -143,7 +186,7 @@ impl Watcher {
     /// Sends the events from now on to the returned receiver only.
     fn watch(&self) -> mpsc::UnboundedReceiver<Event> {
         let (sender, events) = mpsc::unbounded_channel();
-        *self.ivars().borrow_mut() = Some(sender);
+        *self.ivars().events.borrow_mut() = Some(sender);
         events
     }
 }
@@ -565,9 +608,17 @@ async fn script(on: On, script: &'static str, url: Option<String>) -> Result<Str
 /// Whether the worker shows Cloudflare's check. An error means the page no longer runs
 /// scripts, for example because iOS ended its web process.
 async fn challenged() -> Result<bool, String> {
-    script(On::Worker, CHALLENGED, None)
+    let (header, page) = check_signs().await?;
+    Ok(header || page?)
+}
+
+/// Whether the last page's `cf-mitigated` header and the page itself show Cloudflare's check.
+async fn check_signs() -> Result<(bool, Result<bool, String>), String> {
+    let header = main_thread(|engine, _| engine.worker_watcher.ivars().challenge.get()).await?;
+    let page = script(On::Worker, CHALLENGED, None)
         .await
-        .map(|json| json == "true")
+        .map(|json| json == "true");
+    Ok((header, page))
 }
 
 /// Closes the open sheet when dropped, also when the core drops the request waiting on it.
@@ -599,6 +650,16 @@ async fn ready(site: &'static Site, origin: &str, force: bool) -> Result<(), Str
         Some(Event::Loaded) => {}
         _ => return Err(UNREACHABLE.to_owned()),
     }
+    pass_check(site, origin, events).await
+}
+
+/// Shows Cloudflare's check to the person when the page the worker just loaded is one, and
+/// waits until it lets them through.
+async fn pass_check(
+    site: &'static Site,
+    origin: &str,
+    mut events: mpsc::UnboundedReceiver<Event>,
+) -> Result<(), String> {
     if !challenged().await.unwrap_or(false) {
         return Ok(());
     }
@@ -622,8 +683,14 @@ async fn ready(site: &'static Site, origin: &str, force: bool) -> Result<(), Str
     .await?;
     loop {
         match events.recv().await {
-            Some(Event::Loaded) if !challenged().await.unwrap_or(false) => return Ok(()),
-            Some(Event::Loaded | Event::Failed) => {}
+            Some(Event::Loaded) => match check_signs().await {
+                Ok((false, Ok(false) | Err(_))) | Err(_) => return Ok(()),
+                Ok((header, page)) => eprintln!(
+                    "[developer] {} loaded another page during its check and it still counts as one (cf-mitigated: {header}, page: {page:?})",
+                    site.name
+                ),
+            },
+            Some(Event::Failed) => {}
             Some(Event::Closed) | None => return Err(site.check_closed()),
         }
     }
@@ -649,10 +716,34 @@ async fn fetch(url: &str, cookie: Option<&str>) -> Result<Page, String> {
             UNREACHABLE.to_owned()
         })?;
         let challenged = value["challenged"].as_bool() == Some(true);
-        if challenged && !force {
+        let pages_only = PAGES_ONLY
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(origin);
+        if challenged && !force && !pages_only {
             // The clearance expired since the worker's page loaded; get a new one.
             force = true;
             continue;
+        }
+        if challenged {
+            // The site lets the page itself through but still checks the page's own requests.
+            // A new check did not help before, so later requests skip it; the page shows the
+            // check itself when the clearance expired.
+            if !pages_only {
+                eprintln!("[developer] {origin} still checked a request of GoonCave's browser after a new check, so it opens pages instead");
+                PAGES_ONLY
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .insert(origin.to_owned());
+            }
+            return open_as_page(site, origin, url).await;
+        }
+        if pages_only {
+            eprintln!("[developer] {origin} lets requests of GoonCave's browser through again");
+            PAGES_ONLY
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .remove(origin);
         }
         let status = value["status"]
             .as_u64()
@@ -671,37 +762,118 @@ async fn fetch(url: &str, cookie: Option<&str>) -> Result<Page, String> {
     }
 }
 
+/// Sites whose requests stay checked after a new check, so the worker opens their pages instead.
+static PAGES_ONLY: std::sync::Mutex<BTreeSet<String>> = std::sync::Mutex::new(BTreeSet::new());
+
+/// What a page opened in the worker holds: its HTML, or the text a browser shows for JSON and
+/// other text.
+const PAGE: &str = "return document.contentType === 'text/html' ? document.documentElement.outerHTML : (document.body?.textContent ?? '');";
+
+/// Opens `url` in the worker as a person would, showing Cloudflare's check when it asks for one,
+/// and returns what the page shows.
+async fn open_as_page(site: &'static Site, origin: &str, url: &str) -> Result<Page, String> {
+    let target = url.to_owned();
+    let mut events = main_thread(move |engine, _| {
+        let events = engine.worker_watcher.watch();
+        engine.worker_watcher.ivars().status.set(None);
+        load(&engine.worker, &target).map(|()| events)
+    })
+    .await??;
+    match events.recv().await {
+        Some(Event::Loaded) => {}
+        _ => return Err(UNREACHABLE.to_owned()),
+    }
+    pass_check(site, origin, events).await?;
+    let status = main_thread(|engine, _| engine.worker_watcher.ivars().status.get())
+        .await?
+        .ok_or_else(|| UNREACHABLE.to_owned())?;
+    let body: String =
+        serde_json::from_str(&script(On::Worker, PAGE, None).await?).map_err(|error| {
+            eprintln!("[developer] The page GoonCave's browser opened returned nothing: {error}");
+            UNREACHABLE.to_owned()
+        })?;
+    if status >= 400 {
+        eprintln!("[developer] {origin} answered {status} to a page GoonCave's browser opened");
+    }
+    Ok(Page { status, body })
+}
+
 /// GETs a picture or video from a media host. Its check clears a request only from a page of
 /// that host, so the worker moves there first, as it does for a site's pages.
 async fn fetch_file(site: &'static Site, origin: &str, url: &str) -> Result<FilePage, String> {
     let mut force = false;
     loop {
         ready(site, origin, force).await?;
-        let json = script(On::Worker, FETCH_FILE, Some(url.to_owned())).await?;
-        let value: serde_json::Value = serde_json::from_str(&json).map_err(|error| {
-            eprintln!("Browser script returned no file: {error}");
-            UNREACHABLE.to_owned()
-        })?;
-        let challenged = value["challenged"].as_bool() == Some(true);
-        if challenged && !force {
+        let file = request_file(url).await?;
+        if file.challenged && !force {
             // The clearance expired since the worker's page loaded; get a new one.
             force = true;
             continue;
         }
-        let status = value["status"]
-            .as_u64()
-            .and_then(|status| u16::try_from(status).ok())
-            .ok_or_else(|| UNREACHABLE.to_owned())?;
-        if status >= 400 {
-            eprintln!("[developer] {origin} answered {status} to GoonCave's browser (cf-mitigated: {challenged})");
+        if file.page.status < 400 {
+            return Ok(file.page);
         }
-        let body = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            value["body"].as_str().unwrap_or_default(),
-        )
-        .map_err(|_| UNREACHABLE.to_owned())?;
-        return Ok(FilePage { status, body });
+        eprintln!(
+            "[developer] {}'s file host answered {} ({}) to a file request of GoonCave's browser (cf-mitigated: {}), so it opens the picture instead",
+            site.name, file.page.status, file.kind, file.challenged
+        );
+        return open_file_as_page(site, url).await;
     }
+}
+
+/// What [`FETCH_FILE`] read: the file, whether Cloudflare checked the request, and its type.
+struct FileRequest {
+    page: FilePage,
+    challenged: bool,
+    kind: String,
+}
+
+async fn request_file(url: &str) -> Result<FileRequest, String> {
+    let json = script(On::Worker, FETCH_FILE, Some(url.to_owned())).await?;
+    let value: serde_json::Value = serde_json::from_str(&json).map_err(|error| {
+        eprintln!("[developer] GoonCave's browser read no file: {error}");
+        UNREACHABLE.to_owned()
+    })?;
+    let status = value["status"]
+        .as_u64()
+        .and_then(|status| u16::try_from(status).ok())
+        .ok_or_else(|| UNREACHABLE.to_owned())?;
+    let body = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        value["body"].as_str().unwrap_or_default(),
+    )
+    .map_err(|_| UNREACHABLE.to_owned())?;
+    Ok(FileRequest {
+        page: FilePage { status, body },
+        challenged: value["challenged"].as_bool() == Some(true),
+        kind: value["type"].as_str().unwrap_or("no type").to_owned(),
+    })
+}
+
+/// Opens the picture itself in the worker, as a person opening its link would, then reads it
+/// from there: a host that refuses the request from another page may still serve its own.
+async fn open_file_as_page(site: &'static Site, url: &str) -> Result<FilePage, String> {
+    let target = url.to_owned();
+    let mut events = main_thread(move |engine, _| {
+        let events = engine.worker_watcher.watch();
+        engine.worker_watcher.ivars().status.set(None);
+        load(&engine.worker, &target).map(|()| events)
+    })
+    .await??;
+    match events.recv().await {
+        Some(Event::Loaded) => {}
+        _ => return Err(UNREACHABLE.to_owned()),
+    }
+    let opened = main_thread(|engine, _| engine.worker_watcher.ivars().status.get()).await?;
+    let file = request_file(url).await?;
+    eprintln!(
+        "[developer] {}'s file host answered {} to the picture opened as a page, then {} ({}) to the request from it",
+        site.name,
+        opened.map_or_else(|| "nothing".to_owned(), |status| status.to_string()),
+        file.page.status,
+        file.kind
+    );
+    Ok(file.page)
 }
 
 async fn session_cookie(site: &'static Site, base: &str) -> Result<Option<String>, String> {

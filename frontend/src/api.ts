@@ -99,7 +99,7 @@ const apiFetch = (input: RequestInfo | URL, init?: RequestInit) => {
 };
 
 export type DeviceProfile = {
-  capabilities?: { library: boolean; boorus: boolean; processing: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean; autoFavorite?: boolean; tagRefresh?: boolean; sync?: boolean; browserSignIn?: boolean; openFolder?: boolean; photoLibrary?: boolean; shareSheet?: boolean };
+  capabilities?: { library: boolean; boorus: boolean; favorites?: boolean; favoritesAutoSync?: boolean; subscriptions?: boolean; sourceMatching?: boolean; tagging?: boolean; duplicates?: boolean; autoFavorite?: boolean; tagRefresh?: boolean; sync?: boolean; browserSignIn?: boolean; openFolder?: boolean; photoLibrary?: boolean; shareSheet?: boolean };
   id: string;
   username: string;
   libraryRoot: string;
@@ -613,8 +613,8 @@ export type ExplorePost = {
   md5: string | null;
   sourceUrls?: string[];
   matchPreviewUrl?: string | null;
-  /** Client-only pixels for optional same-page visual matching. */
-  visualSignature?: number[];
+  /** Keys of the loaded posts that show this post's picture, as the core found them. */
+  sameLookAs?: string[];
   /** Matches an image already saved as a favorite in the local Gallery. */
   galleryFavoriteMatch?: boolean;
   /** The person unfavorited it, so nothing favorites it again on its own. */
@@ -797,6 +797,18 @@ type CredentialUpdateResponse = { credential: CredentialSummary };
 
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
+
+const matchPost = (post: ExplorePost) =>
+  post.matchPreviewUrl
+    ? [{
+        key: `${post.siteId}:${post.remoteId}`,
+        matchPreviewUrl: post.matchPreviewUrl,
+        width: post.width,
+        height: post.height,
+        fileExt: post.fileExt,
+        uploader: post.uploader
+      }]
+    : [];
 
 export const extractErrorMessage = (text: string, fallback: string) => {
   let message = text || fallback;
@@ -1040,7 +1052,7 @@ export const api = {
     return z.object({ user: z.object({
       id: z.string().min(1), username: z.string(), libraryRoot: z.string(),
       createdAt: z.string(), updatedAt: z.string(), lastLoginAt: z.null(),
-      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), processing: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional(), duplicates: z.boolean().optional(), autoFavorite: z.boolean().optional(), tagRefresh: z.boolean().optional(), sync: z.boolean().optional(), browserSignIn: z.boolean().optional(), openFolder: z.boolean().optional(), photoLibrary: z.boolean().optional(), shareSheet: z.boolean().optional() })
+      capabilities: z.object({ library: z.boolean(), boorus: z.boolean(), favorites: z.boolean().optional(), favoritesAutoSync: z.boolean().optional(), subscriptions: z.boolean().optional(), sourceMatching: z.boolean().optional(), tagging: z.boolean().optional(), duplicates: z.boolean().optional(), autoFavorite: z.boolean().optional(), tagRefresh: z.boolean().optional(), sync: z.boolean().optional(), browserSignIn: z.boolean().optional(), openFolder: z.boolean().optional(), photoLibrary: z.boolean().optional(), shareSheet: z.boolean().optional() })
     }) }).parse(data).user;
   },
   getFileContentUrl: (fileId: string, options?: { download?: boolean }) => {
@@ -1438,22 +1450,27 @@ export const api = {
     const res = await apiFetch(`${API_BASE}/explore/gallery-matches`, {
       method: 'POST',
       headers: jsonHeaders,
-      body: JSON.stringify({
-        posts: posts.flatMap((post) =>
-          post.matchPreviewUrl
-            ? [{
-                key: `${post.siteId}:${post.remoteId}`,
-                matchPreviewUrl: post.matchPreviewUrl,
-                width: post.width,
-                height: post.height,
-                fileExt: post.fileExt
-              }]
-            : []
-        )
-      }),
+      body: JSON.stringify({ posts: posts.flatMap(matchPost) }),
       signal
     });
     return handle<{ keys: string[] }>(res);
+  },
+  /** Pairs of keys: a post of `posts`, then the post of `earlier` or `posts` it is a copy of. */
+  exploreCopies: async (
+    posts: ExplorePost[],
+    earlier: ExplorePost[],
+    signal?: AbortSignal
+  ) => {
+    const res = await apiFetch(`${API_BASE}/explore/copies`, {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        posts: posts.flatMap(matchPost),
+        earlier: earlier.flatMap(matchPost)
+      }),
+      signal
+    });
+    return handle<{ copies: [string, string][] }>(res);
   },
   exploreVote: async (payload: {
     siteId: string;

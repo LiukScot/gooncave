@@ -166,11 +166,16 @@ verify that taps and scrolling work.
   the events, and a background task keeps the app running while the core
   installs each file. When the phone is full the downloads stop with a message
   in Settings and one file is tried every minute until it fits.
-- Settings → Extra → Face ID lock asks for Face ID, or a code of the person's
-  own, at launch and on every return from the background. The Keychain keeps a
-  salted hash of the code on this device only (`AppLock.swift`,
-  `src-tauri/src/lock.rs`); after five wrong codes each try waits a minute.
-  While the app is not active a plain cover hides it from the app switcher.
+- Settings → Extra → Privacy has two locks, Face ID and Code, each on or off
+  by itself; either one on locks the app at launch and on every return from
+  the background. With both on, either unlocks. Face ID alone has no fallback:
+  turning it on asks for Face ID once, so it works before it locks. Changing a
+  lock while one is on needs Face ID or the code in the last two minutes. The
+  Keychain keeps a salted hash of the code on this device only
+  (`AppLock.swift`, `src-tauri/src/lock.rs`); after five wrong codes each try
+  waits a minute. An app updated from a single lock keeps Face ID on with its
+  code. While the app is not active a plain cover hides it from the app
+  switcher.
 - Re-signing with KravaSign must keep background tasks working. Check on a
   device that the tasks in `Info.ios.plist` still run after a re-sign.
 - Background tasks on iPhone are slower and have no GPU. The phone processes

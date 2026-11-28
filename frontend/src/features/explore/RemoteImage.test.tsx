@@ -6,6 +6,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { RemoteImage } from './RemoteImage';
 
+import { api } from '@/api';
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 let root: ReturnType<typeof createRoot> | null = null;
@@ -104,4 +106,48 @@ it('starts over for a different image', () => {
   const img = container.querySelector('img');
   expect(img?.getAttribute('src')).toBe('https://x.test/b.jpg');
   expect(img?.classList.contains('invisible')).toBe(false);
+});
+
+const renderSitePost = (remoteId: string) =>
+  act(() => {
+    root?.render(
+      <RemoteImage
+        src={`https://x.test/${remoteId}.jpg`}
+        alt="Post"
+        fallback={<span data-test-id="fallback">no preview</span>}
+        removed={{ post: { siteId: 'e621', remoteId }, fallback: <span data-test-id="removed">Removed from e621</span> }}
+      />
+    );
+  });
+
+const failed = (status: number) => Object.assign(new Error(`Post not found (${status})`), { status });
+
+it('says the site removed the post once its first failure finds it gone, and stops retrying', async () => {
+  const ask = vi.spyOn(api, 'explorePost').mockRejectedValue(failed(404));
+  renderSitePost('9001');
+  failCurrentImage();
+  await act(async () => {
+    await vi.runAllTimersAsync();
+  });
+
+  expect(ask).toHaveBeenCalledTimes(1);
+  expect(container.querySelector('img')).toBeNull();
+  expect(container.querySelector('[data-test-id="removed"]')).not.toBeNull();
+  ask.mockRestore();
+});
+
+it('keeps retrying when the site still has the post or cannot be asked', async () => {
+  const ask = vi.spyOn(api, 'explorePost').mockRejectedValue(failed(502));
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  renderSitePost('9002');
+  failCurrentImage();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5_000);
+  });
+
+  expect(ask).toHaveBeenCalledTimes(1);
+  expect(container.querySelector('[data-test-id="removed"]')).toBeNull();
+  expect(container.querySelector('img')?.classList.contains('invisible')).toBe(false);
+  ask.mockRestore();
+  warn.mockRestore();
 });

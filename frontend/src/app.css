@@ -4422,6 +4422,18 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
 }
 
 /* Duplicate handling presents two exclusive policies as equal visual paths. */
+.duplicate-blocked-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.duplicate-blocked-notice p {
+  margin: 0;
+}
+
 .duplicate-handling-page {
   display: flex;
   flex-direction: column;
@@ -5890,6 +5902,8 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   padding: max(1.5rem, env(safe-area-inset-top)) 1.5rem max(1.5rem, env(safe-area-inset-bottom));
   background: hsl(var(--background));
   color: hsl(var(--foreground));
+  /* A short phone in landscape cannot fit the keypad. */
+  overflow-y: auto;
 }
 
 .app-lock-icon {
@@ -5903,16 +5917,100 @@ body:has(> .phone-actions) .file-detail-frame.is-fullscreen .video-controls {
   font-weight: 600;
 }
 
-.app-lock-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  width: min(100%, 20rem);
+.app-lock-cancel {
+  position: absolute;
+  top: max(1rem, env(safe-area-inset-top));
+  left: 1rem;
+  padding: 0.5rem;
+  color: hsl(var(--primary));
+  font-size: 1rem;
 }
 
-.app-lock-code {
-  letter-spacing: 0.3em;
+/* One line tall even when empty, so the keypad does not jump when an error appears. */
+.app-lock-message {
+  min-height: 1.5em;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.9375rem;
   text-align: center;
+}
+
+.app-lock-message[role='alert'] {
+  color: hsl(var(--destructive));
+}
+
+.app-lock-pad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.75rem;
+  width: min(100%, 17rem);
+}
+
+.app-lock-dots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  max-width: 13rem;
+  min-height: 0.875rem;
+}
+
+.app-lock-dot {
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 1.5px solid hsl(var(--primary));
+  border-radius: 50%;
+  transition: background-color 120ms ease-out;
+}
+
+.app-lock-dot.is-filled {
+  background: hsl(var(--primary));
+}
+
+.app-lock-keys {
+  display: grid;
+  grid-template-columns: repeat(3, 4.5rem);
+  gap: 1rem 1.5rem;
+}
+
+.app-lock-key,
+.app-lock-corner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.5rem;
+  height: 4.5rem;
+}
+
+.app-lock-key {
+  border-radius: 50%;
+  background: hsl(var(--secondary));
+  color: hsl(var(--foreground));
+  font-size: 1.75rem;
+  font-variant-numeric: tabular-nums;
+  transition: background-color 120ms ease-out, transform 120ms ease-out;
+}
+
+.app-lock-key:active {
+  background: hsl(var(--muted-foreground) / 0.5);
+  transform: scale(0.94);
+}
+
+.app-lock-key.is-quiet {
+  background: transparent;
+}
+
+.app-lock-key svg {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.app-lock-key:disabled {
+  opacity: 0.35;
+}
+
+.app-lock-submit {
+  width: 100%;
 }
 
 .appearance-group-description {

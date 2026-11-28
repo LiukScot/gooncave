@@ -133,13 +133,9 @@ test('the colours go round both ways, and a colour from any copy can be chosen',
   await expect(row.getByRole('radio')).toHaveCount(13);
   for (const step of [-500, -500, -500, 500, 500, 500, 500, 500, 500]) {
     await row.evaluate((element, left) => element.scrollBy({ left }), step);
-    await page.waitForTimeout(100);
-    const room = await row.evaluate((element) => ({
-      before: element.scrollLeft,
-      after: element.scrollWidth - element.clientWidth - element.scrollLeft
-    }));
-    expect(room.before).toBeGreaterThan(0);
-    expect(room.after).toBeGreaterThan(0);
+    await expect.poll(() => row.evaluate((element) =>
+      element.scrollLeft > 0 && element.scrollWidth - element.clientWidth - element.scrollLeft > 0
+    )).toBe(true);
   }
   await row.evaluate((element) => element.scrollBy({ left: -100 }));
   await page.locator('.appearance-accent-copy[aria-hidden] [title^="Pastel red"]').first().dispatchEvent('click');

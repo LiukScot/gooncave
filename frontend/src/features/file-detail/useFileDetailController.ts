@@ -85,6 +85,7 @@ import {
 import { basenameFromPath } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { transitionView } from '@/lib/viewTransitions';
+import { logDeveloper } from '@/lib/windowErrorLog';
 import { useExploreUiStore } from '@/stores/exploreUiStore';
 import { useGalleryUiStore } from '@/stores/galleryUiStore';
 
@@ -258,7 +259,6 @@ export function useFileDetailController(
   const suppressFileTagsMutation = useSuppressFileTags();
   const { mutateAsync: refreshFileTags } = useRefreshFileTags();
   const capabilities = useDeviceProfile().data?.capabilities;
-  const tagRefreshAvailable = capabilities?.processing !== false;
   // The app's own share sheet: the page's one opens on iPhone as a small panel pinned to the button.
   const nativeShare = capabilities?.shareSheet === true;
   const booruSitesQuery = useBooruSites();
@@ -339,9 +339,6 @@ export function useFileDetailController(
 
   // --- nav peek ------------------------------------------------------------
   const [navPeek, setNavPeek] = useState(false);
-
-  // --- tag refresh dedup ---------------------------------------------------
-  const tagRefreshRef = useRef(new Set<string>());
 
   // ---------------------------------------------------------------------------
   // Derived navigation values (from gallery dep)
@@ -562,7 +559,10 @@ export function useFileDetailController(
           queryFn: () => api.getProviders(fileId)
         });
         setProviderInfo(resp.providers);
-      } catch {
+      } catch (error) {
+        logDeveloper(
+          `The source search status of a file did not load: ${error instanceof Error ? error.message : String(error)}`
+        );
         setProviderInfo([]);
       }
     },
@@ -575,11 +575,7 @@ export function useFileDetailController(
         Awaited<ReturnType<typeof api.getFileTags>>
       >(queryKeys.files.tags(fileId));
       // A refetch behind tags that are already on screen is not "updating".
-      const needsRefresh =
-        tagRefreshAvailable &&
-        cached?.tags.length === 0 &&
-        !tagRefreshRef.current.has(fileId);
-      if (!cached || needsRefresh) setTagState({ loading: true, error: null });
+      if (!cached) setTagState({ loading: true, error: null });
       setTagRefreshStatus(null);
       try {
         const resp = await queryClient.fetchQuery({
@@ -590,23 +586,8 @@ export function useFileDetailController(
         if (currentFileIdRef.current !== fileId) return;
         setFavoriteSources(resp.favoriteSources ?? []);
         setFavoriteSourceLinks(resp.favoriteSourceLinks ?? []);
-        if (
-          tagRefreshAvailable &&
-          resp.tags.length === 0 &&
-          !tagRefreshRef.current.has(fileId)
-        ) {
-          tagRefreshRef.current.add(fileId);
-          const refreshed = await refreshFileTags({
-            fileId,
-            onStatus: setTagRefreshStatus
-          });
-          if (currentFileIdRef.current !== fileId) return;
-          setFileTags(refreshed.tags);
-          setImpliedTags(refreshed.implied);
-        } else {
-          setFileTags(resp.tags);
-          setImpliedTags(resp.implied);
-        }
+        setFileTags(resp.tags);
+        setImpliedTags(resp.implied);
         setTagState({ loading: false, error: null });
       } catch (err) {
         setFileTags([]);
@@ -617,7 +598,7 @@ export function useFileDetailController(
         setTagState({ loading: false, error: null });
       }
     },
-    [queryClient, refreshFileTags, tagRefreshAvailable]
+    [queryClient]
   );
 
   // The neighbours are fetched, not just prefetched: the preview panels show
@@ -1096,7 +1077,6 @@ export function useFileDetailController(
       });
       setFileTags(refreshed.tags);
       setImpliedTags(refreshed.implied);
-      tagRefreshRef.current.add(selectedFile.id);
       setTagState({ loading: false, error: null });
     } catch (err) {
       notifyActionError('Could not update the tags', err);

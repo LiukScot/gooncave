@@ -316,7 +316,8 @@ const GalleryCard = memo(function GalleryCard({
               width={file.width ?? THUMB_SIZE}
               height={file.height ?? THUMB_SIZE}
               className="gallery-thumb-img rounded"
-              loading="lazy"
+              // Only tiles near the screen exist; lazy loading on WebKit also waited for the
+              // screen itself, so a fast scroll showed them filling in.
               decoding="async"
               fetchPriority="low"
               onLoad={(event) => event.currentTarget.classList.add('is-loaded')}

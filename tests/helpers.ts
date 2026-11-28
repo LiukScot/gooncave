@@ -87,3 +87,19 @@ export const videoFixture = (size = '320x240') => execFileSync('ffmpeg', [
   '-t', '6', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-f', 'mp4',
   '-movflags', 'frag_keyframe+empty_moov', 'pipe:1'
 ]);
+
+/**
+ * Waits until no view transition runs and every finite animation has ended, so the next gesture
+ * starts on a still page. Endless animations, such as a loading spinner, are ignored.
+ */
+export const waitForAnimations = (page: Page) =>
+  expect
+    .poll(() => page.evaluate(() =>
+      !document.documentElement.matches(':active-view-transition') &&
+      document.getAnimations().every((animation) =>
+        animation.playState !== 'running' || animation.effect?.getComputedTiming().endTime === Infinity)))
+    .toBe(true);
+
+/** Waits until the browser has drawn two more frames, so effects of the last input have run. */
+export const waitForPaint = (page: Page) =>
+  page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));

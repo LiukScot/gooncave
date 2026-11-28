@@ -243,6 +243,8 @@ pub(crate) async fn sync_artists(
             continue;
         }
         let mut now = watched;
+        // `seen` with only this sync's own watches and unwatches, for a list changed meanwhile.
+        let mut done = seen.unwrap_or_default();
         let mut missing = Vec::new();
         let mut failures_in_a_row = 0;
         for (artist, watch) in plan
@@ -271,17 +273,22 @@ pub(crate) async fn sync_artists(
             failures_in_a_row = 0;
             if watch {
                 now.push(artist.clone());
+                done.push(artist.clone());
             } else {
                 now.retain(|a| a != artist);
+                done.retain(|a| a != artist);
             }
         }
         let id = site.id.clone();
         db.call(move |c| {
             let tx = c.transaction()?;
-            // Device sync may have replaced the list during the requests above. Saving would
-            // drop that change, and saving the watchlist alone would read its new artists as
-            // removed here next time; both wait for the next sync, which starts from the new list.
-            if store::artists(&tx)? == local {
+            // A follow or device sync may have changed the list during the requests above.
+            // Saving would drop that change, and saving the whole watchlist would read its new
+            // artists as removed here next time; the next sync starts from the new list. It still
+            // needs what this sync changed on FurAffinity, or it reads that as changed there.
+            if store::artists(&tx)? != local {
+                store::save_seen_artists(&tx, &id, &done)?;
+            } else {
                 plan.local.retain(|a| !missing.contains(a));
                 if plan.local != local {
                     store::save_artists(&tx, &plan.local)?;
@@ -376,11 +383,22 @@ async fn follow(State(db): State<Database>, p: Payload) -> Result<Json<Value>> {
 async fn unfollow(State(db): State<Database>, p: Payload) -> Result<Json<Value>> {
     set_artist(&db, body(p)?, false).await
 }
-/// Adds or removes one artist in GoonCave's list; the sync then passes it on to FurAffinity.
+/// Adds or removes one artist in GoonCave's list and answers at once; the sync that passes the
+/// change on to FurAffinity runs afterwards (see [`sync_watchlists_soon`]).
 async fn set_artist(db: &Database, v: Value, desired: bool) -> Result<Json<Value>> {
+    let sites = boorus::sites(db).await?;
+    change_artist(db, Transport::default(), sites, v, desired).await
+}
+async fn change_artist(
+    db: &Database,
+    t: Transport,
+    sites: Vec<Site>,
+    v: Value,
+    desired: bool,
+) -> Result<Json<Value>> {
     let artist = remote::artist(&text(&v, "artist", 50)?)?.to_lowercase();
-    // Serialize with the watchlist sync: a completed unfollow cannot be overwritten by an old one.
-    let _guard = db.subscriptions.lock().await;
+    // Not under the `subscriptions` lock, which a running sync holds while it reads a whole
+    // watchlist: that sync saves nothing once the list has changed under it, so this change stays.
     db.call(move |c| {
         let tx = c.transaction()?;
         let mut artists = store::artists(&tx)?;
@@ -405,7 +423,31 @@ async fn set_artist(db: &Database, v: Value, desired: bool) -> Result<Json<Value
         Ok(())
     })
     .await?;
-    overview(db, true).await
+    sync_watchlists_soon(db, t, sites);
+    overview(db, false).await
+}
+/// Syncs the FurAffinity watchlists in the background, after any sync already running. Several
+/// changes made while one waits share it: it reads the list when it starts.
+fn sync_watchlists_soon(db: &Database, t: Transport, sites: Vec<Site>) {
+    use std::sync::atomic::Ordering;
+    if db.watchlist_sync_queued.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let db = db.clone();
+    tokio::spawn(async move {
+        let _guard = db.subscriptions.lock().await;
+        db.watchlist_sync_queued.store(false, Ordering::SeqCst);
+        match sync_artists(&db, &t, &sites).await {
+            Ok(errors) => {
+                for error in errors {
+                    eprintln!("[developer] FurAffinity watchlist sync failed after a follow change: {error}");
+                }
+            }
+            Err(error) => eprintln!(
+                "[developer] FurAffinity watchlist sync failed after a follow change: {error}"
+            ),
+        }
+    });
 }
 /// Followed pools of sites that still exist; a deleted site takes its pools out of view.
 async fn pools(State(db): State<Database>) -> Result<Json<Value>> {
@@ -896,6 +938,50 @@ mod tests {
         let mut site = boorus::site(db, "fixture".into()).await.unwrap().unwrap();
         site.base = base;
         site
+    }
+    #[tokio::test]
+    async fn following_an_artist_answers_before_furaffinity_does() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
+        let (asked, answer) = (
+            Arc::new(tokio::sync::Notify::new()),
+            Arc::new(tokio::sync::Notify::new()),
+        );
+        let (reached, held) = (asked.clone(), answer.clone());
+        // FurAffinity is slow: its watchlist page does not come until the test lets it.
+        let app = Router::new().fallback(any(move || {
+            let (reached, held) = (reached.clone(), held.clone());
+            async move {
+                reached.notify_one();
+                held.notified().await;
+                axum::http::StatusCode::SERVICE_UNAVAILABLE
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut site = setup(&db, base).await;
+        site.engine = "furaffinity".into();
+        site.username = Some("fixture-owner".into());
+        site.cookie = Some("a=fake;b=fake".into());
+        let t = Transport {
+            allow_loopback: true,
+        };
+
+        let followed = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            change_artist(&db, t, vec![site], json!({"artist": "Rukis"}), true),
+        )
+        .await
+        .expect("the follow waited for FurAffinity")
+        .unwrap();
+        assert_eq!(followed.0["artists"], json!(["rukis"]));
+        // The change still reaches FurAffinity, after the answer.
+        tokio::time::timeout(std::time::Duration::from_secs(5), asked.notified())
+            .await
+            .expect("FurAffinity was never asked");
+        answer.notify_one();
+        server.abort();
     }
     #[test]
     fn subscription_batches_use_each_engines_or_and_one_tag_where_none_is_verified() {
@@ -1420,10 +1506,10 @@ mod tests {
         task.abort();
     }
     #[tokio::test]
-    async fn a_list_replaced_during_the_sync_is_kept_and_the_watchlist_snapshot_is_not_saved() {
+    async fn a_list_replaced_during_the_sync_is_kept_and_the_next_sync_follows_it() {
         let dir = tempfile::tempdir().unwrap();
         let db = Database::open(dir.path(), &dir.path().join("library")).unwrap();
-        let (site, fa, task) = fake_fa(&[], &["local"], Some(db.clone())).await;
+        let (site, fa, task) = fake_fa(&[], &["local", "replaced"], Some(db.clone())).await;
         let t = Transport {
             allow_loopback: true,
         };
@@ -1431,12 +1517,20 @@ mod tests {
         db.call(|c| store::save_seen_artists(c, "fixture", &["kept".to_owned()]))
             .await
             .unwrap();
-        let errors = sync_artists(&db, &t, &[site]).await.unwrap();
+        let errors = sync_artists(&db, &t, std::slice::from_ref(&site))
+            .await
+            .unwrap();
         assert!(errors.is_empty());
         assert_eq!(watching(&fa), ["local"]);
         let (local, seen) = local_and_seen(&db).await;
         assert_eq!(local, ["replaced"]);
-        assert_eq!(seen.unwrap(), ["kept"]);
+        // Only what this sync did on FurAffinity: the watchlist's own news wait for the next one.
+        assert_eq!(seen.unwrap(), ["kept", "local"]);
+        // The new list left out the artist the first sync watched, so it is unwatched, not
+        // imported back as one followed on FurAffinity.
+        assert!(sync_artists(&db, &t, &[site]).await.unwrap().is_empty());
+        assert_eq!(watching(&fa), ["replaced"]);
+        assert_eq!(local_and_seen(&db).await.0, ["replaced"]);
         task.abort();
     }
 }

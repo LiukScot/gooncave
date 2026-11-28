@@ -1117,14 +1117,16 @@ export const ExploreCard = memo(function ExploreCard({
       </button>
     </span>
   );
-  const noPreview = (
+  const emptyTile = (text: string) => (
     <div
       className="rounded flex items-center justify-center bg-background h-full"
-      style={{ minHeight: THUMB_SIZE }}
+      // A tile with a known ratio already has its height; more would push the text past it.
+      style={thumbRatio ? undefined : { minHeight: THUMB_SIZE }}
     >
-      <span className="text-muted-foreground text-sm">no preview</span>
+      <span className="text-muted-foreground text-sm">{text}</span>
     </div>
   );
+  const noPreview = emptyTile('no preview');
   const subscriptionLabel = reasons?.length
     ? `, subscribed for ${reasons.join(', ')}`
     : '';
@@ -1175,7 +1177,9 @@ export const ExploreCard = memo(function ExploreCard({
             height={post.height ?? THUMB_SIZE}
             className="gallery-thumb-img rounded"
             {...(animatedGif && gridUrl === post.fileUrl ? { [ANIMATED_PICTURE]: '' } : {})}
-            loading="lazy"
+            // A card coming back within a screen loads at once; lazy loading waited for the
+            // viewport on WebKit and a fast scroll showed the pictures filling in.
+            loading={heldHeight ? 'eager' : 'lazy'}
             decoding="async"
             fetchPriority="low"
             // Cloudflare in front of danbooru's CDN answers 403 to a request
@@ -1184,6 +1188,7 @@ export const ExploreCard = memo(function ExploreCard({
             // where the search terms would sit.
             referrerPolicy="origin"
             fallback={noPreview}
+            removed={isLibraryFile ? undefined : { post, fallback: emptyTile(`Removed from ${post.siteName}`) }}
             onLoad={(event) => {
               event.currentTarget.classList.add('is-loaded');
               setHeldHeight(null);

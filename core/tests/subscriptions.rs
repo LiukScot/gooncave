@@ -187,7 +187,8 @@ async fn the_feed_validates_its_inputs_and_reports_sites_it_cannot_read() {
         .as_str()
         .unwrap()
         .contains("Accounts"));
-    // The artist is kept in GoonCave and passed to FurAffinity once the account works.
+    // The artist is kept in GoonCave and passed to FurAffinity once the account works. The follow
+    // answers before that sync, so it is the settings above that name the failing account.
     let (status, followed) = request(
         &s,
         "POST",
@@ -197,10 +198,7 @@ async fn the_feed_validates_its_inputs_and_reports_sites_it_cannot_read() {
     .await;
     assert_eq!(status, 200, "{followed}");
     assert_eq!(followed["artists"], json!(["fixture-artist"]));
-    assert!(followed["artistErrors"][0]["error"]
-        .as_str()
-        .unwrap()
-        .contains("Accounts"));
+    assert_eq!(followed["artistErrors"], json!([]));
 }
 
 #[tokio::test]

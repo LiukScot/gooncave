@@ -28,6 +28,8 @@ pub struct Database {
     paths: Arc<LibraryPaths>,
     pub(crate) favorites: Arc<crate::favorites::Job>,
     pub(crate) subscriptions: Arc<tokio::sync::Mutex<()>>,
+    /// A FurAffinity watchlist sync is waiting to start after a follow or an unfollow.
+    pub(crate) watchlist_sync_queued: Arc<std::sync::atomic::AtomicBool>,
     /// Held by the saved Subscriptions feed sync.
     pub(crate) subscription_feed: Arc<tokio::sync::Mutex<()>>,
     /// Searches read and to read by the running feed sync, if any.
@@ -237,6 +239,7 @@ impl Database {
             }),
             favorites: Arc::new(crate::favorites::Job::default()),
             subscriptions: Arc::new(tokio::sync::Mutex::new(())),
+            watchlist_sync_queued: Arc::default(),
             subscription_feed: Arc::new(tokio::sync::Mutex::new(())),
             subscription_progress: Arc::default(),
             sources: Arc::new(crate::source_jobs::Job::default()),
@@ -339,7 +342,7 @@ impl Database {
                     "id": row.get::<_, String>(0)?, "username": row.get::<_, String>(1)?,
                     "libraryRoot": row.get::<_, String>(2)?, "createdAt": row.get::<_, String>(3)?,
                     "updatedAt": row.get::<_, String>(4)?, "lastLoginAt": null,
-                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": true, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "processing": false, "duplicates": true, "autoFavorite": true, "tagRefresh": true, "sync": true, "browserSignIn": crate::browser::get().is_some(), "photoLibrary": crate::photos::get().is_some(), "shareSheet": crate::native_share::get().is_some(), "openFolder": !cfg!(target_os = "ios") && crate::browser::get().is_some()}
+                    "capabilities": {"library": true, "boorus": true, "favorites": true, "favoritesAutoSync": true, "subscriptions": true, "sourceMatching":true, "tagging":crate::wd14_model::available(), "duplicates": true, "autoFavorite": true, "tagRefresh": true, "sync": true, "browserSignIn": crate::browser::get().is_some(), "photoLibrary": crate::photos::get().is_some(), "shareSheet": crate::native_share::get().is_some(), "openFolder": !cfg!(target_os = "ios") && crate::browser::get().is_some()}
                 })),
             )?)
         }).await

@@ -152,8 +152,8 @@ export function useExploreController({
   const choose = useChoose();
   const blacklist = useBlacklistSettings();
   const capabilities = useDeviceProfile().data?.capabilities;
-  const processingAvailable = capabilities?.processing !== false;
-  const duplicateSettings = useDuplicateSettings({ enabled: processingAvailable });
+  const duplicatesAvailable = capabilities?.duplicates !== false;
+  const duplicateSettings = useDuplicateSettings({ enabled: duplicatesAvailable });
   const {
     autoVoteOnFavorite,
     exploreStackDuplicates,
@@ -241,6 +241,10 @@ export function useExploreController({
   }, [sitesQuery.data, catalogQuery.data, sort, tagQuery]);
 
   const [posts, setPosts] = useState<ExplorePost[]>([]);
+  const postsRef = useRef(posts);
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
   const [siteErrors, setSiteErrors] = useState<ExploreSiteError[]>([]);
   const [slowSites, setSlowSites] = useState<
     { siteId: string; siteName: string; skip: () => void }[]
@@ -402,7 +406,7 @@ export function useExploreController({
     sitesQuery.isSuccess &&
     catalogQuery.isSuccess &&
     blacklist.loaded &&
-    (!processingAvailable || duplicateSettings.isFetched) &&
+    (!duplicatesAvailable || duplicateSettings.isFetched) &&
     (sort !== 'subscribed' ||
       (subscriptionTags.isSuccess && subscriptionPools.isSuccess));
 
@@ -443,7 +447,8 @@ export function useExploreController({
   const remotePageLimit = pageLimitForMerge(
     mergeSort,
     PAGE_SIZE,
-    activeSiteIds.length
+    activeSiteIds.length,
+    effectiveUnreadOnly
   );
 
   /**
@@ -500,6 +505,7 @@ export function useExploreController({
       maxRounds: MAX_FILL_ROUNDS,
       minPosts: MIN_POSTS_PER_LOAD,
       keep: keepPost,
+      ownPageSize: (siteId) => siteById.get(siteId)?.engine === 'furaffinity',
       signal,
       onSlowSite: (siteId, skip) =>
         setSlowSites((current) => [
@@ -543,11 +549,11 @@ export function useExploreController({
     duplicateSettings.data?.enabled === true &&
     duplicateSettings.data.style === 'favorite_all';
   const preparePosts = useCallback(
-    (next: ExplorePost[], signal: AbortSignal) =>
-      processingAvailable && exploreStackDuplicates && isOnline()
-        ? withVisualMatches(next, signal)
+    (next: ExplorePost[], earlier: ExplorePost[], signal: AbortSignal) =>
+      duplicatesAvailable && exploreStackDuplicates && isOnline()
+        ? withVisualMatches(next, earlier, signal)
         : Promise.resolve(next),
-    [exploreStackDuplicates, processingAvailable]
+    [exploreStackDuplicates, duplicatesAvailable]
   );
 
   const applyResult = useCallback(
@@ -601,7 +607,7 @@ export function useExploreController({
         const first = await loadHistoryPage(null, controller.signal);
         if (controller.signal.aborted) return;
         subscriptionCursorRef.current = first.nextCursor;
-        const prepared = await preparePosts(first.posts, controller.signal);
+        const prepared = await preparePosts(first.posts, [], controller.signal);
         // An aborted match still resolves, and a newer search's list must not take these posts.
         if (controller.signal.aborted) return;
         setPosts(prepared);
@@ -642,7 +648,7 @@ export function useExploreController({
         if (controller.signal.aborted) return;
         subscriptionCursorRef.current = first.nextCursor;
         setSubscriptionNewestAt(first.newestAt);
-        const prepared = await preparePosts(first.posts, controller.signal);
+        const prepared = await preparePosts(first.posts, [], controller.signal);
         if (controller.signal.aborted) return;
         setPosts(prepared);
         setSiteErrors(first.siteErrors);
@@ -665,7 +671,7 @@ export function useExploreController({
       fillOptions(controller.signal)
     );
     if (controller.signal.aborted) return;
-    const prepared = await preparePosts(result.posts, controller.signal);
+    const prepared = await preparePosts(result.posts, [], controller.signal);
     if (controller.signal.aborted) return;
     applyResult(result, prepared);
     setLoading(false);
@@ -890,7 +896,7 @@ export function useExploreController({
         );
         if (controller.signal.aborted) return [];
         subscriptionCursorRef.current = page.nextCursor;
-        const prepared = await preparePosts(page.posts, controller.signal);
+        const prepared = await preparePosts(page.posts, postsRef.current, controller.signal);
         if (controller.signal.aborted) return [];
         setPosts((current) => [...current, ...prepared]);
         setHasMore(page.nextCursor !== null);
@@ -913,7 +919,7 @@ export function useExploreController({
         });
         if (controller.signal.aborted) return [];
         subscriptionCursorRef.current = result.nextCursor;
-        const prepared = await preparePosts(result.posts, controller.signal);
+        const prepared = await preparePosts(result.posts, postsRef.current, controller.signal);
         if (controller.signal.aborted) return [];
         setPosts((current) => [...current, ...prepared]);
         setSiteErrors((current) => [...current, ...result.siteErrors]);
@@ -925,7 +931,7 @@ export function useExploreController({
         fillOptions(controller.signal)
       );
       if (controller.signal.aborted) return [];
-      const prepared = await preparePosts(result.posts, controller.signal);
+      const prepared = await preparePosts(result.posts, postsRef.current, controller.signal);
       if (controller.signal.aborted) return [];
       applyResult(result, prepared);
       return result.posts;

@@ -32,14 +32,26 @@ export const emptyStream = (): SiteStream => ({
 
 export type RankedPost = { post: ExplorePost; rank: number };
 
+/** The most posts the core gives for one request. */
+const LARGEST_PAGE = 100;
+
+/**
+ * How many posts to ask a site for at once. With `unreadOnly` most of a page
+ * may be dropped as read, so the largest page is asked for: getting past the
+ * same read posts then takes far fewer requests. Hot ranks whole pages
+ * together, so its page stays the size of what is shown.
+ */
 export const pageLimitForMerge = (
   sort: MergeSort,
   target: number,
-  siteCount: number
-): number =>
-  sort === 'new'
+  siteCount: number,
+  unreadOnly = false
+): number => {
+  if (unreadOnly && sort !== 'hot') return LARGEST_PAGE;
+  return sort === 'new'
     ? Math.max(1, Math.ceil(target / Math.max(1, siteCount)))
     : target;
+};
 
 /**
  * The number the sort actually compares. Higher sorts first.
@@ -110,14 +122,17 @@ export const ingestPage = (
     limit: number;
     sort: MergeSort;
     keep: (post: ExplorePost) => boolean;
+    /** The site answers with its own page size, so only an empty page ends it. */
+    ownPageSize?: boolean;
   }
 ): Map<string, SiteStream> => {
   const previous = streams.get(input.siteId) ?? emptyStream();
-  const ordered = rankPage(
-    input.posts,
-    input.sort,
-    (input.page - 1) * input.limit
-  ).sort(byRankDesc);
+  // Under New a page goes on from the last post the site sent: a site with its own page size
+  // sends more or fewer posts than `limit`.
+  const offset = Number.isFinite(previous.lastRank)
+    ? 1 - previous.lastRank
+    : (input.page - 1) * input.limit;
+  const ordered = rankPage(input.posts, input.sort, offset).sort(byRankDesc);
   const tail = ordered[ordered.length - 1];
   const next = new Map(streams);
   next.set(input.siteId, {
@@ -127,7 +142,9 @@ export const ingestPage = (
     ],
     page: input.page,
     lastRank: tail ? tail.rank : previous.lastRank,
-    exhausted: input.posts.length < input.limit
+    exhausted: input.ownPageSize
+      ? input.posts.length === 0
+      : input.posts.length < input.limit
   });
   return next;
 };
@@ -143,12 +160,13 @@ export const closeStream = (
 };
 
 /**
- * Takes everything that can be shown now, in order, and returns the streams
- * with those posts removed. Appending the result to what is already on
- * screen keeps the whole list ranked without ever reordering it.
+ * Takes what can be shown now, in order and at most `max` posts, and returns
+ * the streams with those posts removed. Appending the result to what is
+ * already on screen keeps the whole list ranked without ever reordering it.
  */
 export const releaseReady = (
-  streams: Map<string, SiteStream>
+  streams: Map<string, SiteStream>,
+  max = Number.POSITIVE_INFINITY
 ): { posts: ExplorePost[]; streams: Map<string, SiteStream> } => {
   const floor = releaseFloor(streams);
   const ready: RankedPost[] = [];
@@ -162,6 +180,9 @@ export const releaseReady = (
     next.set(siteId, { ...stream, buffer: held });
   }
   ready.sort(byRankDesc);
+  for (const entry of ready.splice(Math.max(0, max))) {
+    next.get(entry.post.siteId)?.buffer.push(entry);
+  }
   return { posts: ready.map((entry) => entry.post), streams: next };
 };
 
@@ -186,6 +207,8 @@ export type FillOptions = {
   sort: MergeSort;
   /** Page size asked of each site; a shorter answer means the site is done. */
   limit: number;
+  /** Sites that answer with their own page size whatever is asked, such as FurAffinity. */
+  ownPageSize?: (siteId: string) => boolean;
   /** Stop once this many posts have been released. */
   target: number;
   /** Request cap, so two near-tied sites cannot trickle one post per click. */
@@ -326,7 +349,9 @@ const fetchHotRound = async (
     current.set(siteId, {
       ...previous,
       page: previous.page + 1,
-      exhausted: result.value.length < options.limit
+      exhausted: options.ownPageSize?.(siteId)
+        ? result.value.length === 0
+        : result.value.length < options.limit
     });
     candidates.set(siteId, result.value.filter(options.keep));
   });
@@ -383,11 +408,12 @@ export const fillPages = async (
   let current = streams;
   const posts: ExplorePost[] = [];
   const errors: FillResult['errors'] = [];
-  for (
-    let round = 0;
-    posts.length < options.target && hasRoundLeft(round, posts.length, options);
-    round += 1
-  ) {
+  for (let round = 0; ; round += 1) {
+    // First what earlier requests left over, so a load asks for nothing it already holds.
+    const released = releaseReady(current, options.target - posts.length);
+    current = released.streams;
+    posts.push(...released.posts);
+    if (posts.length >= options.target || !hasRoundLeft(round, posts.length, options)) break;
     const best = releaseFloor(current);
     const siteIds = [...current]
       .filter(([, stream]) => !stream.exhausted && stream.lastRank === best)
@@ -414,18 +440,18 @@ export const fillPages = async (
         posts: result.value,
         limit: options.limit,
         sort: options.sort,
-        keep: options.keep
+        keep: options.keep,
+        ownPageSize: options.ownPageSize?.(siteId)
       });
     });
-    const released = releaseReady(current);
-    current = released.streams;
-    posts.push(...released.posts);
   }
   return {
     streams: current,
     posts,
     errors,
-    hasMore: blockingSiteId(current) !== null
+    hasMore:
+      blockingSiteId(current) !== null ||
+      [...current.values()].some((stream) => stream.buffer.length > 0)
   };
 };
 
@@ -466,19 +492,10 @@ export const openStreams = async (
       posts: result.value,
       limit: options.limit,
       sort: options.sort,
-      keep: options.keep
+      keep: options.keep,
+      ownPageSize: options.ownPageSize?.(siteId)
     });
   });
-  const released = releaseReady(streams);
-  const filled = await fillPages(released.streams, {
-    ...options,
-    target: options.target - released.posts.length,
-    minPosts: (options.minPosts ?? 0) - released.posts.length
-  });
-  return {
-    streams: filled.streams,
-    posts: [...released.posts, ...filled.posts],
-    errors: [...errors, ...filled.errors],
-    hasMore: filled.hasMore
-  };
+  const filled = await fillPages(streams, options);
+  return { ...filled, errors: [...errors, ...filled.errors] };
 };

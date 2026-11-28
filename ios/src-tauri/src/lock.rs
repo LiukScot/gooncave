@@ -5,7 +5,15 @@
 
 use serde_json::{json, Value};
 
-const ACTIONS: [&str; 5] = ["state", "set", "check", "clear", "biometric"];
+const ACTIONS: [&str; 7] = [
+    "state",
+    "set",
+    "check",
+    "clear",
+    "faceOn",
+    "faceOff",
+    "biometric",
+];
 const CODE_DIGITS: std::ops::RangeInclusive<usize> = 4..=12;
 
 /// The request Swift receives, or why the page's request is refused.
@@ -66,6 +74,8 @@ mod tests {
         assert!(request("set", Some("123")).is_err());
         assert!(request("set", Some("1234567890123")).is_err());
         assert!(request("clear", Some("1234")).is_err());
+        assert_eq!(request("faceOn", None).unwrap(), r#"{"action":"faceOn"}"#);
+        assert!(request("faceOff", Some("1234")).is_err());
         assert!(request("export", None).is_err());
     }
 }

@@ -26,6 +26,7 @@ pub mod decoder;
 mod duplicate_policy;
 mod duplicates;
 mod explore;
+mod explore_copies;
 mod favorite_library;
 mod favorite_links;
 mod favorites;

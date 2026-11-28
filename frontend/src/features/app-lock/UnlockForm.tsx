@@ -1,26 +1,33 @@
+import { ScanFace } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { biometryName, CODE_PATTERN, lockApi, useAppLockStore } from './appLock';
+import { biometryName, lockApi, useAppLockStore } from './appLock';
+import { CodePad } from './CodeSheet';
+
+import { logDeveloper } from '@/lib/windowErrorLog';
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
- * Face ID, or the person's code, to unlock the app or to turn the lock off. Face ID is asked at
- * once when `askAtOnce` is set; after five wrong codes each try waits a minute.
+ * Face ID and the code keypad, each shown when its lock is on, to unlock the app or to change a
+ * lock. It fills a `CodeSheet`. Face ID is asked at once when `askAtOnce` is set; after five wrong codes each try waits a
+ * minute.
  */
 export function UnlockForm({
-  id,
   submitLabel,
   askAtOnce = false,
   onUnlocked
 }: {
-  id: string;
   submitLabel: string;
   askAtOnce?: boolean;
   onUnlocked: () => void;
 }) {
   const biometry = useAppLockStore((state) => state.biometry);
-  const name = biometryName(biometry);
+  const known = useAppLockStore((state) => state.known);
+  // Until the iPhone answers, both are offered: an unknown lock must still let the person in.
+  const codeLock = useAppLockStore((state) => state.code) || !known;
+  const faceLock = useAppLockStore((state) => state.face);
+  const name = faceLock || !known ? biometryName(biometry) ?? 'Face ID' : null;
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [wait, setWait] = useState(0);
@@ -36,16 +43,29 @@ export function UnlockForm({
   const askBiometry = async () => {
     setError(null);
     try {
+      const asked = performance.now();
       const answer = await lockApi.biometric();
-      if (answer.ok) onUnlocked();
-      else if (!answer.fallback) setError(`${name ?? 'Face ID'} did not unlock. Try again or enter your code.`);
+      const answered = performance.now();
+      if (answer.ok) {
+        onUnlocked();
+        // Two frames: the first after unlocking is drawn, the second shows it reached the screen.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() =>
+            logDeveloper(
+              `${name ?? 'Face ID'} unlocked: it answered ${Math.round(answered - asked)} ms after asking, ` +
+                `and the app was drawn ${Math.round(performance.now() - answered)} ms later.`
+            )
+          )
+        );
+      }
+      else if (!answer.fallback) setError(`${name ?? 'Face ID'} did not unlock. Try again${codeLock ? ' or enter your code' : ''}.`);
     } catch (err) {
       setError(message(err));
     }
   };
 
   useEffect(() => {
-    if (!askAtOnce || name === null) return;
+    if (!askAtOnce || !faceLock) return;
     // Face ID only answers an app on screen; the lock is drawn while the app is away.
     const ask = () => {
       if (asked.current || document.visibilityState !== 'visible') return;
@@ -57,7 +77,7 @@ export function UnlockForm({
     document.addEventListener('visibilitychange', ask);
     return () => document.removeEventListener('visibilitychange', ask);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [askAtOnce, name]);
+  }, [askAtOnce, faceLock]);
 
   const submit = async () => {
     setBusy(true);
@@ -75,42 +95,34 @@ export function UnlockForm({
     }
   };
 
-  return (
-    <form
-      className="app-lock-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
+  const faceButton = name ? (
+    <button
+      type="button"
+      className={codeLock ? 'app-lock-key is-quiet' : 'btn btn-primary app-lock-submit'}
+      aria-label={`Unlock with ${name}`}
+      onClick={() => void askBiometry()}
     >
-      {name ? (
-        <button className="btn btn-primary" type="button" onClick={() => void askBiometry()}>
-          Unlock with {name}
-        </button>
-      ) : null}
-      <label className="font-medium" htmlFor={id}>
-        Code
-      </label>
-      <input
-        id={id}
-        name="code"
-        className="form-control app-lock-code"
-        type="password"
-        inputMode="numeric"
-        autoComplete="off"
-        pattern={CODE_PATTERN}
-        required
-        value={code}
-        onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
-      />
-      <button className="btn btn-outline-light" type="submit" disabled={busy || wait > 0}>
-        {wait > 0 ? `Try again in ${wait} s` : submitLabel}
-      </button>
-      {error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {error}
-        </p>
-      ) : null}
-    </form>
+      {codeLock ? <ScanFace aria-hidden="true" /> : `Unlock with ${name}`}
+    </button>
+  ) : null;
+
+  return (
+    <>
+      <p className="app-lock-message" role={error ? 'alert' : undefined}>
+        {error ?? (wait > 0 ? `Try again in ${wait} s.` : codeLock ? 'Enter your code.' : null)}
+      </p>
+      {codeLock ? (
+        <CodePad
+          value={code}
+          onChange={setCode}
+          onSubmit={() => void submit()}
+          submitLabel={submitLabel}
+          busy={busy || wait > 0}
+          corner={faceButton}
+        />
+      ) : (
+        faceButton
+      )}
+    </>
   );
 }
