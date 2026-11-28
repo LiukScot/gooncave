@@ -232,17 +232,20 @@ pub(crate) fn apply_tags(
     if validated.is_empty() {
         return Ok(false);
     }
+    // One transaction with the tags it marks: a write that fails must not leave the file marked as
+    // read with its old tags, or the tag refresh would never ask about it again.
+    let tx = connection.transaction()?;
     // The site answered in full: the tag refresh has nothing more to ask it about this file.
-    connection.execute(
+    tx.execute(
         "INSERT OR IGNORE INTO site_tag_reads (file_id, source) VALUES (?1, ?2)",
         params![snapshot.id, provider],
     )?;
     let categorized = validated.iter().any(|(_, c)| c != "general");
-    let has_categories:bool=connection.query_row("SELECT EXISTS(SELECT 1 FROM file_tags WHERE file_id=?1 AND source=?2 AND category<>'general')",params![snapshot.id,provider],|r|r.get(0))?;
+    let has_categories:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM file_tags WHERE file_id=?1 AND source=?2 AND category<>'general')",params![snapshot.id,provider],|r|r.get(0))?;
     if !categorized && has_categories {
+        tx.commit()?;
         return Ok(false);
     }
-    let tx = connection.transaction()?;
     tx.execute(
         "DELETE FROM file_tags WHERE file_id=?1 AND source=?2",
         params![snapshot.id, provider],
@@ -370,6 +373,28 @@ mod tests {
             c.execute("UPDATE user_booru_sites SET api_key=NULL WHERE id='test'",[])?;
             c.execute("UPDATE files SET sha256='changed' WHERE id='file'",[])?;
             assert!(!apply_tags(c,&snapshot,&site(),"https://e621.net/posts/12",&post)?);
+            Ok(())
+        }).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_failed_tag_write_leaves_the_file_unread_for_the_tag_refresh() {
+        let directory = tempfile::tempdir().unwrap();
+        let db = crate::db::Database::open(
+            &directory.path().join("data"),
+            &directory.path().join("library"),
+        )
+        .unwrap();
+        db.call(|c| {
+            c.execute(&format!("INSERT INTO folders (id,user_id,path,type,status,created_at,updated_at) VALUES ('folder',?1,'/fixture','LOCAL','IDLE',{NOW},{NOW})"),[OWNER_ID])?;
+            c.execute("INSERT INTO active_library_folders (id) VALUES ('folder')",[])?;
+            c.execute(&format!("INSERT INTO files (id,folder_id,location_type,path,size_bytes,mtime,sha256,media_type,created_at,updated_at) VALUES ('file','folder','LOCAL','/fixture/image.png',1,{NOW},'digest','IMAGE',{NOW},{NOW})"),[])?;
+            c.execute(&format!("INSERT INTO user_booru_sites (id,user_id,name,engine,base_url,is_preset,preset_key,enabled,sort_order,created_at,updated_at) VALUES ('test',?1,'Test','e621','https://e621.net',1,'E621',1,0,{NOW},{NOW})"),[OWNER_ID])?;
+            c.execute_batch("CREATE TEMP TRIGGER refuse_tags BEFORE INSERT ON file_tags BEGIN SELECT RAISE(ABORT, 'disk full'); END;")?;
+            let snapshot=file(c,"file")?.unwrap();
+            let post=json!({"tags":[{"tag":"test_artist","category":"artist"}]});
+            assert!(apply_tags(c,&snapshot,&site(),"https://e621.net/posts/12",&post).is_err());
+            assert_eq!(c.query_row("SELECT count(*) FROM site_tag_reads",[],|r|r.get::<_,i64>(0))?,0);
             Ok(())
         }).await.unwrap();
     }

@@ -148,8 +148,7 @@ export function GalleryView({
       } else {
         await api.suppressFileTags(id, tags);
       }
-    });
-    tagsChanged();
+    }, tagsChanged);
     selection.exit();
   };
   const selectionActions: SelectionAction[] = [
@@ -195,8 +194,7 @@ export function GalleryView({
           const result = await api.deleteFile(id);
           if (result.errors?.length) throw new Error(result.errors.join('; '));
           onFileDeleted(id);
-        });
-        void queryClient.invalidateQueries({ queryKey: queryKeys.duplicates.all });
+        }, () => void queryClient.invalidateQueries({ queryKey: queryKeys.duplicates.all }));
       }
     }
   ];
